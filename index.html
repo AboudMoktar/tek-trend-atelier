@@ -108,7 +108,8 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').catch(err => console.error(err));
 }
 
-const CACHE_PREFIX = 'tek_v7_'; 
+// MISE À JOUR VERSION 8 : Correction Session PWA
+const CACHE_PREFIX = 'tek_v8_'; 
 const HOURS = ["08h00 - 09h00","09h00 - 10h00","10h00 - 11h00","11h00 - 12h00","12h30 - 13h30","13h30 - 14h30","14h30 - 15h30","15h30 - 16h30","16h30 - 17h00"];
 const STATS_HOURS_LABELS = ["9h", "10h", "11h", "12h", "13h30", "14h30", "15h30", "16h30", "17h"];
 const OP_KEYS = ['op1', 'op2', 'op3', 'op4'];
@@ -165,7 +166,7 @@ function getDay(date){
   return d;
 }
 function saveDay(date, data){ 
-  if(currentUser.role !== 'admin') return; // Sécurité écriture stricte
+  if(currentUser.role !== 'admin') return; 
   setJSON('prod_'+date, data); 
 }
 
@@ -188,7 +189,8 @@ function showToast(msg){
 
 // --- APP LOGIC ---
 function init(){
-  try { let u = window.sessionStorage.getItem(CACHE_PREFIX+'session'); if(u) currentUser = JSON.parse(u); } catch(e) {}
+  // Modification V8: Utilisation de localStorage pour maintenir la session active
+  try { let u = window.localStorage.getItem(CACHE_PREFIX+'session'); if(u) currentUser = JSON.parse(u); } catch(e) {}
   if(currentUser) renderShell(); else renderLogin('');
 }
 
@@ -216,13 +218,21 @@ function renderLogin(err){
     const user = users.find(x => x.username === u && x.password === p);
     if(user){ 
       if(!user.active) { renderLogin('Ce compte a été désactivé par un administrateur.'); return; }
-      currentUser = user; try { window.sessionStorage.setItem(CACHE_PREFIX+'session', JSON.stringify(user)); } catch(e) {} renderShell(); 
+      currentUser = user; 
+      // Modification V8: Sauvegarde persistante de la connexion
+      try { window.localStorage.setItem(CACHE_PREFIX+'session', JSON.stringify(user)); } catch(e) {} 
+      renderShell(); 
     } 
     else { renderLogin('Identifiants incorrects.'); }
   };
 }
 
-function logout(){ currentUser = null; try { window.sessionStorage.removeItem(CACHE_PREFIX+'session'); } catch(e) {} renderLogin(''); }
+function logout(){ 
+  currentUser = null; 
+  // Modification V8: Suppression de la session locale
+  try { window.localStorage.removeItem(CACHE_PREFIX+'session'); } catch(e) {} 
+  renderLogin(''); 
+}
 
 function renderShell(){
   document.getElementById('app').innerHTML = `
@@ -250,7 +260,6 @@ function renderShell(){
   nav('dashboard');
 }
 
-// PROTECTION DES ROUTES (Si un User tente d'accéder à un onglet Admin)
 function nav(tab){
   if(currentUser.role !== 'admin' && ['saisie', 'params', 'users'].includes(tab)) {
     tab = 'dashboard';
@@ -493,7 +502,6 @@ function renderParams(container){
   };
 }
 
-// GESTION DES UTILISATEURS (ADMIN SEULEMENT)
 window.toggleUserStatus = (index) => {
   let users = getUsers();
   users[index].active = !users[index].active;
