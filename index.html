@@ -108,8 +108,8 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').catch(err => console.error(err));
 }
 
-// MISE À JOUR VERSION 8 : Correction Session PWA
-const CACHE_PREFIX = 'tek_v8_'; 
+// CHANGEMENT DE VERSION (v9) : Purge l'ancienne mémoire bloquée
+const CACHE_PREFIX = 'tek_v9_'; 
 const HOURS = ["08h00 - 09h00","09h00 - 10h00","10h00 - 11h00","11h00 - 12h00","12h30 - 13h30","13h30 - 14h30","14h30 - 15h30","15h30 - 16h30","16h30 - 17h00"];
 const STATS_HOURS_LABELS = ["9h", "10h", "11h", "12h", "13h30", "14h30", "15h30", "16h30", "17h"];
 const OP_KEYS = ['op1', 'op2', 'op3', 'op4'];
@@ -119,7 +119,7 @@ const ICONS = {
   saisie: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
   historique: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>',
   stats: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12.5" y="8" width="3" height="10"/><rect x="18" y="5" width="3" height="13"/></svg>',
-  params: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+  params: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
   users: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
   logout: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>',
   export: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>'
@@ -141,7 +141,7 @@ function setJSON(key, value){
 
 function getUsers() {
   let defaultUsers = [
-    {username:"admin", password:"123", role:"admin", nom:"Damien Laib", active: true},
+    {username:"admin", password:"123", role:"admin", nom:"Mokhtar", active: true},
     {username:"user", password:"123", role:"user", nom:"Consultant", active: true}
   ];
   return getJSON('users_list', defaultUsers);
@@ -189,7 +189,6 @@ function showToast(msg){
 
 // --- APP LOGIC ---
 function init(){
-  // Modification V8: Utilisation de localStorage pour maintenir la session active
   try { let u = window.localStorage.getItem(CACHE_PREFIX+'session'); if(u) currentUser = JSON.parse(u); } catch(e) {}
   if(currentUser) renderShell(); else renderLogin('');
 }
@@ -219,7 +218,6 @@ function renderLogin(err){
     if(user){ 
       if(!user.active) { renderLogin('Ce compte a été désactivé par un administrateur.'); return; }
       currentUser = user; 
-      // Modification V8: Sauvegarde persistante de la connexion
       try { window.localStorage.setItem(CACHE_PREFIX+'session', JSON.stringify(user)); } catch(e) {} 
       renderShell(); 
     } 
@@ -229,7 +227,6 @@ function renderLogin(err){
 
 function logout(){ 
   currentUser = null; 
-  // Modification V8: Suppression de la session locale
   try { window.localStorage.removeItem(CACHE_PREFIX+'session'); } catch(e) {} 
   renderLogin(''); 
 }
@@ -323,284 +320,4 @@ window.toggleValidation = (date, status) => {
 
 function renderSaisie(container, date){
   if(currentUser.role !== 'admin') return;
-  const data = getDay(date); const totals = computeTotals(data);
-  const ops = getOps();
-  const isDraft = data.status === 'draft';
-  const disabled = isDraft ? '' : 'disabled';
-  let badgeHtml = isDraft ? `<span class="badge orange">Brouillon</span>` : `<span class="badge green">Validé</span>`;
-  let actionBtns = isDraft ? `<button class="btn btn-success" onclick="toggleValidation('${date}', 'validated')">Verrouiller & Valider</button>` : `<button class="btn btn-warning" onclick="toggleValidation('${date}', 'draft')">Déverrouiller (Correction)</button>`;
-
-  window.handleInput = (h, k, val) => {
-    data.hours[h][k] = val; saveDay(date, data); let newTots = computeTotals(data);
-    OP_KEYS.forEach(opKey => document.getElementById(`tot_col_${opKey}`).innerText = newTots[opKey]);
-    document.getElementById('tot_gen').innerText = newTots.totalGeneral;
-    
-    let runCumul = 0;
-    HOURS.forEach(hour => {
-      let rTot = OP_KEYS.reduce((sum, opKey) => sum + (parseInt(data.hours[hour][opKey])||0), 0);
-      runCumul += rTot; let hId = hour.replace(/\s+/g,'');
-      if(document.getElementById(`tot_${hId}`)) document.getElementById(`tot_${hId}`).innerText = rTot;
-      if(document.getElementById(`cumul_${hId}`)) document.getElementById(`cumul_${hId}`).innerText = runCumul;
-    });
-
-    let maxVal = Math.max(...OP_KEYS.map(opKey => newTots[opKey]), 1);
-    OP_KEYS.forEach((opKey, index) => {
-      let safeName = ops[index].replace(/\s/g,'');
-      let bVal = document.getElementById(`chart_val_${safeName}`); let bBar = document.getElementById(`chart_bar_${safeName}`);
-      if(bVal) bVal.innerText = newTots[opKey]; if(bBar) bBar.style.height = (newTots[opKey] / maxVal * 100) + '%';
-    });
-  };
-  window.handleObs = (h, val) => { data.hours[h].obs = val; saveDay(date, data); };
-
-  let rows = ''; let cumulGeneral = 0;
-  HOURS.forEach(h => {
-    let rTot = OP_KEYS.reduce((sum, k) => sum + (parseInt(data.hours[h][k])||0), 0);
-    cumulGeneral += rTot; let hId = h.replace(/\s+/g,'');
-    rows += `<tr>
-      <td style="font-size:11px; font-weight:600; color:var(--ink-soft);">${h.replace(' - ','<br>')}</td>
-      ${OP_KEYS.map(k => `<td class="input-cell"><input type="text" value="${data.hours[h][k]}" oninput="handleInput('${h}', '${k}', this.value)" ${disabled} placeholder="-"></td>`).join('')}
-      <td class="total-col" id="tot_${hId}">${rTot}</td>
-      <td class="cumul-col" id="cumul_${hId}">${cumulGeneral}</td>
-      <td class="input-cell obs-cell"><input type="text" value="${data.hours[h].obs}" onchange="handleObs('${h}', this.value)" placeholder="ABS..." ${disabled}></td>
-    </tr>`;
-  });
-
-  container.innerHTML = `
-    <div class="card" style="padding-bottom: 24px; border-top: 4px solid var(--accent);">
-      <div class="flex-header no-print">
-        <div><h2 style="margin:0; color:var(--accent);">ESPACE SAISIE</h2><div style="font-size:13px; font-weight:bold; margin-top:4px;">Date : ${date.split('-').reverse().join('/')} ${badgeHtml}</div></div>
-        <div class="actions">${actionBtns}</div>
-      </div>
-      <div style="overflow-x:auto;">
-        <table>
-          <thead><tr><th>Horaires</th>${ops.map(o=>`<th style="text-align:center;">${o}</th>`).join('')}<th>Total/h</th><th>Cumul</th><th>Observations</th></tr></thead>
-          <tbody>
-            ${rows}
-            <tr class="total-row">
-              <td>TOTAL</td>
-              ${OP_KEYS.map(k=>`<td class="total-col" id="tot_col_${k}">${totals[k]}</td>`).join('')}
-              <td class="total-col" id="tot_gen" style="background:var(--accent);color:#fff;font-size:16px;">${totals.totalGeneral}</td>
-              <td class="cumul-col">-</td><td></td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <h3 style="margin: 20px 0 0; font-size:14px; text-align:center;" class="no-print">Répartition (Temps Réel)</h3>
-      <div class="no-print">${buildNativeChart(ops, OP_KEYS.map(k => totals[k]), 'green')}</div>
-    </div>
-  `;
-}
-
-window.editPastDate = (date) => { saisieDate = date; nav('saisie'); };
-window.loadHist = () => { histDate = document.getElementById('hist-date').value; nav('historique'); };
-
-function renderHistorique(container){
-  const data = getDay(histDate); const totals = computeTotals(data); const ops = getOps();
-  let rows = ''; let cumulGeneral = 0;
-  
-  HOURS.forEach(h => {
-    let rTot = OP_KEYS.reduce((sum, k) => sum + (parseInt(data.hours[h][k])||0), 0);
-    cumulGeneral += rTot;
-    rows += `<tr>
-      <td style="font-size:11px; font-weight:600; color:var(--ink-soft);">${h.replace(' - ','<br>')}</td>
-      ${OP_KEYS.map(k => `<td class="hist-cell">${data.hours[h][k] || '-'}</td>`).join('')}
-      <td class="total-col">${rTot}</td>
-      <td class="cumul-col">${cumulGeneral}</td>
-      <td class="hist-obs">${data.hours[h].obs || ''}</td>
-    </tr>`;
-  });
-
-  container.innerHTML = `
-    <div class="flex-header no-print">
-      <input type="date" id="hist-date" value="${histDate}" onchange="loadHist()">
-      <div class="actions">
-        <button class="btn btn-ghost" onclick="window.print()">${ICONS.export} PDF</button>
-        <button class="btn btn-ghost" onclick="exportCSV()">${ICONS.export} Excel</button>
-      </div>
-    </div>
-    <div class="card" style="padding-bottom: 24px; border-top: 4px solid var(--ink-soft);">
-      <div class="flex-header">
-        <div><h2 style="margin:0; color:var(--ink-soft);">MODE LECTURE SEULE</h2><div style="font-size:13px; font-weight:bold; margin-top:4px;">Date : ${histDate.split('-').reverse().join('/')} ${data.status === 'validated' ? '<span class="badge green">Validé</span>' : '<span class="badge orange">Brouillon</span>'}</div></div>
-      </div>
-      <div style="overflow-x:auto;">
-        <table>
-          <thead><tr><th>Horaires</th>${ops.map(o=>`<th style="text-align:center;">${o}</th>`).join('')}<th>Total/h</th><th>Cumul</th><th>Observations</th></tr></thead>
-          <tbody>
-            ${rows}
-            <tr class="total-row">
-              <td>TOTAL</td>
-              ${OP_KEYS.map(k=>`<td class="total-col">${totals[k]}</td>`).join('')}
-              <td class="total-col" style="background:var(--accent);color:#fff;font-size:16px;">${totals.totalGeneral}</td>
-              <td class="cumul-col">-</td><td></td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      ${(currentUser.role === 'admin') ? `
-        <div style="margin-top:20px; text-align:center;" class="no-print">
-          <button class="btn btn-warning" onclick="editPastDate('${histDate}')">Ouvrir cette date dans l'onglet Saisie</button>
-        </div>
-      ` : ''}
-    </div>
-  `;
-}
-
-window.updateStatRange = () => { statRangeStart = document.getElementById('stat-start').value; statRangeEnd = document.getElementById('stat-end').value; renderStats(document.getElementById('main')); };
-
-function renderStats(container){
-  let selectedData = getDay(statRangeEnd);
-  let valsHourly = HOURS.map(h => OP_KEYS.reduce((sum, k) => sum + (parseInt(selectedData.hours[h][k])||0), 0));
-  
-  let labelsDyn = []; let valsDyn = [];
-  let curr = new Date(statRangeStart); let end = new Date(statRangeEnd);
-  
-  if (curr <= end) {
-    let safeGuard = 0;
-    while(curr <= end && safeGuard < 60) {
-       let iso = curr.toISOString().slice(0,10); let d = getDay(iso); let tot = computeTotals(d).totalGeneral;
-       if(tot > 0) { labelsDyn.push(iso.slice(5).replace('-','/')); valsDyn.push(tot); }
-       curr.setDate(curr.getDate() + 1); safeGuard++;
-    }
-  }
-  if(labelsDyn.length === 0){ labelsDyn = ['-']; valsDyn = [0]; }
-
-  container.innerHTML = `
-    <div class="card no-print" style="background:var(--surface-2);">
-      <h3 style="margin-top:0; font-size:13px; color:var(--ink-soft);">Période d'analyse :</h3>
-      <div class="flex-header" style="margin-bottom:0;">
-        <div class="field" style="margin:0; flex:1;"><label>Du :</label><input type="date" id="stat-start" value="${statRangeStart}" onchange="updateStatRange()"></div>
-        <div class="field" style="margin:0; flex:1;"><label>Au :</label><input type="date" id="stat-end" value="${statRangeEnd}" onchange="updateStatRange()"></div>
-      </div>
-    </div>
-    <h2>Évolution Globale (Jours travaillés sur la période)</h2>
-    <div class="card">${buildNativeChart(labelsDyn, valsDyn, 'blue')}</div>
-    <h2>Production Horaire (du ${statRangeEnd.split('-').reverse().join('/')})</h2>
-    <div class="card">${buildNativeChart(STATS_HOURS_LABELS, valsHourly, 'green')}</div>
-  `;
-}
-
-function renderParams(container){
-  if(currentUser.role !== 'admin') return;
-  let ops = getOps(); let obj = getObj();
-  container.innerHTML = `
-    <div class="flex-header"><h2>Paramètres de l'Atelier</h2></div>
-    <div class="card">
-      <h3 style="margin-top:0;">Rendement Journalier</h3>
-      <div class="field"><label>Objectif (Total des pièces pour 8h30)</label><input type="number" id="setting_obj" value="${obj}" style="font-weight:bold; font-size:18px;"></div>
-      <hr style="border:0; border-top:1px solid var(--border); margin:24px 0;">
-      <h3>Noms des Opératrices</h3>
-      <div class="kpi-grid">
-        ${OP_KEYS.map((k, i) => `<div class="field"><label>Poste ${i+1}</label><input type="text" id="setting_op${i}" value="${ops[i]}" style="font-weight:bold;"></div>`).join('')}
-      </div>
-      <button class="btn btn-primary btn-block" style="margin-top:15px;" onclick="saveParams()">Enregistrer les paramètres</button>
-    </div>
-  `;
-  window.saveParams = () => {
-    let v = parseInt(document.getElementById('setting_obj').value); if(!isNaN(v) && v > 0) setJSON('objectif', v);
-    let newOps = [document.getElementById('setting_op0').value.trim(), document.getElementById('setting_op1').value.trim(), document.getElementById('setting_op2').value.trim(), document.getElementById('setting_op3').value.trim()];
-    setJSON('ops', newOps); showToast("Paramètres appliqués avec succès !");
-  };
-}
-
-window.toggleUserStatus = (index) => {
-  let users = getUsers();
-  users[index].active = !users[index].active;
-  setJSON('users_list', users);
-  renderUsers(document.getElementById('main'));
-};
-
-window.updateUserRole = (index, newRole) => {
-  let users = getUsers();
-  users[index].role = newRole;
-  setJSON('users_list', users);
-  showToast("Rôle mis à jour.");
-};
-
-window.deleteUser = (index) => {
-  if(!confirm("Supprimer cet utilisateur ?")) return;
-  let users = getUsers(); users.splice(index, 1); setJSON('users_list', users);
-  showToast("Utilisateur supprimé."); renderUsers(document.getElementById('main'));
-};
-
-window.addUser = () => {
-  let u = document.getElementById('nu_user').value.trim(); let p = document.getElementById('nu_pass').value.trim();
-  let n = document.getElementById('nu_nom').value.trim(); let r = document.getElementById('nu_role').value;
-  if(u && p && n) {
-    let users = getUsers();
-    if(users.find(x => x.username === u)) { showToast("Cet identifiant existe déjà !"); return; }
-    users.push({username:u, password:p, nom:n, role:r, active:true}); setJSON('users_list', users);
-    showToast("Utilisateur ajouté !"); renderUsers(document.getElementById('main'));
-  } else showToast("Remplissez tous les champs.");
-};
-
-function renderUsers(container) {
-  if(currentUser.role !== 'admin') return;
-  let usersList = getUsers();
-  let rows = usersList.map((u, index) => `
-    <tr>
-      <td><strong>${u.username}</strong><br><span style="font-size:10px; color:var(--ink-soft)">${u.nom}</span></td>
-      <td>
-        <select onchange="updateUserRole(${index}, this.value)" style="padding:4px; font-size:12px;" ${u.username === 'admin' ? 'disabled' : ''}>
-          <option value="user" ${u.role === 'user' ? 'selected' : ''}>Consultation</option>
-          <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Administrateur</option>
-        </select>
-      </td>
-      <td><span class="badge ${u.active ? 'green' : 'red'}">${u.active ? 'Actif' : 'Inactif'}</span></td>
-      <td>
-        ${u.username !== 'admin' ? `
-          <div style="display:flex; gap:4px;">
-            <button class="btn btn-ghost btn-sm" onclick="toggleUserStatus(${index})">${u.active ? 'Désactiver' : 'Activer'}</button>
-            <button class="btn btn-danger btn-sm" onclick="deleteUser(${index})">X</button>
-          </div>
-        ` : '-'}
-      </td>
-    </tr>
-  `).join('');
-
-  container.innerHTML = `
-    <div class="flex-header"><h2>Créer un nouveau compte</h2></div>
-    <div class="card">
-      <div class="kpi-grid">
-        <div class="field"><label>Identifiant de connexion</label><input type="text" id="nu_user"></div>
-        <div class="field"><label>Mot de passe</label><input type="text" id="nu_pass"></div>
-        <div class="field"><label>Nom complet</label><input type="text" id="nu_nom"></div>
-        <div class="field">
-          <label>Niveau d'accès</label>
-          <select id="nu_role">
-            <option value="user">USER (Consultation uniquement)</option>
-            <option value="admin">ADMIN (Responsable Magasin)</option>
-          </select>
-        </div>
-      </div>
-      <button class="btn btn-primary" onclick="addUser()">Créer l'utilisateur</button>
-    </div>
-    
-    <div class="flex-header" style="margin-top:24px;"><h2>Liste des utilisateurs</h2></div>
-    <div class="card" style="overflow-x:auto;">
-      <table>
-        <thead><tr><th>Utilisateur</th><th>Rôle</th><th>Statut</th><th>Actions</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </div>
-  `;
-}
-
-window.exportCSV = () => {
-  const data = getDay(histDate); const totals = computeTotals(data); const ops = getOps(); const obj = getObj();
-  let csv = `Horaires;${ops[0]};${ops[1]};${ops[2]};${ops[3]};Total Heure;Total Cumule;Observations\n`;
-  let cumul = 0;
-  HOURS.forEach(h => {
-    const d = data.hours[h]; const rTot = OP_KEYS.reduce((sum, k) => sum + (parseInt(d[k])||0), 0);
-    cumul += rTot; csv += `${h};${d.op1};${d.op2};${d.op3};${d.op4};${rTot};${cumul};"${d.obs}"\n`;
-  });
-  csv += `TOTAL;${totals.op1};${totals.op2};${totals.op3};${totals.op4};${totals.totalGeneral};-;Objectif Jour: ${obj}\n`;
-  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob); const a = document.createElement('a');
-  a.href = url; a.download = `TEK-TREND_${histDate}.csv`; a.click(); URL.revokeObjectURL(url);
-  showToast("Fichier Excel Téléchargé");
-};
-
-window.onload = init;
-</script>
-</body>
-</html>
+  const data = getDay(date); co
