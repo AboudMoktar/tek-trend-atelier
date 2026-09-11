@@ -242,6 +242,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 
 <script>
 /* ====================================================
@@ -884,6 +885,42 @@ function buildEmptyState(title, sub){
   </div>`;
 }
 
+// Dessine un graphique en barres sur un <canvas> caché et renvoie une image PNG
+// (base64) — utilisé pour intégrer un graphique lisible dans l'export Excel,
+// car les librairies Excel gratuites ne permettent pas de créer un graphique
+// natif éditable, seulement d'insérer une image.
+function renderChartToImage(labels, values, title){
+  const canvas = document.createElement('canvas');
+  canvas.width = 800; canvas.height = 420;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.fillStyle = '#0F3D66'; ctx.font = 'bold 18px Arial, sans-serif';
+  ctx.fillText(title, 20, 28);
+
+  const maxVal = Math.max(...values, 1);
+  const chartTop = 55, chartBottom = 360, chartLeft = 50, chartRight = 770;
+  const n = Math.max(values.length, 1);
+  const gap = (chartRight - chartLeft) / n;
+  const barWidth = Math.min(gap * 0.6, 70);
+
+  ctx.strokeStyle = '#cccccc'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(chartLeft, chartBottom); ctx.lineTo(chartRight, chartBottom); ctx.stroke();
+
+  values.forEach((v, i) => {
+    const h = maxVal > 0 ? (v / maxVal) * (chartBottom - chartTop) : 0;
+    const x = chartLeft + i * gap + (gap - barWidth) / 2;
+    const y = chartBottom - h;
+    ctx.fillStyle = '#1F8F5F';
+    ctx.fillRect(x, y, barWidth, Math.max(h, 1));
+    ctx.fillStyle = '#111827'; ctx.font = 'bold 13px Arial, sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(String(v), x + barWidth/2, y - 6);
+    ctx.font = '12px Arial, sans-serif';
+    ctx.fillText(labels[i] != null ? String(labels[i]) : '', x + barWidth/2, chartBottom + 20);
+  });
+  ctx.textAlign = 'left';
+  return canvas.toDataURL('image/png');
+}
+
 // --- ONGLET 1: TABLEAU DE BORD ---
 function renderDashboard(container){
   const data = getDay(getTodayISO()); const totals = computeTotals(data);
@@ -1141,6 +1178,7 @@ function renderHistorique(container){
       <div class="flex-header no-print">
         <div></div>
         <div class="actions">
+          <button class="btn btn-primary" onclick="exportPeriodExcel()">${ICONS.export} Excel (période complète)</button>
           <button class="btn btn-ghost" onclick="exportCSV()">${ICONS.export} Excel (jour sélectionné)</button>
         </div>
       </div>
@@ -1653,6 +1691,119 @@ function renderSessions(container){
     nav('sessions');
   };
 }
+
+// --- EXPORT EXCEL DE LA PÉRIODE (multi-feuilles + graphique) ---
+window.exportPeriodExcel = async () => {
+  if(typeof ExcelJS === 'undefined'){
+    showToast("Bibliothèque Excel indisponible — vérifiez votre connexion internet et réessayez.");
+    return;
+  }
+  const startISO = histPeriodStart, endISO = histPeriodEnd;
+  let curr = new Date(startISO+'T00:00:00'); let end = new Date(endISO+'T00:00:00');
+  if(isNaN(curr.getTime()) || isNaN(end.getTime()) || curr > end){
+    showToast("Période invalide : vérifiez les dates Du / Au.");
+    return;
+  }
+  showToast("Génération du fichier Excel…");
+
+  // Reconstitue la liste des jours réellement programmés sur la période
+  let list = [];
+  let g = 0;
+  while(curr <= end && g < 93){
+    let iso = toISODateLocal(curr);
+    let d = getDay(iso); let t = computeTotals(d); let o = getObjForDay(d);
+    if(o > 0) list.push({ iso, day: d, totals: t, obj: o, rend: o>0 ? (t.totalGeneral/o*100) : 0 });
+    curr.setDate(curr.getDate()+1); g++;
+  }
+  if(list.length === 0){ showToast("Aucune donnée sur cette période."); return; }
+
+  const ops = getOps();
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'TEK-TREND';
+  workbook.created = new Date();
+
+  const headerFill = {type:'pattern', pattern:'solid', fgColor:{argb:'FF0F3D66'}};
+  const headerFont = {bold:true, color:{argb:'FFFFFFFF'}};
+
+  // --- Feuille 1 : Détail par jour et par opératrice ---
+  const s1 = workbook.addWorksheet('Détail par jour');
+  s1.columns = [
+    {header:'Date', key:'date', width:14},
+    ...ops.map((name,i)=>({header:name, key:'op'+(i+1), width:13})),
+    {header:'Total', key:'total', width:10},
+    {header:'Objectif', key:'obj', width:10},
+    {header:'Rendement', key:'rend', width:12},
+    {header:'Statut', key:'statut', width:12},
+    {header:'Modifié par', key:'editby', width:18},
+  ];
+  s1.getRow(1).fill = headerFill; s1.getRow(1).font = headerFont;
+  list.forEach(item => {
+    s1.addRow({
+      date: item.iso.split('-').reverse().join('/'),
+      op1: item.totals.op1, op2: item.totals.op2, op3: item.totals.op3, op4: item.totals.op4,
+      total: item.totals.totalGeneral,
+      obj: Math.round(item.obj),
+      rend: Math.round(item.rend)+'%',
+      statut: item.day.status === 'validated' ? 'Validé' : 'Brouillon',
+      editby: item.day.lastEditBy || '—'
+    });
+  });
+  const totalRow = s1.addRow({
+    date: 'TOTAL',
+    op1: list.reduce((s,d)=>s+d.totals.op1,0),
+    op2: list.reduce((s,d)=>s+d.totals.op2,0),
+    op3: list.reduce((s,d)=>s+d.totals.op3,0),
+    op4: list.reduce((s,d)=>s+d.totals.op4,0),
+    total: list.reduce((s,d)=>s+d.totals.totalGeneral,0),
+    obj: Math.round(list.reduce((s,d)=>s+d.obj,0)),
+    rend:'', statut:'', editby:''
+  });
+  totalRow.font = {bold:true};
+  totalRow.fill = {type:'pattern', pattern:'solid', fgColor:{argb:'FFE9F1F9'}};
+
+  // --- Feuille 2 : Classement des opératrices ---
+  const s2 = workbook.addWorksheet('Classement opératrices');
+  s2.columns = [
+    {header:'#', key:'rank', width:6},
+    {header:'Opératrice', key:'nom', width:18},
+    {header:'Total pièces', key:'total', width:14},
+    {header:'Part', key:'part', width:10},
+  ];
+  s2.getRow(1).fill = headerFill; s2.getRow(1).font = headerFont;
+  const perOpTotal = OP_KEYS.map(k => list.reduce((s,d)=>s+d.totals[k],0));
+  const grandTotal = perOpTotal.reduce((s,v)=>s+v,0);
+  const ranking = ops.map((name,i)=>({name, total: perOpTotal[i]})).sort((a,b)=>b.total-a.total);
+  ranking.forEach((r,i) => {
+    s2.addRow({ rank:i+1, nom:r.name, total:r.total, part: grandTotal>0 ? Math.round(r.total/grandTotal*100)+'%' : '0%' });
+  });
+
+  // --- Feuille 3 : Graphique (image intégrée, production totale par jour) ---
+  try{
+    const chartLabels = list.map(d => d.iso.split('-').reverse().slice(0,2).join('/'));
+    const chartValues = list.map(d => d.totals.totalGeneral);
+    const chartImg = renderChartToImage(chartLabels, chartValues, 'Production totale par jour — '+startISO.split('-').reverse().join('/')+' au '+endISO.split('-').reverse().join('/'));
+    const imageId = workbook.addImage({ base64: chartImg, extension: 'png' });
+    const s3 = workbook.addWorksheet('Graphique');
+    s3.addImage(imageId, { tl: { col: 0, row: 0 }, ext: { width: 800, height: 420 } });
+  }catch(err){
+    console.error('Erreur génération graphique Excel :', err);
+    // On continue sans le graphique plutôt que de bloquer tout l'export
+  }
+
+  try{
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `TEK-TREND_periode_${startISO}_au_${endISO}.xlsx`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 3000);
+    showToast("Fichier Excel téléchargé");
+  }catch(err){
+    console.error('Erreur génération fichier Excel :', err);
+    showToast("Erreur lors de la génération du fichier Excel.");
+  }
+};
 
 // --- EXPORT CSV ---
 window.exportCSV = () => {
