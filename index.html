@@ -889,7 +889,7 @@ function buildEmptyState(title, sub){
 // (base64) — utilisé pour intégrer un graphique lisible dans l'export Excel,
 // car les librairies Excel gratuites ne permettent pas de créer un graphique
 // natif éditable, seulement d'insérer une image.
-function renderChartToImage(labels, values, title){
+function renderChartToImage(labels, values, title, barColor){
   const canvas = document.createElement('canvas');
   canvas.width = 800; canvas.height = 420;
   const ctx = canvas.getContext('2d');
@@ -910,7 +910,7 @@ function renderChartToImage(labels, values, title){
     const h = maxVal > 0 ? (v / maxVal) * (chartBottom - chartTop) : 0;
     const x = chartLeft + i * gap + (gap - barWidth) / 2;
     const y = chartBottom - h;
-    ctx.fillStyle = '#1F8F5F';
+    ctx.fillStyle = barColor || '#1F8F5F';
     ctx.fillRect(x, y, barWidth, Math.max(h, 1));
     ctx.fillStyle = '#111827'; ctx.font = 'bold 13px Arial, sans-serif'; ctx.textAlign = 'center';
     ctx.fillText(String(v), x + barWidth/2, y - 6);
@@ -919,6 +919,33 @@ function renderChartToImage(labels, values, title){
   });
   ctx.textAlign = 'left';
   return canvas.toDataURL('image/png');
+}
+
+// Logo TEK-TREND dessiné (même identité visuelle que l'application), utilisé
+// en en-tête de chaque feuille de l'export Excel.
+function renderLogoImage(){
+  const canvas = document.createElement('canvas');
+  canvas.width = 320; canvas.height = 90;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.font = 'bold 30px Arial, sans-serif';
+  ctx.fillStyle = '#0F3D66'; ctx.fillText('TEK', 6, 40);
+  const tekWidth = ctx.measureText('TEK ').width;
+  ctx.fillStyle = '#111827'; ctx.fillText('TREND', 6 + tekWidth, 40);
+  ctx.font = '12px Arial, sans-serif'; ctx.fillStyle = '#5B6472';
+  ctx.fillText('T E C H N I C A L   W E A R', 7, 62);
+  return canvas.toDataURL('image/png');
+}
+
+// Réserve l'espace du logo (lignes 1-3) et ajoute un titre de feuille (ligne 4).
+// Le tableau de données doit commencer à la ligne 6 après cet appel.
+function addBrandHeader(sheet, title, numCols){
+  sheet.getRow(1).height = 18; sheet.getRow(2).height = 18; sheet.getRow(3).height = 18;
+  const titleCell = sheet.getCell(4, 1);
+  titleCell.value = title;
+  titleCell.font = { bold: true, size: 12, color: { argb: 'FF0F3D66' } };
+  try{ sheet.mergeCells(4, 1, 4, Math.max(numCols,1)); }catch(e){}
+  sheet.getRow(5).height = 6;
 }
 
 // --- ONGLET 1: TABLEAU DE BORD ---
@@ -1705,6 +1732,7 @@ window.exportPeriodExcel = async () => {
     return;
   }
   showToast("Génération du fichier Excel…");
+  const periodLabel = startISO.split('-').reverse().join('/') + ' au ' + endISO.split('-').reverse().join('/');
 
   // Reconstitue la liste des jours réellement programmés sur la période
   let list = [];
@@ -1724,19 +1752,26 @@ window.exportPeriodExcel = async () => {
 
   const headerFill = {type:'pattern', pattern:'solid', fgColor:{argb:'FF0F3D66'}};
   const headerFont = {bold:true, color:{argb:'FFFFFFFF'}};
+  const logoImg = renderLogoImage();
+  const logoImageId = workbook.addImage({ base64: logoImg, extension: 'png' });
+  const DATA_START_ROW = 6; // ligne 1-3 logo, 4 titre, 5 espace, 6 en-tête du tableau
 
   // --- Feuille 1 : Détail par jour et par opératrice ---
   const s1 = workbook.addWorksheet('Détail par jour');
   s1.columns = [
-    {header:'Date', key:'date', width:14},
-    ...ops.map((name,i)=>({header:name, key:'op'+(i+1), width:13})),
-    {header:'Total', key:'total', width:10},
-    {header:'Objectif', key:'obj', width:10},
-    {header:'Rendement', key:'rend', width:12},
-    {header:'Statut', key:'statut', width:12},
-    {header:'Modifié par', key:'editby', width:18},
+    {key:'date', width:14},
+    ...ops.map((name,i)=>({key:'op'+(i+1), width:13})),
+    {key:'total', width:10},
+    {key:'obj', width:10},
+    {key:'rend', width:12},
+    {key:'statut', width:12},
+    {key:'editby', width:18},
   ];
-  s1.getRow(1).fill = headerFill; s1.getRow(1).font = headerFont;
+  addBrandHeader(s1, `Détail par jour — Période du ${periodLabel}`, s1.columns.length);
+  s1.addImage(logoImageId, { tl:{col:0,row:0}, ext:{width:150,height:42} });
+  const h1 = s1.getRow(DATA_START_ROW);
+  h1.values = ['Date', ...ops, 'Total', 'Objectif', 'Rendement', 'Statut', 'Modifié par'];
+  h1.fill = headerFill; h1.font = headerFont;
   list.forEach(item => {
     s1.addRow({
       date: item.iso.split('-').reverse().join('/'),
@@ -1761,30 +1796,42 @@ window.exportPeriodExcel = async () => {
   totalRow.font = {bold:true};
   totalRow.fill = {type:'pattern', pattern:'solid', fgColor:{argb:'FFE9F1F9'}};
 
-  // --- Feuille 2 : Classement des opératrices ---
+  // --- Feuille 2 : Classement des opératrices (+ graphique) ---
   const s2 = workbook.addWorksheet('Classement opératrices');
   s2.columns = [
-    {header:'#', key:'rank', width:6},
-    {header:'Opératrice', key:'nom', width:18},
-    {header:'Total pièces', key:'total', width:14},
-    {header:'Part', key:'part', width:10},
+    {key:'rank', width:14},
+    {key:'nom', width:18},
+    {key:'total', width:14},
+    {key:'part', width:10},
   ];
-  s2.getRow(1).fill = headerFill; s2.getRow(1).font = headerFont;
+  addBrandHeader(s2, `Classement des opératrices — Période du ${periodLabel}`, s2.columns.length);
+  s2.addImage(logoImageId, { tl:{col:0,row:0}, ext:{width:150,height:42} });
+  const h2 = s2.getRow(DATA_START_ROW);
+  h2.values = ['Classement', 'Opératrice', 'Total pièces', 'Part'];
+  h2.fill = headerFill; h2.font = headerFont;
   const perOpTotal = OP_KEYS.map(k => list.reduce((s,d)=>s+d.totals[k],0));
   const grandTotal = perOpTotal.reduce((s,v)=>s+v,0);
   const ranking = ops.map((name,i)=>({name, total: perOpTotal[i]})).sort((a,b)=>b.total-a.total);
   ranking.forEach((r,i) => {
     s2.addRow({ rank:i+1, nom:r.name, total:r.total, part: grandTotal>0 ? Math.round(r.total/grandTotal*100)+'%' : '0%' });
   });
-
-  // --- Feuille 3 : Graphique (image intégrée, production totale par jour) ---
   try{
+    const rankChartImg = renderChartToImage(ranking.map(r=>r.name), ranking.map(r=>r.total), 'Classement des opératrices (total pièces)', '#0F3D66');
+    const rankImgId = workbook.addImage({ base64: rankChartImg, extension: 'png' });
+    const rankChartRow = DATA_START_ROW + ranking.length + 3;
+    s2.addImage(rankImgId, { tl:{col:0,row:rankChartRow}, ext:{width:700,height:360} });
+  }catch(err){ console.error('Erreur graphique classement :', err); }
+
+  // --- Feuille 3 : Graphique de la production totale par jour ---
+  try{
+    const s3 = workbook.addWorksheet('Graphique production');
+    addBrandHeader(s3, `Production totale par jour — Période du ${periodLabel}`, 10);
+    s3.addImage(logoImageId, { tl:{col:0,row:0}, ext:{width:150,height:42} });
     const chartLabels = list.map(d => d.iso.split('-').reverse().slice(0,2).join('/'));
     const chartValues = list.map(d => d.totals.totalGeneral);
-    const chartImg = renderChartToImage(chartLabels, chartValues, 'Production totale par jour — '+startISO.split('-').reverse().join('/')+' au '+endISO.split('-').reverse().join('/'));
+    const chartImg = renderChartToImage(chartLabels, chartValues, 'Production totale par jour', '#1F8F5F');
     const imageId = workbook.addImage({ base64: chartImg, extension: 'png' });
-    const s3 = workbook.addWorksheet('Graphique');
-    s3.addImage(imageId, { tl: { col: 0, row: 0 }, ext: { width: 800, height: 420 } });
+    s3.addImage(imageId, { tl: { col: 0, row: DATA_START_ROW }, ext: { width: 800, height: 420 } });
   }catch(err){
     console.error('Erreur génération graphique Excel :', err);
     // On continue sans le graphique plutôt que de bloquer tout l'export
