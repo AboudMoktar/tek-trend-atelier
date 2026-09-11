@@ -367,7 +367,7 @@ function attachFirebaseDataListeners(){
     setSyncBadge('ok');
     if(!currentUser) return;
     if(fbFirstLoad){ fbFirstLoad = false; nav(activeTab); }
-    else if(activeTab !== 'saisie'){ nav(activeTab); }
+    else if(activeTab !== 'saisie' && activeTab !== 'sessions'){ nav(activeTab); }
   }, function(err){
     console.error('Erreur Firebase (lecture) :', err);
     setSyncBadge('error');
@@ -425,7 +425,11 @@ function watchSessions(){
       forceLocalLogout();
       return;
     }
-    if(currentUser && activeTab === 'sessions') nav('sessions');
+    if(currentUser && activeTab === 'sessions'){
+      const formZone = document.getElementById('user-form-zone');
+      const formOpen = formZone && formZone.innerHTML.trim() !== '';
+      if(!formOpen) nav('sessions');
+    }
   });
 }
 function writeMySession(){
