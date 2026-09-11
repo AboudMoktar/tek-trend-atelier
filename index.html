@@ -83,6 +83,8 @@
   .kpi .label{font-size:11.5px;color:var(--ink-soft);font-weight:600;margin-bottom:5px;}
   .kpi .value{font-family:var(--mono);font-size:22px;font-weight:700;}
   .kpi .value.good{color:var(--good);} .kpi .value.warn{color:var(--warn);} .kpi .value.bad{color:var(--bad);}
+  .hour-rend{font-size:10px;font-weight:800;margin-top:2px;}
+  .hour-rend.good{color:var(--good);} .hour-rend.warn{color:var(--warn);} .hour-rend.bad{color:var(--bad);}
   
   table{width:100%;border-collapse:collapse;font-size:13px;}
   th{text-align:left;font-size:11px;background:var(--surface-2);color:var(--ink-soft);padding:10px 6px;border-bottom:2px solid var(--border);}
@@ -270,7 +272,31 @@ let toastTimer = null;
 
 // Variables Globales
 function getOps() { return getJSON('ops', ["Hela", "Marwa", "Mabrouka", "Wahida"]); }
-function getObj() { return getJSON('objectif', 800); }
+function getObjHoraireOp() { return getJSON('obj_horaire_op', 20); } // pièces/heure/opératrice (réf: 3 min/pièce)
+function getHourDurationMin(h) { return HOURS.indexOf(h) === HOURS.length - 1 ? 30 : 60; } // dernier créneau = 30 min
+function isAbsentMark(v){
+  if(v === undefined || v === null) return false;
+  const t = String(v).trim();
+  if(t === '') return false; // case vide = pas encore saisi, pas une absence
+  return isNaN(parseInt(t)); // texte non-numérique (ABS, CONGÉ...) = absence
+}
+function getActiveOpCount(h, dayData){
+  if(!dayData || !dayData.hours || !dayData.hours[h]) return OP_KEYS.length;
+  return OP_KEYS.filter(k => !isAbsentMark(dayData.hours[h][k])).length;
+}
+function getHourTarget(h, dayData) {
+  const activeCount = getActiveOpCount(h, dayData);
+  return Math.round(getObjHoraireOp() * activeCount * (getHourDurationMin(h) / 60));
+}
+function getObjForDay(dayData){
+  return HOURS.reduce((s, h) => s + getHourTarget(h, dayData), 0);
+}
+function getObj() {
+  // Référence théorique : 4 opératrices, aucune absence (utilisée uniquement à titre indicatif)
+  const totalMin = HOURS.reduce((s, h) => s + getHourDurationMin(h), 0); // 510 min = 8h30
+  return Math.round(getObjHoraireOp() * OP_KEYS.length * (totalMin / 60));
+}
+function rendClass(pct) { return pct >= 90 ? 'good' : (pct >= 70 ? 'warn' : 'bad'); }
 
 function getDay(date){
   let d = getJSON('prod_'+date, null);
@@ -389,7 +415,7 @@ function buildNativeChart(labels, values, colorClass = '') {
 // --- ONGLET 1: TABLEAU DE BORD ---
 function renderDashboard(container){
   const data = getDay(getTodayISO()); const totals = computeTotals(data);
-  const obj = getObj(); const ops = getOps();
+  const obj = getObjForDay(data); const ops = getOps();
   const rendement = obj > 0 ? (totals.totalGeneral / obj * 100).toFixed(1) : 0;
   const color = rendement >= 90 ? 'good' : (rendement >= 70 ? 'warn' : 'bad');
 
@@ -416,7 +442,7 @@ window.toggleValidation = (date, status) => {
 
 function renderSaisie(container, date){
   const data = getDay(date); const totals = computeTotals(data);
-  const ops = getOps(); const obj = getObj();
+  const ops = getOps(); const obj = getObjForDay(data);
   const isAdmin = currentUser.role === 'admin';
   const isDraft = data.status === 'draft';
   const disabled = (isAdmin && isDraft) ? '' : 'disabled';
@@ -434,9 +460,19 @@ function renderSaisie(container, date){
     HOURS.forEach(hour => {
       let rTot = OP_KEYS.reduce((sum, opKey) => sum + (parseInt(data.hours[hour][opKey])||0), 0);
       runCumul += rTot; let hId = hour.replace(/\s+/g,'');
-      if(document.getElementById(`tot_${hId}`)) document.getElementById(`tot_${hId}`).innerText = rTot;
+      let target = getHourTarget(hour, data);
+      let pct = target > 0 ? Math.round(rTot / target * 100) : 0;
+      let cell = document.getElementById(`tot_${hId}`);
+      if(cell) cell.innerHTML = `${rTot}<div class="hour-rend ${rendClass(pct)}">${pct}%</div>`;
       if(document.getElementById(`cumul_${hId}`)) document.getElementById(`cumul_${hId}`).innerText = runCumul;
     });
+
+    let newObj = getObjForDay(data);
+    let newRend = newObj > 0 ? Math.round(newTots.totalGeneral / newObj * 100) : 0;
+    let dayBadge = document.getElementById('day-rend-badge');
+    if(dayBadge){ dayBadge.textContent = newRend + '%'; dayBadge.className = 'hour-rend ' + rendClass(newRend); }
+    let dayObjLbl = document.getElementById('day-obj-label');
+    if(dayObjLbl) dayObjLbl.textContent = newObj;
 
     let maxVal = Math.max(...OP_KEYS.map(opKey => newTots[opKey]), 1);
     OP_KEYS.forEach((opKey, index) => {
@@ -447,15 +483,18 @@ function renderSaisie(container, date){
     });
   };
   window.handleObs = (h, val) => { data.hours[h].obs = val; saveDay(date, data); };
+  window.changeSaisieDate = (val) => { if(val){ saisieDate = val; nav('saisie'); } };
 
   let rows = ''; let cumulGeneral = 0;
   HOURS.forEach(h => {
     let rTot = OP_KEYS.reduce((sum, k) => sum + (parseInt(data.hours[h][k])||0), 0);
     cumulGeneral += rTot; let hId = h.replace(/\s+/g,'');
+    let hTarget = getHourTarget(h, data);
+    let hPct = hTarget > 0 ? Math.round(rTot / hTarget * 100) : 0;
     rows += `<tr>
       <td style="font-size:11px; font-weight:600; color:var(--ink-soft);">${h.replace(' - ','<br>')}</td>
       ${OP_KEYS.map(k => `<td class="input-cell"><input type="text" value="${data.hours[h][k]}" oninput="handleInput('${h}', '${k}', this.value)" ${disabled} placeholder="-"></td>`).join('')}
-      <td class="total-col" id="tot_${hId}">${rTot}</td>
+      <td class="total-col" id="tot_${hId}">${rTot}<div class="hour-rend ${rendClass(hPct)}">${hPct}%</div></td>
       <td class="cumul-col" id="cumul_${hId}">${cumulGeneral}</td>
       <td class="input-cell obs-cell"><input type="text" value="${data.hours[h].obs}" onchange="handleObs('${h}', this.value)" placeholder="Cause, ABS..." ${disabled}></td>
     </tr>`;
@@ -467,8 +506,12 @@ function renderSaisie(container, date){
         <div>
           <h2 style="margin:0; color:var(--accent);">ESPACE SAISIE</h2>
           <div style="font-size:13px; font-weight:bold; margin-top:4px;">Date : ${date.split('-').reverse().join('/')} ${badgeHtml}</div>
+          <div style="font-size:12.5px; color:var(--ink-soft); margin-top:4px;">Objectif jour (ajusté absences) : <b id="day-obj-label">${obj}</b> pièces · Rendement : <span id="day-rend-badge" class="hour-rend ${rendClass(obj>0?Math.round(totals.totalGeneral/obj*100):0)}" style="font-size:13px;">${obj>0?Math.round(totals.totalGeneral/obj*100):0}%</span></div>
         </div>
-        <div class="actions">${actionBtns}</div>
+        <div class="actions" style="align-items:center;">
+          ${isAdmin ? `<input type="date" value="${date}" max="${getTodayISO()}" onchange="changeSaisieDate(this.value)" style="padding:8px 10px; border:1px solid var(--border); border-radius:8px;">` : ''}
+          ${actionBtns}
+        </div>
       </div>
       
       <div style="overflow-x:auto;">
@@ -505,14 +548,19 @@ function renderHistorique(container){
   HOURS.forEach(h => {
     let rTot = OP_KEYS.reduce((sum, k) => sum + (parseInt(data.hours[h][k])||0), 0);
     cumulGeneral += rTot;
+    let hTarget = getHourTarget(h, data);
+    let hPct = hTarget > 0 ? Math.round(rTot / hTarget * 100) : 0;
     rows += `<tr>
       <td style="font-size:11px; font-weight:600; color:var(--ink-soft);">${h.replace(' - ','<br>')}</td>
       ${OP_KEYS.map(k => `<td class="hist-cell">${data.hours[h][k] || '-'}</td>`).join('')}
-      <td class="total-col">${rTot}</td>
+      <td class="total-col">${rTot}<div class="hour-rend ${rendClass(hPct)}">${hPct}%</div></td>
       <td class="cumul-col">${cumulGeneral}</td>
       <td class="hist-obs">${data.hours[h].obs || ''}</td>
     </tr>`;
   });
+
+  const obj = getObjForDay(data);
+  const rendJour = obj > 0 ? Math.round(totals.totalGeneral / obj * 100) : 0;
 
   container.innerHTML = `
     <div class="flex-header no-print">
@@ -527,7 +575,7 @@ function renderHistorique(container){
       <div class="flex-header">
         <div>
           <h2 style="margin:0; color:var(--ink-soft);">MODE CONSULTATION (Lecture Seule)</h2>
-          <div style="font-size:13px; font-weight:bold; margin-top:4px;">Date : ${histDate.split('-').reverse().join('/')} ${data.status === 'validated' ? '<span class="badge green">Validé</span>' : '<span class="badge orange">Brouillon</span>'}</div>
+          <div style="font-size:13px; font-weight:bold; margin-top:4px;">Date : ${histDate.split('-').reverse().join('/')} ${data.status === 'validated' ? '<span class="badge green">Validé</span>' : '<span class="badge orange">Brouillon</span>'} · Rendement jour : <span class="hour-rend ${rendClass(rendJour)}" style="font-size:13px;">${rendJour}%</span></div>
         </div>
       </div>
       
@@ -551,7 +599,7 @@ function renderHistorique(container){
       
       ${(currentUser.role === 'admin') ? `
         <div style="margin-top:20px; text-align:center;" class="no-print">
-          <button class="btn btn-warning" onclick="editPastDate('${histDate}')">Ouvrir cette date dans l'onglet Saisie</button>
+          <button class="btn btn-warning" onclick="editPastDate('${histDate}')">✏️ Saisir / corriger les données de ce jour</button>
         </div>
       ` : ''}
     </div>
@@ -610,14 +658,19 @@ function renderStats(container){
 
 // --- ONGLET 5: PARAMETRES (ADMIN) ---
 function renderParams(container){
-  let ops = getOps(); let obj = getObj();
+  let ops = getOps(); let rate = getObjHoraireOp(); let obj = getObj();
   container.innerHTML = `
     <div class="flex-header"><h2>Paramètres de l'Atelier</h2></div>
     <div class="card">
-      <h3 style="margin-top:0;">Rendement Journalier</h3>
+      <h3 style="margin-top:0;">Cadence de Référence</h3>
       <div class="field">
-        <label>Objectif (Total des pièces pour 8h30)</label>
-        <input type="number" id="setting_obj" value="${obj}" style="font-weight:bold; font-size:18px;">
+        <label>Pièces / heure / opératrice</label>
+        <input type="number" id="setting_rate" value="${rate}" style="font-weight:bold; font-size:18px;">
+      </div>
+      <div style="font-size:12.5px; color:var(--ink-soft); margin-top:6px; line-height:1.5;">
+        Référence actuelle : <b>3 min/pièce</b> (soit ${rate} pièces/h et par opératrice).<br>
+        Objectif théorique avec les ${OP_KEYS.length} opératrices présentes : <b>${obj} pièces/jour</b>.<br>
+        <b>En cas d'absence</b> : tapez <code>ABS</code> (ou tout texte) dans la case d'une opératrice au lieu d'un chiffre — l'objectif de cette heure-là est automatiquement réduit en conséquence, sur le Tableau de bord, la Saisie et l'Historique.
       </div>
       
       <hr style="border:0; border-top:1px solid var(--border); margin:24px 0;">
@@ -639,8 +692,8 @@ function renderParams(container){
   `;
   
   window.saveParams = () => {
-    let v = parseInt(document.getElementById('setting_obj').value);
-    if(!isNaN(v) && v > 0) setJSON('objectif', v);
+    let v = parseInt(document.getElementById('setting_rate').value);
+    if(!isNaN(v) && v > 0) setJSON('obj_horaire_op', v);
     
     let newOps = [
       document.getElementById('setting_op0').value.trim() || "Opératrice 1",
@@ -650,12 +703,13 @@ function renderParams(container){
     ];
     setJSON('ops', newOps);
     showToast("Paramètres appliqués avec succès !");
+    nav('params');
   };
 }
 
 // --- EXPORT CSV ---
 window.exportCSV = () => {
-  const data = getDay(histDate); const totals = computeTotals(data); const ops = getOps(); const obj = getObj();
+  const data = getDay(histDate); const totals = computeTotals(data); const ops = getOps(); const obj = getObjForDay(data);
   let csv = `Horaires;${ops[0]};${ops[1]};${ops[2]};${ops[3]};Total Heure;Total Cumule;Observations\n`;
   let cumul = 0;
   HOURS.forEach(h => {
