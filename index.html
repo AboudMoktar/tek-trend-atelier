@@ -16,18 +16,26 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
   :root{
-    --bg:#EEF1F4; --surface:#FFFFFF; --surface-2:#F5F7F9;
-    --ink:#1C2430; --ink-soft:#5B6472; --ink-faint:#8992A0;
-    --accent:#1a4b82; /* Bleu TEK-TREND */
+    --bg:#F3F5F8; --surface:#FFFFFF; --surface-2:#F6F8FA; --surface-3:#EEF2F6;
+    --ink:#111827; --ink-soft:#5B6472; --ink-faint:#94A0AD;
+    --accent:#0F3D66; --accent-2:#1a5c99; --accent-bg:#E9F1F9;
+    /* 4 paliers de rendement (validés) : critique / insuffisant / bon / atteint-dépassé */
+    --crit:#D64545; --crit-bg:#FCEAEA;
+    --warn:#D9822B; --warn-bg:#FDF1E3;
     --good:#1F8F5F; --good-bg:#E7F5EE;
-    --warn:#C8790C; --warn-bg:#FCF1DE; --bad:#C43B32; --bad-bg:#FBEAE8;
-    --border:#DEE3E9; --radius:10px;
+    --excellent:#0F3D66; --excellent-bg:#E9F1F9;
+    --bad:#D64545; --bad-bg:#FCEAEA; /* alias de compatibilité (= --crit) */
+    --border:#E4E8ED; --border-soft:#EDF0F3; --radius:14px; --radius-sm:9px;
     --sans:'Inter',system-ui,sans-serif; --mono:'IBM Plex Mono',monospace;
+    --shadow-sm:0 1px 2px rgba(15,23,42,.04), 0 1px 1px rgba(15,23,42,.03);
+    --shadow-md:0 4px 16px rgba(15,23,42,.06), 0 1px 3px rgba(15,23,42,.05);
+    --ease:cubic-bezier(.4,0,.2,1);
   }
   *{box-sizing:border-box;}
-  html,body{margin:0;padding:0;font-family:var(--sans);background:var(--bg);color:var(--ink);-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;font-family:var(--sans);background:var(--bg);color:var(--ink);-webkit-tap-highlight-color:transparent;-webkit-font-smoothing:antialiased;}
   input,select,button{font-family:inherit;font-size:15px;}
   #app{min-height:100vh;display:flex;flex-direction:column;}
+  h2,h3{letter-spacing:-.01em;}
   
   /* --- LOGO CSS TEK-TREND --- */
   .logo-wrap { display:flex; flex-direction:column; align-items:center; line-height:1; }
@@ -43,58 +51,90 @@
   .topbar .logo-sub { font-size:8px; }
 
   /* --- LOGIN --- */
-  .login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:#fff;}
-  .login-card{background:var(--surface);border-radius:16px;padding:32px 28px;width:100%;max-width:380px;box-shadow:0 20px 50px rgba(0,0,0,.1);}
-  .field{margin-bottom:14px;}
-  .field label{display:block;font-size:13px;font-weight:600;color:var(--ink-soft);margin-bottom:6px;}
-  .field input{width:100%;padding:11px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--surface-2);color:var(--ink);}
-  .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:none;border-radius:8px;padding:11px 16px;font-weight:600;font-size:14.5px;cursor:pointer;}
-  .btn-primary{background:var(--accent);color:#fff;}
+  .login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:linear-gradient(160deg,#F3F5F8 0%,#E8EDF3 100%);}
+  .login-card{background:var(--surface);border-radius:20px;padding:36px 30px;width:100%;max-width:380px;box-shadow:var(--shadow-md);border:1px solid var(--border-soft);}
+  .field{margin-bottom:16px;}
+  .field label{display:block;font-size:12.5px;font-weight:700;color:var(--ink-soft);margin-bottom:6px;text-transform:uppercase;letter-spacing:.03em;}
+  .field input{width:100%;padding:13px 14px;border:1.5px solid var(--border);border-radius:10px;background:var(--surface-2);color:var(--ink);transition:border-color .15s var(--ease),background .15s var(--ease);}
+  .field input:focus{outline:none;border-color:var(--accent-2);background:#fff;box-shadow:0 0 0 3px var(--accent-bg);}
+  .pw-field{position:relative;}
+  .pw-toggle{position:absolute;right:6px;top:6px;bottom:6px;background:none;border:none;color:var(--ink-faint);cursor:pointer;padding:0 10px;display:flex;align-items:center;}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:none;border-radius:10px;padding:12px 18px;font-weight:700;font-size:14.5px;cursor:pointer;transition:transform .1s var(--ease),box-shadow .15s var(--ease),background .15s var(--ease);}
+  .btn:active{transform:scale(.97);}
+  .btn-primary{background:var(--accent);color:#fff;box-shadow:0 2px 8px rgba(15,61,102,.25);}
+  .btn-primary:hover{background:var(--accent-2);}
   .btn-ghost{background:var(--surface-2);color:var(--ink);border:1.5px solid var(--border);}
   .btn-success{background:var(--good);color:#fff;}
   .btn-warning{background:var(--warn);color:#fff;}
   .btn-block{width:100%;margin-top:6px;}
-  .login-error{background:var(--bad-bg);color:var(--bad);padding:10px 12px;border-radius:8px;font-size:13.5px;margin-bottom:14px;display:none; text-align:center; font-weight:bold;}
+  .login-error{background:var(--bad-bg);color:var(--bad);padding:11px 14px;border-radius:10px;font-size:13.5px;margin-bottom:16px;display:none; text-align:center; font-weight:700;}
   
   /* --- SHELL --- */
-  .topbar{background:#fff; color:var(--ink); padding:10px 18px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:20; border-bottom:1px solid var(--border); box-shadow:0 2px 10px rgba(0,0,0,0.05);}
-  .user-chip{display:flex;align-items:center;gap:8px;font-size:12.5px;}
-  .sync-badge{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:20px;white-space:nowrap;}
-  .sync-badge.sync-off{background:rgba(255,255,255,.12);color:rgba(255,255,255,.65);}
-  .sync-badge.sync-connecting{background:rgba(255,255,255,.12);color:#F5C46B;}
-  .sync-badge.sync-ok{background:rgba(31,143,95,.2);color:#4ADE9B;}
-  .sync-badge.sync-error{background:rgba(196,59,50,.25);color:#FF8A80;}
-  .user-chip .role{background:var(--surface-2); color:var(--ink); padding:4px 10px; border-radius:20px; font-size:11px; font-weight:700;}
-  .user-chip button{background:none;border:none;color:var(--bad);cursor:pointer;padding:4px;}
-  main{flex:1;padding:16px 14px 88px; max-width: 900px; margin: 0 auto; width: 100%;}
-  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:14px;overflow-x:auto; box-shadow:0 2px 5px rgba(0,0,0,0.02);}
-  .card h2{font-size:15px;margin:0 0 12px;font-weight:700;}
+  .topbar{background:#fff; color:var(--ink); padding:10px 14px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:20; border-bottom:1px solid var(--border); box-shadow:var(--shadow-sm); flex-wrap:wrap; row-gap:6px; gap:8px;}
+  .user-chip{display:flex;align-items:center;gap:6px;font-size:12.5px;flex-shrink:0;}
+  .sync-wrap{display:flex;flex-direction:column;align-items:flex-end;gap:1px;}
+  .sync-badge{font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;}
+  .sync-badge::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor;flex-shrink:0;}
+  .sync-badge.sync-off{background:var(--surface-3);color:var(--ink-faint);}
+  .sync-badge.sync-connecting{background:var(--warn-bg);color:var(--warn);}
+  .sync-badge.sync-connecting::before{animation:pulse 1s infinite;}
+  .sync-badge.sync-ok{background:var(--good-bg);color:var(--good);}
+  .sync-badge.sync-error{background:var(--bad-bg);color:var(--bad);}
+  .sync-time{font-size:9px;color:var(--ink-faint);font-weight:600;}
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.3;}}
+  .user-chip .role{background:var(--surface-2); color:var(--ink-soft); padding:4px 8px; border-radius:20px; font-size:10.5px; font-weight:700;white-space:nowrap;}
+  .user-chip .uname{font-weight:700;font-size:12.5px;white-space:nowrap;}
+  .user-chip button{background:var(--surface-2);border:none;color:var(--ink-soft);cursor:pointer;padding:7px;border-radius:9px;display:flex;transition:background .15s,color .15s;flex-shrink:0;}
+  .user-chip button:hover{background:var(--bad-bg);color:var(--bad);}
+  .user-chip button svg{width:16px;height:16px;}
+  @media (max-width:420px){
+    .sync-time{display:none;}
+    .user-chip .role{display:none;}
+    .topbar .logo-sub{display:none;}
+  }
+  main{flex:1;padding:16px 14px 92px; max-width: 900px; margin: 0 auto; width: 100%;}
+
+  .sidebar{display:none;flex-direction:column;width:220px;background:#fff;border-right:1px solid var(--border);position:fixed;top:0;left:0;bottom:0;padding:20px 0;z-index:25;}
+  .sidebar .side-logo{padding:0 20px 22px;}
+  .sidebar nav{display:flex;flex-direction:column;gap:2px;padding:0 10px;}
+  .sidebar nav button{display:flex;align-items:center;gap:12px;padding:11px 14px;border:none;background:none;border-radius:10px;color:var(--ink-soft);font-weight:600;font-size:13.5px;cursor:pointer;text-align:left;transition:background .15s,color .15s;}
+  .sidebar nav button svg{width:19px;height:19px;flex-shrink:0;}
+  .sidebar nav button:hover{background:var(--surface-2);color:var(--ink);}
+  .sidebar nav button.active{background:var(--accent-bg);color:var(--accent);}
+  .sidebar .side-sep{height:1px;background:var(--border);margin:10px 20px;}
+
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px;margin-bottom:14px;overflow-x:auto; box-shadow:var(--shadow-sm); animation:fadein .25s var(--ease);}
+  .card h2{font-size:15.5px;margin:0 0 12px;font-weight:800;letter-spacing:-.01em;}
+  .card h3{font-weight:700;}
+  @keyframes fadein{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}}
   
   /* --- NAVIGATION --- */
-  .bottomnav{position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1px solid var(--border);display:flex;z-index:30;}
-  .bottomnav button{flex:1;background:none;border:none;padding:9px 2px 8px;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--ink-faint);cursor:pointer; transition:0.2s;}
+  .bottomnav{position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1px solid var(--border);display:flex;z-index:30;box-shadow:0 -2px 12px rgba(15,23,42,.04);}
+  .bottomnav button{flex:1;background:none;border:none;padding:9px 2px 8px;display:flex;flex-direction:column;align-items:center;gap:4px;color:var(--ink-faint);cursor:pointer;transition:color .15s var(--ease);position:relative;min-height:52px;justify-content:center;}
   .bottomnav button.active{color:var(--accent);}
+  .bottomnav button.active::before{content:'';position:absolute;top:0;left:50%;transform:translateX(-50%);width:28px;height:3px;border-radius:0 0 3px 3px;background:var(--accent);}
   .bottomnav svg{width:20px;height:20px;}
   .bottomnav span{font-size:10px;font-weight:700;}
   
   /* --- KPIS & TABLES --- */
   .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit, minmax(140px, 1fr));gap:10px;margin-bottom:14px;}
-  .kpi{background:var(--surface);border-radius:9px;padding:12px 13px;border:1px solid var(--border);}
-  .kpi .label{font-size:11.5px;color:var(--ink-soft);font-weight:600;margin-bottom:5px;}
-  .kpi .value{font-family:var(--mono);font-size:22px;font-weight:700;}
-  .kpi .value.good{color:var(--good);} .kpi .value.warn{color:var(--warn);} .kpi .value.bad{color:var(--bad);}
+  .kpi{background:var(--surface);border-radius:var(--radius-sm);padding:14px 15px;border:1px solid var(--border);box-shadow:var(--shadow-sm);}
+  .kpi .label{font-size:11px;color:var(--ink-soft);font-weight:700;margin-bottom:6px;text-transform:uppercase;letter-spacing:.02em;}
+  .kpi .value{font-family:var(--mono);font-size:24px;font-weight:800;letter-spacing:-.01em;}
+  .kpi .value.good{color:var(--good);} .kpi .value.warn{color:var(--warn);} .kpi .value.bad{color:var(--bad);} .kpi .value.excellent{color:var(--excellent);}
   .hour-rend{font-size:10px;font-weight:800;margin-top:2px;}
-  .hour-rend.good{color:var(--good);} .hour-rend.warn{color:var(--warn);} .hour-rend.bad{color:var(--bad);}
+  .hour-rend.good{color:var(--good);} .hour-rend.warn{color:var(--warn);} .hour-rend.bad{color:var(--bad);} .hour-rend.excellent{color:var(--excellent);}
   .session-row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);gap:10px;}
   .session-row:last-child{border-bottom:none;}
   
   table{width:100%;border-collapse:collapse;font-size:13px;}
-  th{text-align:left;font-size:11px;background:var(--surface-2);color:var(--ink-soft);padding:10px 6px;border-bottom:2px solid var(--border);}
-  td{padding:6px 4px;border-bottom:1px solid var(--border);white-space:nowrap;vertical-align:middle;}
+  th{text-align:left;font-size:10.5px;background:var(--surface-2);color:var(--ink-soft);padding:11px 7px;border-bottom:2px solid var(--border);font-weight:700;text-transform:uppercase;letter-spacing:.02em;}
+  td{padding:7px 5px;border-bottom:1px solid var(--border-soft);white-space:nowrap;vertical-align:middle;}
+  tbody tr{transition:background .1s;}
   
   /* Inputs Saisie */
-  .input-cell input{width:100%;min-width:55px;padding:8px 4px;border:1.5px solid var(--border);border-radius:6px;font-family:var(--mono);text-align:center;font-weight:700;color:var(--ink);font-size:14px;background:#fff;}
-  .input-cell input:focus{outline:none;border-color:var(--accent);background:#F0F7FF;}
+  .input-cell input{width:100%;min-width:58px;padding:10px 4px;border:1.5px solid var(--border);border-radius:8px;font-family:var(--mono);text-align:center;font-weight:700;color:var(--ink);font-size:14.5px;background:#fff;transition:border-color .15s,box-shadow .15s;}
+  .input-cell input:focus{outline:none;border-color:var(--accent-2);background:#fff;box-shadow:0 0 0 3px var(--accent-bg);}
   .input-cell input:disabled{background:var(--surface-2);color:var(--ink-soft);border-color:transparent;}
   .obs-cell input{width:100%;min-width:110px;text-align:left;}
   
@@ -104,14 +144,15 @@
   
   .total-col{font-weight:bold;font-family:var(--mono);background:var(--surface-2);text-align:center;color:var(--ink);}
   .total-row{font-weight:bold;background:var(--surface-2);}
-  .cumul-col{font-weight:bold;font-family:var(--mono);background:#E7F5EE;color:var(--good);text-align:center;}
+  .cumul-col{font-weight:bold;font-family:var(--mono);background:var(--good-bg);color:var(--good);text-align:center;}
   
-  .toast{position:fixed;bottom:96px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:30px;font-size:13.5px;font-weight:600;z-index:50;}
+  .toast{position:fixed;bottom:96px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:11px 20px;border-radius:30px;font-size:13.5px;font-weight:600;z-index:50;box-shadow:0 8px 24px rgba(0,0,0,.2);animation:toastin .2s var(--ease);}
+  @keyframes toastin{from{opacity:0;transform:translate(-50%,8px);}to{opacity:1;transform:translate(-50%,0);}}
   .flex-header{display:flex;gap:10px;margin-bottom:14px;align-items:center;flex-wrap:wrap;justify-content:space-between;}
   .flex-header .actions{display:flex;gap:10px;flex-wrap:wrap;}
-  .flex-header input[type="date"]{padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-family:var(--sans); font-weight:600;}
+  .flex-header input[type="date"]{padding:9px 12px;border:1.5px solid var(--border);border-radius:9px;font-family:var(--sans); font-weight:600;}
   
-  .badge{padding:4px 8px;border-radius:4px;font-size:11px;font-weight:bold;text-transform:uppercase;letter-spacing:0.5px;}
+  .badge{padding:4px 9px;border-radius:20px;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:0.4px;}
   .badge.orange{background:var(--warn-bg);color:var(--warn);}
   .badge.green{background:var(--good-bg);color:var(--good);}
   .badge.red{background:var(--bad-bg);color:var(--bad);}
@@ -119,13 +160,79 @@
   /* --- GRAPHIQUES NATIFS --- */
   .native-chart { display: flex; align-items: flex-end; justify-content: space-around; height: 180px; padding: 20px 5px 0; border-bottom: 2px solid var(--border); margin-top: 15px; gap: 4px; }
   .nc-col { display: flex; flex-direction: column; align-items: center; flex: 1; height: 100%; justify-content: flex-end; }
-  .nc-val { font-size: 11px; font-weight: 700; color: var(--ink); margin-bottom: 4px; font-family: var(--mono); }
-  .nc-bar { width: 100%; max-width: 35px; background: var(--accent); border-radius: 4px 4px 0 0; transition: height 0.3s ease-out; min-height: 2px; }
-  .nc-lbl { margin-top: 6px; font-size: 10px; color: var(--ink-soft); font-weight: 600; text-align: center; line-height: 1.1; word-wrap: break-word; }
+  .nc-val { font-size: 11px; font-weight: 800; color: var(--ink); margin-bottom: 4px; font-family: var(--mono); }
+  .nc-bar { width: 100%; max-width: 36px; background: var(--accent); border-radius: 6px 6px 0 0; transition: height .5s var(--ease); min-height: 3px; }
+  .nc-lbl { margin-top: 7px; font-size: 10px; color: var(--ink-soft); font-weight: 700; text-align: center; line-height: 1.15; word-wrap: break-word; }
   .nc-bar.green { background: var(--good); }
-  .nc-bar.blue { background: #33415A; }
+  .nc-bar.blue { background: var(--accent); }
+  .nc-col.best .nc-val{color:var(--good);} .nc-col.best .nc-bar{background:var(--good);}
+  .nc-col.worst .nc-lbl{color:var(--bad);}
+
+  /* --- JAUGE DE RENDEMENT (anneau SVG) --- */
+  .gauge-wrap{display:flex;align-items:center;justify-content:center;gap:22px;flex-wrap:wrap;padding:6px 0;}
+  .gauge-ring{position:relative;width:150px;height:150px;flex-shrink:0;}
+  .gauge-ring svg{transform:rotate(-90deg);}
+  .gauge-ring .track{fill:none;stroke:var(--surface-3);stroke-width:12;}
+  .gauge-ring .prog{fill:none;stroke-width:12;stroke-linecap:round;transition:stroke-dashoffset .6s var(--ease),stroke .3s;}
+  .gauge-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+  .gauge-pct{font-family:var(--mono);font-size:26px;font-weight:800;letter-spacing:-.02em;line-height:1;}
+  .gauge-lbl{font-size:10px;color:var(--ink-faint);font-weight:700;text-transform:uppercase;letter-spacing:.03em;margin-top:3px;}
+  .gauge-side{display:flex;flex-direction:column;gap:8px;min-width:130px;}
+  .gauge-stat{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;}
+  .gauge-stat b{font-family:var(--mono);font-weight:800;}
+  .gauge-status{font-size:11.5px;font-weight:800;padding:4px 10px;border-radius:20px;display:inline-block;width:fit-content;}
+  .gauge-status.bad{background:var(--bad-bg);color:var(--bad);}
+  .gauge-status.warn{background:var(--warn-bg);color:var(--warn);}
+  .gauge-status.good{background:var(--good-bg);color:var(--good);}
+  .gauge-status.excellent{background:var(--excellent-bg);color:var(--excellent);}
+  .gauge-status.off{background:var(--surface-3);color:var(--ink-faint);}
+
+  /* Mini-jauge (barre) pour Saisie/Historique */
+  .mini-gauge{width:100%;height:7px;border-radius:20px;background:var(--surface-3);overflow:hidden;margin-top:6px;}
+  .mini-gauge > div{height:100%;border-radius:20px;transition:width .5s var(--ease);}
+  .mini-gauge .bad{background:var(--bad);} .mini-gauge .warn{background:var(--warn);} .mini-gauge .good{background:var(--good);} .mini-gauge .excellent{background:var(--excellent);}
+
+  /* --- ALERTES --- */
+  .alert{display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:var(--radius-sm);font-size:13px;font-weight:600;margin-bottom:14px;border:1px solid transparent;}
+  .alert svg{width:18px;height:18px;flex-shrink:0;}
+  .alert.bad{background:var(--bad-bg);color:var(--bad);border-color:rgba(214,69,69,.2);}
+  .alert.warn{background:var(--warn-bg);color:var(--warn);border-color:rgba(217,130,43,.2);}
+  .alert.good{background:var(--good-bg);color:var(--good);border-color:rgba(31,143,95,.2);}
+  .alert.excellent{background:var(--excellent-bg);color:var(--excellent);border-color:rgba(15,61,102,.2);}
+
+  /* --- ÉTATS VIDES --- */
+  .empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:34px 16px;color:var(--ink-faint);}
+  .empty-state svg{width:40px;height:40px;margin-bottom:10px;opacity:.5;}
+  .empty-state .es-title{font-size:13.5px;font-weight:700;color:var(--ink-soft);margin-bottom:3px;}
+  .empty-state .es-sub{font-size:12px;}
+
+  /* --- LOADER --- */
+  .spinner{width:16px;height:16px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;display:inline-block;}
+  .spinner.dark{border:2px solid var(--border);border-top-color:var(--accent);}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .skeleton{background:linear-gradient(90deg,var(--surface-2) 25%,var(--surface-3) 37%,var(--surface-2) 63%);background-size:400% 100%;animation:shimmer 1.4s ease infinite;border-radius:8px;}
+  @keyframes shimmer{0%{background-position:100% 50%;}100%{background-position:0 50%;}}
   
   @media print{ .bottomnav, .topbar, .no-print, .btn{display:none !important;} body{background:#fff;} main{padding:0;} .card{border:none;box-shadow:none;} th{color:#000 !important; background:#eee !important; border-bottom:1px solid #000;} td{border-bottom:1px solid #ccc;}}
+
+  /* --- DESKTOP (≥1024px) : sidebar + mise en page large ---       */
+  /* Placé en fin de feuille de style pour l'emporter sur les       */
+  /* règles de base (.sidebar, .bottomnav) à spécificité CSS égale. */
+  @media (min-width:1024px){
+    #app{flex-direction:row;}
+    .topbar{position:fixed;top:0;left:220px;right:0;z-index:15;}
+    .sidebar{display:flex;}
+    .bottomnav{display:none;}
+    .app-body{margin-left:220px;width:calc(100% - 220px);display:flex;flex-direction:column;min-height:100vh;}
+    main{max-width:1180px;padding:88px 32px 40px;}
+    .kpi-grid{grid-template-columns:repeat(4, 1fr);}
+    .gauge-wrap{justify-content:flex-start;gap:40px;}
+    .topbar .logo-wrap{display:none;}
+    .topbar{justify-content:flex-end;}
+  }
+  @media (min-width:1024px) and (max-width:1279px){
+    main{max-width:960px;}
+  }
 </style>
 </head>
 <body>
@@ -134,6 +241,7 @@
 <!-- SDK Firebase (nécessaire uniquement si vous configurez le partage entre appareils, voir plus bas) -->
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
 
 <script>
 /* ====================================================
@@ -143,8 +251,25 @@ const CACHE_PREFIX = 'tt6_'; // Changement de préfixe pour forcer la mise à jo
 const HOURS = ["08h00 - 09h00","09h00 - 10h00","10h00 - 11h00","11h00 - 12h00","12h30 - 13h30","13h30 - 14h30","14h30 - 15h30","15h30 - 16h30","16h30 - 17h00"];
 const STATS_HOURS_LABELS = ["9h", "10h", "11h", "12h", "13h30", "14h30", "15h30", "16h30", "17h"];
 const OP_KEYS = ['op1', 'op2', 'op3', 'op4'];
+// Domaine fictif utilisé pour convertir un identifiant simple en email valide pour
+// Firebase Authentication (qui exige un email). Aucun email n'est réellement envoyé
+// à ce domaine — il sert uniquement de format d'identifiant technique.
+const AUTH_EMAIL_DOMAIN = 'tek-trend.app';
+function emailForUsername(u){ return u.toLowerCase().trim() + '@' + AUTH_EMAIL_DOMAIN; }
+
+// Mode local (Firebase non configuré) : ancien système, comptes stockés uniquement
+// sur cet appareil (jamais synchronisés). Sert de repli hors-ligne / test.
 const DEFAULT_USERS = [{username:"responsable", password:"123", role:"admin", nom:"Resp. Magasin"},{username:"direction", password:"123", role:"viewer", nom:"Direction"}];
-function getUsers() { return getJSON('users', DEFAULT_USERS); }
+function getLocalUsers(){
+  try { const v = window.localStorage.getItem(CACHE_PREFIX+'local_users'); if(v) return JSON.parse(v); } catch(e) {}
+  return DEFAULT_USERS;
+}
+function saveLocalUsers(list){ try { window.localStorage.setItem(CACHE_PREFIX+'local_users', JSON.stringify(list)); } catch(e) {} }
+
+// Mode sécurisé (Firebase configuré) : les profils (nom/rôle) sont stockés dans
+// Firebase sous users_v2/{uid}, où {uid} est l'identifiant Firebase Authentication —
+// AUCUN mot de passe n'y est stocké, Firebase Authentication gère ça séparément.
+function getUserProfiles(){ return getJSON('users_v2', {}); }
 
 const ICONS = {
   dashboard: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>',
@@ -154,7 +279,8 @@ const ICONS = {
   params: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
   logout: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>',
   export: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
-  sessions: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>'
+  sessions: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+  eye: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>'
 };
 
 // ============================================================
@@ -187,21 +313,28 @@ let fbRootRef = null;
 let fbFirstLoad = true;
 function firebaseConfigured(){ return firebaseConfig.apiKey && firebaseConfig.apiKey.indexOf('VOTRE_') !== 0; }
 
+let lastSyncAt = null;
 function setSyncBadge(state){
   // state: 'off' | 'connecting' | 'ok' | 'error'
   const el = document.getElementById('sync-badge');
+  const timeEl = document.getElementById('sync-time');
   if(!el) return;
   const map = {
-    off:       {cls:'sync-off',   txt:'○ Mode local'},
-    connecting:{cls:'sync-connecting', txt:'● Connexion...'},
-    ok:        {cls:'sync-ok',    txt:'● Synchronisé'},
-    error:     {cls:'sync-error', txt:'● Erreur de connexion'}
+    off:       {cls:'sync-off',   txt:'Mode local'},
+    connecting:{cls:'sync-connecting', txt:'Connexion...'},
+    ok:        {cls:'sync-ok',    txt:'Synchronisé'},
+    error:     {cls:'sync-error', txt:'Erreur de connexion'}
   };
   const m = map[state] || map.off;
   el.className = 'sync-badge ' + m.cls;
   el.textContent = m.txt;
+  if(state === 'ok'){
+    lastSyncAt = new Date();
+    if(timeEl) timeEl.textContent = 'Maj ' + lastSyncAt.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'});
+  }
 }
 
+let fbAuth = null;
 function initFirebase(){
   if(!firebaseConfigured()){
     console.warn('Firebase non configuré : mode local uniquement (pas de partage entre appareils).');
@@ -214,28 +347,38 @@ function initFirebase(){
     return;
   }
   try{
-    setSyncBadge('connecting');
     firebase.initializeApp(firebaseConfig);
+    fbAuth = firebase.auth();
     fbRootRef = firebase.database().ref(FIREBASE_PATH);
     firebaseReady = true;
-    fbRootRef.on('value', function(snap){
-      const data = snap.val() || {};
-      Object.keys(data).forEach(function(k){ memoryCache[CACHE_PREFIX+k] = data[k]; });
-      setSyncBadge('ok');
-      if(!currentUser) return;
-      // On ne force pas le rafraîchissement pendant une saisie en cours
-      // (pour ne pas faire perdre le focus/curseur dans un champ), sauf
-      // au tout premier chargement après connexion.
-      if(fbFirstLoad){ fbFirstLoad = false; nav(activeTab); }
-      else if(activeTab !== 'saisie'){ nav(activeTab); }
-    }, function(err){
-      console.error('Erreur Firebase (lecture) :', err);
-      setSyncBadge('error');
-    });
+    // IMPORTANT : depuis le Lot D (sécurité), les règles Firebase exigent d'être
+    // authentifié pour lire/écrire. On ne s'abonne donc aux données qu'après une
+    // connexion réussie (voir attachFirebaseDataListeners), pas ici.
+    setSyncBadge('off');
   }catch(err){
     console.error('Erreur initialisation Firebase :', err);
     setSyncBadge('error');
   }
+}
+function attachFirebaseDataListeners(){
+  if(!firebaseReady || !fbRootRef) return;
+  setSyncBadge('connecting');
+  fbRootRef.on('value', function(snap){
+    const data = snap.val() || {};
+    Object.keys(data).forEach(function(k){ memoryCache[CACHE_PREFIX+k] = data[k]; });
+    setSyncBadge('ok');
+    if(!currentUser) return;
+    if(fbFirstLoad){ fbFirstLoad = false; nav(activeTab); }
+    else if(activeTab !== 'saisie'){ nav(activeTab); }
+  }, function(err){
+    console.error('Erreur Firebase (lecture) :', err);
+    setSyncBadge('error');
+  });
+  watchSessions();
+}
+function detachFirebaseDataListeners(){
+  if(fbRootRef){ fbRootRef.off(); fbRootRef.child('sessions').off(); }
+  fbFirstLoad = true;
 }
 function syncToFirebase(key, value){
   if(!firebaseReady || !fbRootRef) return;
@@ -314,6 +457,8 @@ function forceLocalLogout(){
   currentUser = null; mySessionId = null;
   try { window.sessionStorage.removeItem(CACHE_PREFIX+'user'); window.sessionStorage.removeItem(CACHE_PREFIX+'sid'); } catch(e) {}
   if(heartbeatTimer){ clearInterval(heartbeatTimer); heartbeatTimer = null; }
+  detachFirebaseDataListeners();
+  if(firebaseConfigured() && fbAuth){ fbAuth.signOut().catch(()=>{}); }
   renderLogin('Votre session a été terminée par un administrateur.');
 }
 window.forceEndSession = (sid) => {
@@ -348,6 +493,9 @@ const getTodayISO = () => new Date().toISOString().slice(0,10);
 let todayISO = getTodayISO();
 let saisieDate = todayISO; 
 let histDate = todayISO;
+let histViewMode = 'jour';
+let histPeriodStart = new Date(new Date().setDate(new Date().getDate() - 6)).toISOString().slice(0,10);
+let histPeriodEnd = todayISO;
 let statRangeEnd = todayISO;
 let statRangeStart = new Date(new Date().setDate(new Date().getDate() - 6)).toISOString().slice(0,10);
 let toastTimer = null;
@@ -357,7 +505,52 @@ let heartbeatTimer = null;
 // Variables Globales
 function getOps() { return getJSON('ops', ["Hela", "Marwa", "Mabrouka", "Wahida"]); }
 function getObjHoraireOp() { return getJSON('obj_horaire_op', 20); } // pièces/heure/opératrice (réf: 3 min/pièce)
-function getHourDurationMin(h) { return HOURS.indexOf(h) === HOURS.length - 1 ? 30 : 60; } // dernier créneau = 30 min
+
+// ============================================================
+// HORAIRES CONFIGURABLES (Lot C) — Lun-Ven + Samedi
+// ============================================================
+// Valeurs par défaut = exactement les horaires codés en dur avant ce Lot
+// (08h00-17h00, pause 12h00-12h30). Les libellés générés sont donc
+// identiques caractère pour caractère à l'ancien tableau HOURS, pour
+// que les données déjà saisies restent lisibles sans conversion.
+function getScheduleSettings(){
+  return getJSON('schedule', {
+    weekdayStart:'08:00', weekdayEnd:'17:00', pauseStart:'12:00', pauseEnd:'12:30',
+    saturdayEnabled: true, saturdayStart:'08:00', saturdayEnd:'12:00'
+  });
+}
+function timeToMin(t){ const [h,m] = t.split(':').map(Number); return h*60+(m||0); }
+function minToLabel(m){ const h=Math.floor(m/60), mm=m%60; return String(h).padStart(2,'0')+'h'+String(mm).padStart(2,'0'); }
+function buildSlots(startStr, endStr, pauseStartStr, pauseEndStr){
+  let slots = [];
+  let cur = timeToMin(startStr);
+  const end = timeToMin(endStr);
+  const pStart = pauseStartStr ? timeToMin(pauseStartStr) : null;
+  const pEnd = pauseEndStr ? timeToMin(pauseEndStr) : null;
+  let guard = 0;
+  while(cur < end && guard < 48){
+    guard++;
+    let next = Math.min(cur+60, end);
+    slots.push({label: minToLabel(cur)+' - '+minToLabel(next), start:cur, end:next, minutes: next-cur});
+    cur = next;
+    if(pStart!=null && pEnd!=null && cur === pStart) cur = pEnd;
+  }
+  return slots;
+}
+function getSlotsForDate(dateISO){
+  const sch = getScheduleSettings();
+  const dow = new Date(dateISO+'T00:00:00').getDay(); // 0=dimanche ... 6=samedi
+  if(dow === 0) return []; // dimanche non travaillé
+  if(dow === 6) return sch.saturdayEnabled ? buildSlots(sch.saturdayStart, sch.saturdayEnd, null, null) : [];
+  return buildSlots(sch.weekdayStart, sch.weekdayEnd, sch.pauseStart, sch.pauseEnd);
+}
+function getHoursForDate(dateISO){ return getSlotsForDate(dateISO).map(s=>s.label); }
+function getHourDurationForDate(dateISO, h){
+  const found = getSlotsForDate(dateISO).find(s=>s.label===h);
+  return found ? found.minutes : 60;
+}
+function isWorkingDay(dateISO){ return getSlotsForDate(dateISO).length > 0; }
+
 function isAbsentMark(v){
   if(v === undefined || v === null) return false;
   const t = String(v).trim();
@@ -370,28 +563,45 @@ function getActiveOpCount(h, dayData){
 }
 function getHourTarget(h, dayData) {
   const activeCount = getActiveOpCount(h, dayData);
-  return Math.round(getObjHoraireOp() * activeCount * (getHourDurationMin(h) / 60));
+  const dateISO = dayData && dayData.date ? dayData.date : getTodayISO();
+  return Math.round(getObjHoraireOp() * activeCount * (getHourDurationForDate(dateISO, h) / 60));
 }
 function getObjForDay(dayData){
-  return HOURS.reduce((s, h) => s + getHourTarget(h, dayData), 0);
+  const dateISO = dayData && dayData.date ? dayData.date : getTodayISO();
+  return getHoursForDate(dateISO).reduce((s, h) => s + getHourTarget(h, dayData), 0);
 }
 function getObj() {
-  // Référence théorique : 4 opératrices, aucune absence (utilisée uniquement à titre indicatif)
-  const totalMin = HOURS.reduce((s, h) => s + getHourDurationMin(h), 0); // 510 min = 8h30
+  // Référence théorique affichée dans Params : semaine type (Lun-Ven), 4 opératrices, aucune absence.
+  const sch = getScheduleSettings();
+  const totalMin = buildSlots(sch.weekdayStart, sch.weekdayEnd, sch.pauseStart, sch.pauseEnd).reduce((s,sl)=>s+sl.minutes, 0);
   return Math.round(getObjHoraireOp() * OP_KEYS.length * (totalMin / 60));
 }
-function rendClass(pct) { return pct >= 90 ? 'good' : (pct >= 70 ? 'warn' : 'bad'); }
+// Paliers visuels validés (formule de rendement INCHANGÉE — uniquement l'affichage) :
+// <60% critique · 60-79% insuffisant · 80-99% bon · ≥100% objectif atteint/dépassé
+function rendClass(pct) { return pct >= 100 ? 'excellent' : (pct >= 80 ? 'good' : (pct >= 60 ? 'warn' : 'bad')); }
+function rendLabel(pct) { return pct >= 100 ? 'Objectif atteint' : (pct >= 80 ? 'Bon' : (pct >= 60 ? 'Insuffisant' : 'Critique')); }
 
 function getDay(date){
   let d = getJSON('prod_'+date, null);
-  if(!d){ d = { date: date, status: 'draft', hours: {} }; HOURS.forEach(h => d.hours[h] = { op1:'', op2:'', op3:'', op4:'', obs:'' }); }
+  const scheduled = getHoursForDate(date);
+  if(!d){ d = { date: date, status: 'draft', hours: {} }; scheduled.forEach(h => d.hours[h] = { op1:'', op2:'', op3:'', op4:'', obs:'' }); }
+  else { scheduled.forEach(h => { if(!d.hours[h]) d.hours[h] = { op1:'', op2:'', op3:'', op4:'', obs:'' }; }); } // rattrape un changement d'horaires depuis la dernière saisie
   return d;
 }
-function saveDay(date, data){ setJSON('prod_'+date, data); }
+function saveDay(date, data){
+  // Traçabilité : dernière personne ayant modifié ce jour (et quand).
+  // La saisie étant auto-enregistrée à chaque champ, on ne garde qu'un
+  // seul horodatage (pas un historique par frappe, qui gonflerait le stockage).
+  data.lastEditBy = currentUser ? currentUser.nom : 'Inconnu';
+  data.lastEditAt = Date.now();
+  setJSON('prod_'+date, data);
+}
 
 function computeTotals(dayData){
   let totals = { op1:0, op2:0, op3:0, op4:0, totalGeneral:0, arrets:0 };
-  HOURS.forEach(h => {
+  const dayHours = getHoursForDate(dayData.date || getTodayISO());
+  dayHours.forEach(h => {
+    if(!dayData.hours[h]) return; // créneau introduit après la saisie (ex: horaires changés depuis) — ignoré proprement
     let rowTotal = 0;
     OP_KEYS.forEach(k => { 
       let val = parseInt(dayData.hours[h][k]) || 0; // Ignores text like "ABS"
@@ -410,18 +620,58 @@ function showToast(msg){
 }
 
 // --- INIT & ROUTING ---
-function init(){
-  try { let u = window.sessionStorage.getItem(CACHE_PREFIX+'user'); if(u) currentUser = JSON.parse(u); } catch(e) {}
+function startSessionAndRender(){
   try { let sid = window.sessionStorage.getItem(CACHE_PREFIX+'sid'); if(sid) mySessionId = sid; } catch(e) {}
+  if(!mySessionId){ mySessionId = genId(); try { window.sessionStorage.setItem(CACHE_PREFIX+'sid', mySessionId); } catch(e) {} }
+  attachFirebaseDataListeners();
+  writeMySession();
+  if(heartbeatTimer) clearInterval(heartbeatTimer);
+  heartbeatTimer = setInterval(writeMySession, 30000);
+  renderShell();
+}
+
+async function loadProfileAndEnter(fbUser){
+  try{
+    const snap = await fbRootRef.child('users_v2/'+fbUser.uid).once('value');
+    let profile = snap.val();
+    if(!profile){
+      // Amorçage : si AUCUN profil n'existe encore nulle part (tout premier compte
+      // créé dans Firebase Console), on le déclare automatiquement Responsable.
+      // Les règles Firebase autorisent toujours à écrire SON PROPRE profil.
+      const allSnap = await fbRootRef.child('users_v2').once('value');
+      if(!allSnap.exists()){
+        profile = { nom: 'Resp. Magasin', username: (fbUser.email||'').split('@')[0], role: 'admin' };
+        await fbRootRef.child('users_v2/'+fbUser.uid).set(profile);
+        showToast('Premier compte initialisé en tant que Responsable. Modifiez le nom dans Sessions si besoin.');
+      } else {
+        console.error('Compte authentifié mais profil introuvable dans users_v2/'+fbUser.uid);
+        await fbAuth.signOut();
+        renderLogin("Compte non configuré côté application. Contactez le responsable.");
+        return;
+      }
+    }
+    currentUser = { uid: fbUser.uid, username: profile.username, nom: profile.nom, role: profile.role };
+    try { window.sessionStorage.setItem(CACHE_PREFIX+'user', JSON.stringify(currentUser)); } catch(e) {}
+    startSessionAndRender();
+  }catch(err){
+    console.error('Erreur de lecture du profil :', err);
+    renderLogin("Erreur de connexion aux données. Vérifiez votre connexion internet.");
+  }
+}
+
+function init(){
   initFirebase();
-  watchSessions();
-  if(currentUser){
-    if(!mySessionId){ mySessionId = genId(); try { window.sessionStorage.setItem(CACHE_PREFIX+'sid', mySessionId); } catch(e) {} }
-    writeMySession();
-    if(heartbeatTimer) clearInterval(heartbeatTimer);
-    heartbeatTimer = setInterval(writeMySession, 30000);
-    renderShell();
-  } else renderLogin('');
+  if(firebaseConfigured() && fbAuth){
+    // Mode sécurisé (Firebase Authentication) : l'état de connexion est géré par Firebase lui-même.
+    fbAuth.onAuthStateChanged(function(fbUser){
+      if(fbUser) loadProfileAndEnter(fbUser);
+      else { currentUser = null; renderLogin(''); }
+    });
+  } else {
+    // Mode local uniquement (Firebase non configuré) : ancien système simple, un seul appareil.
+    try { let u = window.sessionStorage.getItem(CACHE_PREFIX+'user'); if(u) currentUser = JSON.parse(u); } catch(e) {}
+    if(currentUser) startSessionAndRender(); else renderLogin('');
+  }
 }
 
 function renderLogin(err){
@@ -435,49 +685,116 @@ function renderLogin(err){
       </div>
       <div class="login-error" style="display:${err ? 'block' : 'none'}">${err}</div>
       <form id="login-form">
-        <div class="field"><label>Utilisateur</label><input type="text" id="login-user" required></div>
-        <div class="field"><label>Mot de passe</label><input type="password" id="login-pass" required></div>
+        <div class="field"><label>Utilisateur</label><input type="text" id="login-user" required autocomplete="username"></div>
+        <div class="field">
+          <label>Mot de passe</label>
+          <div class="pw-field">
+            <input type="password" id="login-pass" required autocomplete="current-password">
+            <button type="button" class="pw-toggle" onclick="togglePwVisibility()" aria-label="Afficher le mot de passe">${ICONS.eye}</button>
+          </div>
+        </div>
         <button type="submit" class="btn btn-primary btn-block">Se connecter</button>
       </form>
     </div>
   </div>`;
-  document.getElementById('login-form').onsubmit = (e) => {
+  window.togglePwVisibility = () => {
+    const inp = document.getElementById('login-pass');
+    inp.type = inp.type === 'password' ? 'text' : 'password';
+  };
+  document.getElementById('login-form').onsubmit = async (e) => {
     e.preventDefault();
-    const u = document.getElementById('login-user').value; const p = document.getElementById('login-pass').value;
-    const user = getUsers().find(x => x.username === u && x.password === p);
-    if(user){
-      currentUser = user;
-      try { window.sessionStorage.setItem(CACHE_PREFIX+'user', JSON.stringify(user)); } catch(e) {}
-      mySessionId = genId();
-      try { window.sessionStorage.setItem(CACHE_PREFIX+'sid', mySessionId); } catch(e) {}
-      writeMySession();
-      if(heartbeatTimer) clearInterval(heartbeatTimer);
-      heartbeatTimer = setInterval(writeMySession, 30000);
-      renderShell();
+    const u = document.getElementById('login-user').value.trim(); const p = document.getElementById('login-pass').value;
+    const btn = e.target.querySelector('button[type=submit]');
+    const originalLabel = btn.textContent;
+    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Connexion...';
+
+    if(firebaseConfigured() && fbAuth){
+      // Mode sécurisé : Firebase Authentication (aucun mot de passe stocké par l'application)
+      try{
+        await fbAuth.signInWithEmailAndPassword(emailForUsername(u), p);
+        // La suite (chargement du profil, affichage) est gérée par onAuthStateChanged dans init().
+      }catch(err){
+        console.error('Erreur de connexion Firebase Auth :', err.code, err.message);
+        let msg = 'Identifiants incorrects.';
+        if(err.code === 'auth/operation-not-allowed') msg = "Authentification par email/mot de passe non activée côté Firebase. L'administrateur doit l'activer dans la Console Firebase (voir instructions fournies).";
+        else if(err.code === 'auth/too-many-requests') msg = 'Trop de tentatives. Réessayez dans quelques minutes.';
+        else if(err.code === 'auth/network-request-failed') msg = 'Erreur réseau. Vérifiez votre connexion internet.';
+        else if(err.code === 'auth/user-disabled') msg = 'Ce compte a été désactivé.';
+        btn.disabled = false; btn.textContent = originalLabel;
+        renderLogin(msg);
+      }
+    } else {
+      // Mode local uniquement (Firebase non configuré) : ancien système, un seul appareil.
+      const user = getLocalUsers().find(x => x.username === u && x.password === p);
+      if(user){
+        currentUser = user;
+        try { window.sessionStorage.setItem(CACHE_PREFIX+'user', JSON.stringify(user)); } catch(e) {}
+        startSessionAndRender();
+      } else {
+        btn.disabled = false; btn.textContent = originalLabel;
+        renderLogin('Identifiants incorrects.');
+      }
     }
-    else { renderLogin('Identifiants incorrects.'); }
   };
 }
 
-function logout(){ endMySession(); currentUser = null; mySessionId = null; try { window.sessionStorage.removeItem(CACHE_PREFIX+'user'); window.sessionStorage.removeItem(CACHE_PREFIX+'sid'); } catch(e) {} renderLogin(''); }
+function logout(){
+  endMySession();
+  detachFirebaseDataListeners();
+  currentUser = null; mySessionId = null;
+  try { window.sessionStorage.removeItem(CACHE_PREFIX+'user'); window.sessionStorage.removeItem(CACHE_PREFIX+'sid'); } catch(e) {}
+  if(firebaseConfigured() && fbAuth){ fbAuth.signOut(); /* déclenche onAuthStateChanged -> renderLogin */ }
+  else renderLogin('');
+}
+
+function navItems(){
+  const items = [
+    {tab:'dashboard', label:'Tableau', icon:ICONS.dashboard, show:true},
+    {tab:'saisie', label:'Saisie', icon:ICONS.saisie, show:currentUser.role==='admin', onclick:"saisieDate = getTodayISO(); nav('saisie')"},
+    {tab:'historique', label:'Historique', icon:ICONS.historique, show:true},
+    {tab:'stats', label:'Stats', icon:ICONS.stats, show:true},
+    {tab:'params', label:'Params', icon:ICONS.params, show:currentUser.role==='admin'},
+    {tab:'sessions', label:'Sessions', icon:ICONS.sessions, show:currentUser.role==='admin'}
+  ];
+  return items.filter(i=>i.show);
+}
 
 function renderShell(){
+  const items = navItems();
+  const navBtn = (i, cls) => `<button class="${cls}" data-tab="${i.tab}" onclick="${i.onclick || `nav('${i.tab}')`}">${i.icon}<span>${i.label}</span></button>`;
+
   document.getElementById('app').innerHTML = `
-    <div class="topbar no-print">
-      <div class="logo-wrap">
+    <div class="sidebar no-print">
+      <div class="side-logo logo-wrap" style="align-items:flex-start;">
         <div class="logo-text"><span class="tek">TEK</span> <span class="trend">TREND</span></div>
         <div class="logo-sub">TECHNICAL WEAR</div>
       </div>
-      <div class="user-chip"><span id="sync-badge" class="sync-badge sync-off">○ Mode local</span><span class="role">${currentUser.nom}</span><button onclick="logout()">${ICONS.logout}</button></div>
+      <nav>${items.map(i=>navBtn(i,'')).join('')}</nav>
+      <div class="side-sep"></div>
+      <nav>
+        <button onclick="logout()" style="color:var(--bad);">${ICONS.logout}<span>Déconnexion</span></button>
+      </nav>
     </div>
-    <main id="main"></main>
-    <div class="bottomnav no-print">
-      <button onclick="nav('dashboard')" id="nav-dashboard">${ICONS.dashboard}<span>Tableau</span></button>
-      <button onclick="saisieDate = getTodayISO(); nav('saisie')" id="nav-saisie">${ICONS.saisie}<span>Saisie</span></button>
-      <button onclick="nav('historique')" id="nav-historique">${ICONS.historique}<span>Historique</span></button>
-      <button onclick="nav('stats')" id="nav-stats">${ICONS.stats}<span>Stats</span></button>
-      ${currentUser.role === 'admin' ? `<button onclick="nav('params')" id="nav-params">${ICONS.params}<span>Params</span></button>` : ''}
-      ${currentUser.role === 'admin' ? `<button onclick="nav('sessions')" id="nav-sessions">${ICONS.sessions}<span>Sessions</span></button>` : ''}
+    <div class="app-body">
+      <div class="topbar no-print">
+        <div class="logo-wrap">
+          <div class="logo-text"><span class="tek">TEK</span> <span class="trend">TREND</span></div>
+          <div class="logo-sub">TECHNICAL WEAR</div>
+        </div>
+        <div class="user-chip">
+          <div class="sync-wrap">
+            <span id="sync-badge" class="sync-badge sync-off">Mode local</span>
+            <span id="sync-time" class="sync-time"></span>
+          </div>
+          <span class="uname">${currentUser.nom}</span>
+          <span class="role">${currentUser.role==='admin'?'Responsable':'Direction'}</span>
+          <button onclick="logout()" title="Déconnexion">${ICONS.logout}</button>
+        </div>
+      </div>
+      <main id="main"></main>
+      <div class="bottomnav no-print">
+        ${items.map(i=>navBtn(i,'')).join('')}
+      </div>
     </div>
   `;
   setSyncBadge(firebaseConfigured() ? (firebaseReady ? 'ok' : 'connecting') : 'off');
@@ -486,9 +803,8 @@ function renderShell(){
 
 function nav(tab){
   activeTab = tab;
-  document.querySelectorAll('.bottomnav button').forEach(b => b.classList.remove('active'));
-  let activeBtn = document.getElementById('nav-'+tab);
-  if(activeBtn) activeBtn.classList.add('active');
+  document.querySelectorAll('.bottomnav button, .sidebar nav button').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll(`[data-tab="${tab}"]`).forEach(b => b.classList.add('active'));
   const main = document.getElementById('main');
   
   if(tab === 'dashboard') renderDashboard(main);
@@ -501,11 +817,15 @@ function nav(tab){
 
 function buildNativeChart(labels, values, colorClass = '') {
   let maxVal = Math.max(...values, 1);
+  const hasVariation = values.some(v=>v>0);
+  const bestIdx = hasVariation ? values.indexOf(Math.max(...values)) : -1;
+  const worstIdx = hasVariation ? values.indexOf(Math.min(...values.filter(v=>v>=0))) : -1;
   let html = `<div class="native-chart">`;
   for(let i=0; i<labels.length; i++){
     let heightPct = (values[i] / maxVal) * 100;
+    let extra = (i===bestIdx && bestIdx!==worstIdx) ? ' best' : (i===worstIdx && hasVariation ? ' worst' : '');
     html += `
-      <div class="nc-col">
+      <div class="nc-col${extra}">
         <div class="nc-val" id="chart_val_${labels[i].replace(/\s/g,'')}">${values[i]}</div>
         <div class="nc-bar ${colorClass}" id="chart_bar_${labels[i].replace(/\s/g,'')}" style="height:${heightPct}%;"></div>
         <div class="nc-lbl">${labels[i]}</div>
@@ -515,23 +835,107 @@ function buildNativeChart(labels, values, colorClass = '') {
   html += `</div>`; return html;
 }
 
+// Jauge circulaire de rendement (SVG natif, sans librairie)
+function buildGauge(pct, neutral){
+  const r = 54, c = 2 * Math.PI * r;
+  const visualPct = Math.max(0, Math.min(100, pct));
+  const offset = c * (1 - visualPct / 100);
+  const cls = rendClass(pct);
+  const colorVar = neutral ? 'var(--ink-faint)' : {bad:'var(--bad)', warn:'var(--warn)', good:'var(--good)', excellent:'var(--excellent)'}[cls];
+  return `
+    <div class="gauge-ring">
+      <svg width="150" height="150" viewBox="0 0 150 150">
+        <circle class="track" cx="75" cy="75" r="${r}"/>
+        <circle class="prog" cx="75" cy="75" r="${r}" stroke="${colorVar}" stroke-dasharray="${c}" stroke-dashoffset="${offset}"/>
+      </svg>
+      <div class="gauge-center">
+        <div class="gauge-pct" style="color:${colorVar};">${pct.toFixed ? pct.toFixed(1) : pct}%</div>
+        <div class="gauge-lbl">Rendement</div>
+      </div>
+    </div>`;
+}
+
+function buildAlert(type, msg){
+  const icons = {
+    excellent:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
+    bad:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+    warn:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>'
+  };
+  return `<div class="alert ${type}">${icons[type]||icons.warn}<span>${msg}</span></div>`;
+}
+function buildEmptyState(title, sub){
+  return `<div class="empty-state">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h6v6H9z"/></svg>
+    <div class="es-title">${title}</div>
+    ${sub ? `<div class="es-sub">${sub}</div>` : ''}
+  </div>`;
+}
+
 // --- ONGLET 1: TABLEAU DE BORD ---
 function renderDashboard(container){
   const data = getDay(getTodayISO()); const totals = computeTotals(data);
   const obj = getObjForDay(data); const ops = getOps();
-  const rendement = obj > 0 ? (totals.totalGeneral / obj * 100).toFixed(1) : 0;
-  const color = rendement >= 90 ? 'good' : (rendement >= 70 ? 'warn' : 'bad');
+  const rendement = obj > 0 ? (totals.totalGeneral / obj * 100) : 0;
+  const cls = rendClass(rendement);
+  const restant = Math.max(0, obj - totals.totalGeneral);
+  const todayHours = getHoursForDate(getTodayISO());
+  const activeOpCount = todayHours.reduce((max,h) => Math.max(max, getActiveOpCount(h, data)), 0);
+  const perOpVals = OP_KEYS.map(k => totals[k]);
+  const bestIdx = perOpVals.indexOf(Math.max(...perOpVals));
+  const dayLabel = new Date(getTodayISO()+'T00:00:00').toLocaleDateString('fr-FR', {weekday:'long'});
+  const isEmpty = totals.totalGeneral === 0;
+  const notWorking = todayHours.length === 0;
+
+  let alertHtml = '';
+  if(notWorking) { /* pas d'alerte rendement un jour non travaillé */ }
+  else if(rendement >= 100) alertHtml = buildAlert('excellent', `Objectif journalier atteint (${rendement.toFixed(1)}%). Bravo à l'équipe !`);
+  else if(!isEmpty && rendement < 60) alertHtml = buildAlert('bad', `Rendement critique : ${rendement.toFixed(1)}% — objectif à ${obj} pièces.`);
+
+  if(notWorking){
+    container.innerHTML = `
+      <div class="flex-header">
+        <div>
+          <h2 style="margin:0;">Aujourd'hui — ${getTodayISO().split('-').reverse().join('/')}</h2>
+          <div style="font-size:12.5px;color:var(--ink-soft);text-transform:capitalize;margin-top:2px;">${dayLabel}</div>
+        </div>
+      </div>
+      <div class="card">${buildEmptyState("Jour non travaillé", "Aucun créneau n'est programmé pour aujourd'hui (voir Paramètres → Horaires).")}</div>
+    `;
+    return;
+  }
 
   container.innerHTML = `
-    <div class="flex-header"><h2>Aujourd'hui - ${getTodayISO().split('-').reverse().join('/')}</h2></div>
-    <div class="kpi-grid">
-      <div class="kpi"><div class="label">Production Totale</div><div class="value">${totals.totalGeneral}</div></div>
-      <div class="kpi"><div class="label">Rendement (Obj: ${obj})</div><div class="value ${color}">${rendement}%</div></div>
-      <div class="kpi"><div class="label">Pertes / Arrêts</div><div class="value">${totals.arrets}</div></div>
+    <div class="flex-header">
+      <div>
+        <h2 style="margin:0;">Aujourd'hui — ${getTodayISO().split('-').reverse().join('/')}</h2>
+        <div style="font-size:12.5px;color:var(--ink-soft);text-transform:capitalize;margin-top:2px;">${dayLabel}</div>
+      </div>
     </div>
+    ${alertHtml}
+    ${isEmpty ? buildEmptyState("Aucune production enregistrée aujourd'hui", "La saisie du jour n'a pas encore commencé.") : ''}
+
+    <div class="card">
+      <div class="gauge-wrap">
+        ${buildGauge(rendement, isEmpty)}
+        <div class="gauge-side">
+          <div class="gauge-status ${isEmpty ? 'off' : cls}">${isEmpty ? 'Pas encore commencé' : rendLabel(rendement)}</div>
+          <div class="gauge-stat"><span>Produit</span><b>${totals.totalGeneral}</b></div>
+          <div class="gauge-stat"><span>Objectif</span><b>${obj}</b></div>
+          <div class="gauge-stat"><span>Restant</span><b>${restant}</b></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="kpi-grid">
+      <div class="kpi"><div class="label">Production totale</div><div class="value">${totals.totalGeneral}</div></div>
+      <div class="kpi"><div class="label">Opératrices actives</div><div class="value">${activeOpCount}/${OP_KEYS.length}</div></div>
+      <div class="kpi"><div class="label">Pertes / Arrêts</div><div class="value">${totals.arrets}</div></div>
+      <div class="kpi"><div class="label">Meilleure perf.</div><div class="value good" style="font-size:16px;">${totals.totalGeneral>0?ops[bestIdx]:'—'}</div></div>
+    </div>
+
     <div class="card">
       <h2>Répartition par Opératrice</h2>
-      ${buildNativeChart(ops, OP_KEYS.map(k => totals[k]))}
+      ${totals.totalGeneral>0 ? buildNativeChart(ops, perOpVals) : buildEmptyState('Aucune donnée à afficher')}
     </div>
   `;
 }
@@ -546,21 +950,44 @@ window.toggleValidation = (date, status) => {
 function renderSaisie(container, date){
   const data = getDay(date); const totals = computeTotals(data);
   const ops = getOps(); const obj = getObjForDay(data);
+  const dayHours = getHoursForDate(date);
   const isAdmin = currentUser.role === 'admin';
   const isDraft = data.status === 'draft';
   const disabled = (isAdmin && isDraft) ? '' : 'disabled';
+
+  if(dayHours.length === 0){
+    container.innerHTML = `
+      <div class="card">
+        <div class="flex-header no-print">
+          <h2 style="margin:0; color:var(--accent);">ESPACE SAISIE</h2>
+          <div class="actions">${isAdmin ? `<input type="date" value="${date}" max="${getTodayISO()}" onchange="changeSaisieDate(this.value)" style="padding:8px 10px; border:1px solid var(--border); border-radius:8px;">` : ''}</div>
+        </div>
+        ${buildEmptyState("Jour non travaillé", "Aucun créneau n'est programmé pour le "+date.split('-').reverse().join('/')+" (voir Paramètres → Horaires).")}
+      </div>`;
+    window.changeSaisieDate = (val) => { if(val){ saisieDate = val; nav('saisie'); } };
+    return;
+  }
 
   let badgeHtml = !isAdmin ? `<span class="badge red">Lecture Seule</span>` : (isDraft ? `<span class="badge orange">Brouillon</span>` : `<span class="badge green">Validé</span>`);
   let actionBtns = isAdmin ? (isDraft ? `<button class="btn btn-success" onclick="toggleValidation('${date}', 'validated')">Verrouiller & Valider</button>` : `<button class="btn btn-warning" onclick="toggleValidation('${date}', 'draft')">Déverrouiller pour correction</button>`) : '';
 
   window.handleInput = (h, k, val) => {
+    // Validation : on n'accepte qu'un nombre positif ou un texte d'absence (ABS, etc.)
+    const trimmed = String(val).trim();
+    if(trimmed !== '' && !isAbsentMark(trimmed)){
+      const n = parseInt(trimmed);
+      if(isNaN(n) || n < 0 || String(n) !== trimmed){
+        showToast('Valeur invalide : entrez un nombre positif ou "ABS"');
+        return;
+      }
+    }
     data.hours[h][k] = val; saveDay(date, data);
     let newTots = computeTotals(data);
     OP_KEYS.forEach(opKey => document.getElementById(`tot_col_${opKey}`).innerText = newTots[opKey]);
     document.getElementById('tot_gen').innerText = newTots.totalGeneral;
     
     let runCumul = 0;
-    HOURS.forEach(hour => {
+    dayHours.forEach(hour => {
       let rTot = OP_KEYS.reduce((sum, opKey) => sum + (parseInt(data.hours[hour][opKey])||0), 0);
       runCumul += rTot; let hId = hour.replace(/\s+/g,'');
       let target = getHourTarget(hour, data);
@@ -576,6 +1003,8 @@ function renderSaisie(container, date){
     if(dayBadge){ dayBadge.textContent = newRend + '%'; dayBadge.className = 'hour-rend ' + rendClass(newRend); }
     let dayObjLbl = document.getElementById('day-obj-label');
     if(dayObjLbl) dayObjLbl.textContent = newObj;
+    let dayMiniBar = document.getElementById('day-mini-bar');
+    if(dayMiniBar){ dayMiniBar.className = rendClass(newRend); dayMiniBar.style.width = Math.min(100,newRend) + '%'; }
 
     let maxVal = Math.max(...OP_KEYS.map(opKey => newTots[opKey]), 1);
     OP_KEYS.forEach((opKey, index) => {
@@ -589,7 +1018,7 @@ function renderSaisie(container, date){
   window.changeSaisieDate = (val) => { if(val){ saisieDate = val; nav('saisie'); } };
 
   let rows = ''; let cumulGeneral = 0;
-  HOURS.forEach(h => {
+  dayHours.forEach(h => {
     let rTot = OP_KEYS.reduce((sum, k) => sum + (parseInt(data.hours[h][k])||0), 0);
     cumulGeneral += rTot; let hId = h.replace(/\s+/g,'');
     let hTarget = getHourTarget(h, data);
@@ -610,6 +1039,8 @@ function renderSaisie(container, date){
           <h2 style="margin:0; color:var(--accent);">ESPACE SAISIE</h2>
           <div style="font-size:13px; font-weight:bold; margin-top:4px;">Date : ${date.split('-').reverse().join('/')} ${badgeHtml}</div>
           <div style="font-size:12.5px; color:var(--ink-soft); margin-top:4px;">Objectif jour (ajusté absences) : <b id="day-obj-label">${obj}</b> pièces · Rendement : <span id="day-rend-badge" class="hour-rend ${rendClass(obj>0?Math.round(totals.totalGeneral/obj*100):0)}" style="font-size:13px;">${obj>0?Math.round(totals.totalGeneral/obj*100):0}%</span></div>
+          <div class="mini-gauge" style="max-width:220px;"><div id="day-mini-bar" class="${rendClass(obj>0?Math.round(totals.totalGeneral/obj*100):0)}" style="width:${Math.min(100,obj>0?Math.round(totals.totalGeneral/obj*100):0)}%;"></div></div>
+          ${data.lastEditBy ? `<div style="font-size:11px; color:var(--ink-faint); margin-top:6px;">Dernière modification par <b>${data.lastEditBy}</b>, ${new Date(data.lastEditAt).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</div>` : ''}
         </div>
         <div class="actions" style="align-items:center;">
           ${isAdmin ? `<input type="date" value="${date}" max="${getTodayISO()}" onchange="changeSaisieDate(this.value)" style="padding:8px 10px; border:1px solid var(--border); border-radius:8px;">` : ''}
@@ -646,9 +1077,10 @@ window.loadHist = () => { histDate = document.getElementById('hist-date').value;
 
 function renderHistorique(container){
   const data = getDay(histDate); const totals = computeTotals(data); const ops = getOps();
+  const dayHours = getHoursForDate(histDate);
   let rows = ''; let cumulGeneral = 0;
   
-  HOURS.forEach(h => {
+  dayHours.forEach(h => {
     let rTot = OP_KEYS.reduce((sum, k) => sum + (parseInt(data.hours[h][k])||0), 0);
     cumulGeneral += rTot;
     let hTarget = getHourTarget(h, data);
@@ -665,6 +1097,65 @@ function renderHistorique(container){
   const obj = getObjForDay(data);
   const rendJour = obj > 0 ? Math.round(totals.totalGeneral / obj * 100) : 0;
 
+  const viewToggle = `
+    <div class="segmented" style="display:flex;gap:6px;margin-bottom:10px;">
+      <button class="btn ${histViewMode==='jour'?'btn-primary':'btn-ghost'}" style="padding:7px 14px;font-size:12.5px;" onclick="histViewMode='jour'; nav('historique')">Vue Jour</button>
+      <button class="btn ${histViewMode==='periode'?'btn-primary':'btn-ghost'}" style="padding:7px 14px;font-size:12.5px;" onclick="histViewMode='periode'; nav('historique')">Vue Période</button>
+    </div>`;
+
+  if(histViewMode === 'periode'){
+    let rowsP = '';
+    let curr = new Date(histPeriodStart+'T00:00:00'); let end = new Date(histPeriodEnd+'T00:00:00');
+    let list = [];
+    if(curr <= end){
+      let g=0;
+      while(curr<=end && g<93){
+        let iso = curr.toISOString().slice(0,10);
+        let d = getDay(iso); let t = computeTotals(d); let o = getObjForDay(d);
+        if(o > 0) list.push({iso, total:t.totalGeneral, rend: o>0?Math.round(t.totalGeneral/o*100):0, status:d.status, lastEditBy:d.lastEditBy});
+        curr.setDate(curr.getDate()+1); g++;
+      }
+    }
+    rowsP = list.map(d=>`<tr style="cursor:pointer;" onclick="histDate='${d.iso}'; histViewMode='jour'; nav('historique')">
+      <td>${d.iso.split('-').reverse().join('/')}</td>
+      <td class="total-col">${d.total}</td>
+      <td class="total-col"><span class="hour-rend ${rendClass(d.rend)}">${d.rend}%</span></td>
+      <td>${d.status==='validated'?'<span class="badge green">Validé</span>':'<span class="badge orange">Brouillon</span>'}</td>
+      <td style="font-size:11px;color:var(--ink-soft);">${d.lastEditBy||'—'}</td>
+    </tr>`).join('');
+
+    container.innerHTML = `
+      <div class="flex-header no-print">
+        <div></div>
+        <div class="actions">
+          <button class="btn btn-ghost" onclick="exportCSV()">${ICONS.export} Excel (jour sélectionné)</button>
+        </div>
+      </div>
+      <div class="card">
+        ${viewToggle}
+        <div class="flex-header" style="margin-bottom:0;">
+          <div class="field" style="margin:0;flex:1;"><label>Du :</label><input type="date" id="hist-p-start" value="${histPeriodStart}" onchange="updateHistPeriod()"></div>
+          <div class="field" style="margin:0;flex:1;"><label>Au :</label><input type="date" id="hist-p-end" value="${histPeriodEnd}" onchange="updateHistPeriod()"></div>
+        </div>
+      </div>
+      <div class="card">
+        ${list.length===0 ? buildEmptyState("Aucun jour travaillé sur cette période") : `
+          <table>
+            <thead><tr><th>Date</th><th>Total</th><th>Rendement</th><th>Statut</th><th>Modifié par</th></tr></thead>
+            <tbody>${rowsP}</tbody>
+          </table>
+          <div style="font-size:11px;color:var(--ink-faint);margin-top:10px;">Touchez une ligne pour voir le détail du jour.</div>
+        `}
+      </div>
+    `;
+    window.updateHistPeriod = () => {
+      histPeriodStart = document.getElementById('hist-p-start').value;
+      histPeriodEnd = document.getElementById('hist-p-end').value;
+      nav('historique');
+    };
+    return;
+  }
+
   container.innerHTML = `
     <div class="flex-header no-print">
       <input type="date" id="hist-date" value="${histDate}" onchange="loadHist()">
@@ -673,14 +1164,18 @@ function renderHistorique(container){
         <button class="btn btn-ghost" onclick="exportCSV()">${ICONS.export} Excel</button>
       </div>
     </div>
+    <div class="card" style="margin-bottom:0;padding-bottom:10px;">${viewToggle}</div>
     
     <div class="card" style="padding-bottom: 24px; border-top: 4px solid var(--ink-soft);">
       <div class="flex-header">
         <div>
           <h2 style="margin:0; color:var(--ink-soft);">MODE CONSULTATION (Lecture Seule)</h2>
           <div style="font-size:13px; font-weight:bold; margin-top:4px;">Date : ${histDate.split('-').reverse().join('/')} ${data.status === 'validated' ? '<span class="badge green">Validé</span>' : '<span class="badge orange">Brouillon</span>'} · Rendement jour : <span class="hour-rend ${rendClass(rendJour)}" style="font-size:13px;">${rendJour}%</span></div>
+          <div class="mini-gauge" style="max-width:220px;"><div class="${rendClass(rendJour)}" style="width:${Math.min(100,rendJour)}%;"></div></div>
+          ${data.lastEditBy ? `<div style="font-size:11px; color:var(--ink-faint); margin-top:6px;">Dernière modification par <b>${data.lastEditBy}</b>, ${new Date(data.lastEditAt).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</div>` : ''}
         </div>
       </div>
+      ${dayHours.length===0 ? buildEmptyState("Jour non travaillé", "Aucun créneau n'est programmé ce jour-là (voir Paramètres → Horaires).") : (totals.totalGeneral===0 ? buildEmptyState("Aucune production enregistrée ce jour-là", "Vérifiez la date sélectionnée, ou saisissez les données si elles manquent.") : '')}
       
       <div style="overflow-x:auto;">
         <table>
@@ -713,55 +1208,113 @@ function renderHistorique(container){
 window.updateStatRange = () => {
   statRangeStart = document.getElementById('stat-start').value;
   statRangeEnd = document.getElementById('stat-end').value;
+  statActivePeriod = 'perso';
   renderStats(document.getElementById('main'));
 };
 
+window.setStatPeriod = (period) => {
+  const today = getTodayISO();
+  if(period === 'jour'){ statRangeStart = today; statRangeEnd = today; }
+  else if(period === 'semaine'){ statRangeStart = new Date(new Date().setDate(new Date().getDate()-6)).toISOString().slice(0,10); statRangeEnd = today; }
+  else if(period === 'mois'){ statRangeStart = today.slice(0,8)+'01'; statRangeEnd = today; }
+  statActivePeriod = period;
+  renderStats(document.getElementById('main'));
+};
+let statActivePeriod = 'semaine';
+
 function renderStats(container){
-  let selectedData = getDay(statRangeEnd);
-  let valsHourly = HOURS.map(h => OP_KEYS.reduce((sum, k) => sum + (parseInt(selectedData.hours[h][k])||0), 0));
-  
-  // Calcul de la plage de dates
-  let labelsDyn = []; let valsDyn = [];
-  let curr = new Date(statRangeStart); let end = new Date(statRangeEnd);
-  
-  if (curr > end) { showToast("Erreur : Date de début > Date de fin"); } 
+  const dateEndHours = getHoursForDate(statRangeEnd);
+  let valsHourly = dateEndHours.map(h => OP_KEYS.reduce((sum, k) => sum + (parseInt((getDay(statRangeEnd).hours[h]||{})[k])||0), 0));
+
+  // Construit un jour par jour sur la période (plafonné à 93 jours ~ 3 mois)
+  let days = [];
+  let curr = new Date(statRangeStart+'T00:00:00'); let end = new Date(statRangeEnd+'T00:00:00');
+  if (curr > end) { showToast("Erreur : Date de début > Date de fin"); }
   else {
-    let safeGuard = 0;
-    while(curr <= end && safeGuard < 60) { // Max 60 jours d'affichage
-       let iso = curr.toISOString().slice(0,10);
-       let d = getDay(iso);
-       let tot = computeTotals(d).totalGeneral;
-       // Ajoute seulement si la prod > 0 (Ignore les dimanches/jours vides)
-       if(tot > 0) {
-         labelsDyn.push(iso.slice(5).replace('-','/'));
-         valsDyn.push(tot);
-       }
-       curr.setDate(curr.getDate() + 1);
-       safeGuard++;
+    let g = 0;
+    while(curr <= end && g < 93){
+      let iso = curr.toISOString().slice(0,10);
+      let d = getDay(iso);
+      let t = computeTotals(d);
+      let obj = getObjForDay(d);
+      days.push({ iso, total: t.totalGeneral, obj, rend: obj>0 ? (t.totalGeneral/obj*100) : 0, perOp: OP_KEYS.map(k=>t[k]) });
+      curr.setDate(curr.getDate() + 1); g++;
     }
   }
-  if(labelsDyn.length === 0){ labelsDyn = ['-']; valsDyn = [0]; }
+  const workedDays = days.filter(d => d.obj > 0); // jours réellement programmés (hors dimanche / samedi désactivé)
+  const activeDays = workedDays.filter(d => d.total > 0); // jours avec au moins une saisie
+
+  const labelsDyn = activeDays.length ? activeDays.map(d=>d.iso.slice(5).replace('-','/')) : ['-'];
+  const valsDyn = activeDays.length ? activeDays.map(d=>d.total) : [0];
+  const rendLabelsDyn = activeDays.length ? activeDays.map(d=>d.iso.slice(5).replace('-','/')) : ['-'];
+  const rendValsDyn = activeDays.length ? activeDays.map(d=>Math.round(d.rend)) : [0];
+
+  const ops = getOps();
+  const perOpTotals = OP_KEYS.map((k,i) => activeDays.reduce((s,d)=>s+d.perOp[i], 0));
+  const totalAll = perOpTotals.reduce((s,v)=>s+v,0);
+  const ranking = ops.map((name,i)=>({name, total:perOpTotals[i]})).sort((a,b)=>b.total-a.total);
+
+  const avgRend = activeDays.length ? activeDays.reduce((s,d)=>s+d.rend,0)/activeDays.length : 0;
+  const bestDay = activeDays.length ? activeDays.reduce((a,b)=>b.rend>a.rend?b:a) : null;
+  const worstDay = activeDays.length ? activeDays.reduce((a,b)=>b.rend<a.rend?b:a) : null;
+
+  const noEvolutionData = activeDays.length === 0;
+  const noHourlyData = valsHourly.every(v=>v===0) || dateEndHours.length===0;
 
   container.innerHTML = `
     <div class="card no-print" style="background:var(--surface-2);">
       <h3 style="margin-top:0; font-size:13px; color:var(--ink-soft);">Période d'analyse :</h3>
+      <div class="segmented" style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;">
+        <button class="btn ${statActivePeriod==='jour'?'btn-primary':'btn-ghost'}" style="padding:7px 14px;font-size:12.5px;" onclick="setStatPeriod('jour')">Jour</button>
+        <button class="btn ${statActivePeriod==='semaine'?'btn-primary':'btn-ghost'}" style="padding:7px 14px;font-size:12.5px;" onclick="setStatPeriod('semaine')">7 jours</button>
+        <button class="btn ${statActivePeriod==='mois'?'btn-primary':'btn-ghost'}" style="padding:7px 14px;font-size:12.5px;" onclick="setStatPeriod('mois')">Ce mois</button>
+        <button class="btn ${statActivePeriod==='perso'?'btn-primary':'btn-ghost'}" style="padding:7px 14px;font-size:12.5px;" onclick="statActivePeriod='perso'; renderStats(document.getElementById('main'))">Personnalisé</button>
+      </div>
       <div class="flex-header" style="margin-bottom:0;">
         <div class="field" style="margin:0; flex:1;"><label>Du :</label><input type="date" id="stat-start" value="${statRangeStart}" onchange="updateStatRange()"></div>
         <div class="field" style="margin:0; flex:1;"><label>Au :</label><input type="date" id="stat-end" value="${statRangeEnd}" onchange="updateStatRange()"></div>
       </div>
     </div>
-    
-    <h2>Évolution Globale (Jours travaillés sur la période)</h2>
-    <div class="card">${buildNativeChart(labelsDyn, valsDyn, 'blue')}</div>
-    
-    <h2>Production Horaire (Moyenne/Graphe du ${statRangeEnd.split('-').reverse().join('/')})</h2>
-    <div class="card">${buildNativeChart(STATS_HOURS_LABELS, valsHourly, 'green')}</div>
+
+    <div class="kpi-grid">
+      <div class="kpi"><div class="label">Production période</div><div class="value">${totalAll}</div></div>
+      <div class="kpi"><div class="label">Rendement moyen</div><div class="value ${rendClass(avgRend)}">${avgRend.toFixed(1)}%</div></div>
+      <div class="kpi"><div class="label">Meilleur jour</div><div class="value good" style="font-size:15px;">${bestDay ? bestDay.iso.split('-').reverse().join('/')+' ('+Math.round(bestDay.rend)+'%)' : '—'}</div></div>
+      <div class="kpi"><div class="label">Jour le plus faible</div><div class="value bad" style="font-size:15px;">${worstDay ? worstDay.iso.split('-').reverse().join('/')+' ('+Math.round(worstDay.rend)+'%)' : '—'}</div></div>
+    </div>
+
+    <h2>Évolution du Rendement</h2>
+    <div class="card">${noEvolutionData ? buildEmptyState("Aucune production sur cette période", "Essayez d'élargir la plage de dates.") : buildNativeChart(rendLabelsDyn, rendValsDyn, 'blue')}</div>
+
+    <h2>Production Totale (pièces/jour)</h2>
+    <div class="card">${noEvolutionData ? buildEmptyState("Aucune production sur cette période") : buildNativeChart(labelsDyn, valsDyn, 'green')}</div>
+
+    <h2>Classement des Opératrices</h2>
+    <div class="card">
+      ${totalAll===0 ? buildEmptyState("Aucune donnée à classer sur cette période") : `
+        <table>
+          <thead><tr><th>#</th><th>Opératrice</th><th class="num" style="text-align:right;">Total pièces</th><th class="num" style="text-align:right;">Part</th></tr></thead>
+          <tbody>
+            ${ranking.map((r,i)=>`<tr>
+              <td>${i+1}${i===0?' 🏆':''}</td>
+              <td style="font-weight:700;">${r.name}</td>
+              <td style="text-align:right;font-family:var(--mono);font-weight:700;">${r.total}</td>
+              <td style="text-align:right;font-family:var(--mono);">${totalAll>0?Math.round(r.total/totalAll*100):0}%</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      `}
+    </div>
+
+    <h2>Production Horaire (${statRangeEnd.split('-').reverse().join('/')})</h2>
+    <div class="card">${noHourlyData ? buildEmptyState(dateEndHours.length===0 ? "Jour non travaillé" : "Aucune donnée pour ce jour") : buildNativeChart(dateEndHours.map(h=>h.split(' - ')[0]), valsHourly, 'green')}</div>
   `;
 }
 
 // --- ONGLET 5: PARAMETRES (ADMIN) ---
 function renderParams(container){
   let ops = getOps(); let rate = getObjHoraireOp(); let obj = getObj();
+  let sch = getScheduleSettings();
   container.innerHTML = `
     <div class="flex-header"><h2>Paramètres de l'Atelier</h2></div>
     <div class="card">
@@ -772,9 +1325,31 @@ function renderParams(container){
       </div>
       <div style="font-size:12.5px; color:var(--ink-soft); margin-top:6px; line-height:1.5;">
         Référence actuelle : <b>3 min/pièce</b> (soit ${rate} pièces/h et par opératrice).<br>
-        Objectif théorique avec les ${OP_KEYS.length} opératrices présentes : <b>${obj} pièces/jour</b>.<br>
+        Objectif théorique semaine type (Lun-Ven, ${OP_KEYS.length} opératrices) : <b>${obj} pièces/jour</b>.<br>
         <b>En cas d'absence</b> : tapez <code>ABS</code> (ou tout texte) dans la case d'une opératrice au lieu d'un chiffre — l'objectif de cette heure-là est automatiquement réduit en conséquence, sur le Tableau de bord, la Saisie et l'Historique.
       </div>
+      
+      <hr style="border:0; border-top:1px solid var(--border); margin:24px 0;">
+
+      <h3>Horaires de Travail</h3>
+      <p style="font-size:12px; color:var(--ink-soft); margin-bottom:15px;">Utilisés automatiquement pour calculer les créneaux et l'objectif de chaque jour.</p>
+
+      <div style="font-size:12.5px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;margin-bottom:8px;">Lundi → Vendredi</div>
+      <div class="kpi-grid" style="margin-bottom:14px;">
+        <div class="field" style="margin:0;"><label>Début</label><input type="time" id="sch_wstart" value="${sch.weekdayStart}"></div>
+        <div class="field" style="margin:0;"><label>Fin</label><input type="time" id="sch_wend" value="${sch.weekdayEnd}"></div>
+        <div class="field" style="margin:0;"><label>Pause début</label><input type="time" id="sch_pstart" value="${sch.pauseStart}"></div>
+        <div class="field" style="margin:0;"><label>Pause fin</label><input type="time" id="sch_pend" value="${sch.pauseEnd}"></div>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;margin-bottom:8px;">
+        <input type="checkbox" id="sch_sat_enabled" ${sch.saturdayEnabled?'checked':''} style="width:16px;height:16px;"> Samedi travaillé
+      </div>
+      <div class="kpi-grid">
+        <div class="field" style="margin:0;"><label>Début</label><input type="time" id="sch_sstart" value="${sch.saturdayStart}"></div>
+        <div class="field" style="margin:0;"><label>Fin</label><input type="time" id="sch_send" value="${sch.saturdayEnd}"></div>
+      </div>
+      <div style="font-size:11.5px;color:var(--ink-faint);margin-top:8px;">Dimanche : toujours non travaillé.</div>
       
       <hr style="border:0; border-top:1px solid var(--border); margin:24px 0;">
       
@@ -797,6 +1372,24 @@ function renderParams(container){
   window.saveParams = () => {
     let v = parseInt(document.getElementById('setting_rate').value);
     if(!isNaN(v) && v > 0) setJSON('obj_horaire_op', v);
+
+    const wstart = document.getElementById('sch_wstart').value;
+    const wend = document.getElementById('sch_wend').value;
+    const pstart = document.getElementById('sch_pstart').value;
+    const pend = document.getElementById('sch_pend').value;
+    const satEnabled = document.getElementById('sch_sat_enabled').checked;
+    const sstart = document.getElementById('sch_sstart').value;
+    const send = document.getElementById('sch_send').value;
+
+    if(!wstart || !wend || wstart >= wend){ showToast("Horaires semaine invalides : l'heure de fin doit être après le début."); return; }
+    if(pstart && pend && pstart >= pend){ showToast("Pause invalide : l'heure de fin doit être après le début."); return; }
+    if(pstart && (pstart < wstart || pstart > wend)){ showToast("La pause doit être comprise dans les horaires de la journée."); return; }
+    if(satEnabled && (!sstart || !send || sstart >= send)){ showToast("Horaires du samedi invalides."); return; }
+
+    setJSON('schedule', {
+      weekdayStart: wstart, weekdayEnd: wend, pauseStart: pstart||null, pauseEnd: pend||null,
+      saturdayEnabled: satEnabled, saturdayStart: sstart, saturdayEnd: send
+    });
     
     let newOps = [
       document.getElementById('setting_op0').value.trim() || "Opératrice 1",
@@ -812,22 +1405,33 @@ function renderParams(container){
 
 // --- SESSIONS & COMPTES ---
 function renderSessions(container){
-  const users = getUsers();
+  const fbMode = firebaseConfigured();
+  const profiles = fbMode ? getUserProfiles() : {}; // {uid: {nom, role, username}}
+  const localUsers = fbMode ? [] : getLocalUsers();
+  const userRows = fbMode ? Object.entries(profiles) : localUsers.map((u,i)=>[String(i), u]);
   const sessionEntries = Object.entries(sessionsCache).sort((a,b)=> (b[1].lastSeen||0)-(a[1].lastSeen||0));
 
   container.innerHTML = `
     <div class="flex-header"><h2>Comptes & Sessions</h2></div>
 
+    ${fbMode ? `
     <div class="card">
       <h3 style="margin-top:0;">Mon mot de passe</h3>
       <p style="font-size:12px;color:var(--ink-soft);margin-top:0;">Connecté en tant que <b>${currentUser.nom}</b> (${currentUser.username}).</p>
-      <div class="field"><label>Nouveau mot de passe</label><input type="text" id="mypw-new" placeholder="Laisser vide pour ne rien changer"></div>
+      <div class="field"><label>Mot de passe actuel (pour confirmer)</label><input type="password" id="mypw-current" placeholder="Requis pour changer le mot de passe"></div>
+      <div class="field"><label>Nouveau mot de passe</label><input type="password" id="mypw-new" placeholder="Au moins 6 caractères"></div>
       <button class="btn btn-primary" onclick="changeMyPassword()">Changer mon mot de passe</button>
-    </div>
+    </div>` : `
+    <div class="card">
+      <h3 style="margin-top:0;">Mon mot de passe</h3>
+      <p style="font-size:12px;color:var(--ink-soft);margin-top:0;">Connecté en tant que <b>${currentUser.nom}</b> (${currentUser.username}). Mode local (Firebase non configuré).</p>
+      <div class="field"><label>Nouveau mot de passe</label><input type="text" id="mypw-new" placeholder="Laisser vide pour ne rien changer"></div>
+      <button class="btn btn-primary" onclick="changeMyPasswordLocal()">Changer mon mot de passe</button>
+    </div>`}
 
     <div class="card">
       <h3 style="margin-top:0;">Sessions actives</h3>
-      ${!firebaseConfigured() ? `<p style="font-size:12px;color:var(--ink-soft);margin-top:0;">Le partage entre appareils n'est pas configuré : seule la session de cet appareil est visible ici.</p>` : ''}
+      ${!fbMode ? `<p style="font-size:12px;color:var(--ink-soft);margin-top:0;">Le partage entre appareils n'est pas configuré : seule la session de cet appareil est visible ici.</p>` : ''}
       ${sessionEntries.length === 0 ? `<p style="font-size:13px;color:var(--ink-soft);">Aucune session enregistrée.</p>` : sessionEntries.map(([sid, s]) => {
         const active = (Date.now() - (s.lastSeen||0)) < 5*60000;
         return `
@@ -847,25 +1451,66 @@ function renderSessions(container){
         <button class="btn btn-primary" style="padding:6px 12px;font-size:12px;" onclick="showAddUserForm()">+ Ajouter</button>
       </div>
       <div id="user-form-zone"></div>
-      ${users.map((u,i) => `
+      ${userRows.map(([key,u]) => `
         <div class="session-row">
           <div>
             <div style="font-weight:700;">${u.nom} <span class="badge ${u.role==='admin'?'green':''}" style="font-size:10px;">${u.role==='admin'?'Responsable':'Direction'}</span></div>
             <div style="font-size:11.5px;color:var(--ink-soft);">Identifiant : ${u.username}</div>
           </div>
           <div style="display:flex;gap:6px;">
-            <button class="btn btn-ghost" style="padding:6px 10px;font-size:12px;" onclick="showEditUserForm(${i})">Modifier</button>
-            ${users.length > 1 ? `<button class="btn btn-warning" style="padding:6px 10px;font-size:12px;" onclick="deleteUserAccount(${i})">Suppr.</button>` : ''}
+            ${fbMode ? `<button class="btn btn-ghost" style="padding:6px 10px;font-size:12px;" onclick="showEditRoleForm('${key}')">Modifier le rôle</button>`
+                     : `<button class="btn btn-ghost" style="padding:6px 10px;font-size:12px;" onclick="showEditUserForm(${key})">Modifier</button>
+                        ${userRows.length > 1 ? `<button class="btn btn-warning" style="padding:6px 10px;font-size:12px;" onclick="deleteUserAccount(${key})">Suppr.</button>` : ''}`}
           </div>
         </div>
       `).join('')}
+      ${fbMode ? `<p style="font-size:11px;color:var(--ink-faint);margin-top:12px;">Pour changer le mot de passe d'un autre compte ou le supprimer : Console Firebase → Authentication → Users (nécessite un accès à votre projet Firebase).</p>` : ''}
     </div>
   `;
 
-  function renderUserForm(editIndex){
+  function renderUserForm(mode, key){
+    // mode: 'add' | 'edit-local' | 'edit-role'
     const zone = document.getElementById('user-form-zone');
-    const editing = editIndex !== null;
-    const u = editing ? users[editIndex] : {nom:'', username:'', password:'', role:'viewer'};
+    if(mode === 'add' && fbMode){
+      zone.innerHTML = `
+        <div class="card" style="background:var(--surface-2); margin-bottom:14px;">
+          <div class="field"><label>Nom affiché</label><input type="text" id="uf-nom"></div>
+          <div class="field"><label>Identifiant (sans espace, ex : contremaitre)</label><input type="text" id="uf-username"></div>
+          <div class="field"><label>Mot de passe</label><input type="password" id="uf-password" placeholder="Au moins 6 caractères"></div>
+          <div class="field"><label>Rôle</label>
+            <select id="uf-role">
+              <option value="viewer">Direction (consultation)</option>
+              <option value="admin">Responsable (saisie)</option>
+            </select>
+          </div>
+          <div style="display:flex; gap:8px;">
+            <button class="btn btn-primary" style="flex:1;" onclick="createFirebaseAccount()">Créer le compte</button>
+            <button class="btn btn-ghost" onclick="document.getElementById('user-form-zone').innerHTML=''">Annuler</button>
+          </div>
+        </div>`;
+      return;
+    }
+    if(mode === 'edit-role' && fbMode){
+      const u = profiles[key];
+      zone.innerHTML = `
+        <div class="card" style="background:var(--surface-2); margin-bottom:14px;">
+          <div class="field"><label>Nom affiché</label><input type="text" id="uf-nom" value="${u.nom}"></div>
+          <div class="field"><label>Rôle</label>
+            <select id="uf-role">
+              <option value="viewer" ${u.role==='viewer'?'selected':''}>Direction (consultation)</option>
+              <option value="admin" ${u.role==='admin'?'selected':''}>Responsable (saisie)</option>
+            </select>
+          </div>
+          <div style="display:flex; gap:8px;">
+            <button class="btn btn-primary" style="flex:1;" onclick="saveRoleEdit('${key}')">Enregistrer</button>
+            <button class="btn btn-ghost" onclick="document.getElementById('user-form-zone').innerHTML=''">Annuler</button>
+          </div>
+        </div>`;
+      return;
+    }
+    // Mode local
+    const editing = key !== null;
+    const u = editing ? localUsers[key] : {nom:'', username:'', password:'', role:'viewer'};
     zone.innerHTML = `
       <div class="card" style="background:var(--surface-2); margin-bottom:14px;">
         <div class="field"><label>Nom affiché</label><input type="text" id="uf-nom" value="${u.nom}"></div>
@@ -878,22 +1523,78 @@ function renderSessions(container){
           </select>
         </div>
         <div style="display:flex; gap:8px;">
-          <button class="btn btn-primary" style="flex:1;" onclick="saveUserForm(${editing?editIndex:'null'})">${editing?'Enregistrer':'Créer le compte'}</button>
+          <button class="btn btn-primary" style="flex:1;" onclick="saveUserFormLocal(${editing?key:'null'})">${editing?'Enregistrer':'Créer le compte'}</button>
           <button class="btn btn-ghost" onclick="document.getElementById('user-form-zone').innerHTML=''">Annuler</button>
         </div>
-      </div>
-    `;
+      </div>`;
   }
-  window.showAddUserForm = () => renderUserForm(null);
-  window.showEditUserForm = (i) => renderUserForm(i);
+  window.showAddUserForm = () => renderUserForm('add', null);
+  window.showEditUserForm = (i) => renderUserForm('edit-local', i);
+  window.showEditRoleForm = (uid) => renderUserForm('edit-role', uid);
 
-  window.saveUserForm = (editIndex) => {
+  // ---- Mode Firebase : créer un compte (instance secondaire pour ne pas déconnecter l'admin) ----
+  window.createFirebaseAccount = async () => {
+    const nom = document.getElementById('uf-nom').value.trim();
+    const username = document.getElementById('uf-username').value.trim().toLowerCase();
+    const password = document.getElementById('uf-password').value;
+    const role = document.getElementById('uf-role').value;
+    if(!nom || !username){ showToast('Nom et identifiant requis'); return; }
+    if(!password || password.length < 6){ showToast('Mot de passe : 6 caractères minimum'); return; }
+    try{
+      let secApp;
+      try{ secApp = firebase.app('Secondary'); } catch(e){ secApp = firebase.initializeApp(firebaseConfig, 'Secondary'); }
+      const secAuth = secApp.auth();
+      const cred = await secAuth.createUserWithEmailAndPassword(emailForUsername(username), password);
+      const uid = cred.user.uid;
+      await secAuth.signOut();
+      await fbRootRef.child('users_v2/'+uid).set({ nom, username, role });
+      showToast('Compte créé avec succès');
+      nav('sessions');
+    }catch(err){
+      console.error(err);
+      let msg = "Erreur lors de la création du compte.";
+      if(err.code === 'auth/email-already-in-use') msg = 'Cet identifiant est déjà utilisé.';
+      else if(err.code === 'auth/weak-password') msg = 'Mot de passe trop faible (6 caractères minimum).';
+      else if(err.code === 'auth/operation-not-allowed') msg = "Authentification par email/mot de passe non activée côté Firebase (voir instructions).";
+      showToast(msg);
+    }
+  };
+  window.saveRoleEdit = async (uid) => {
+    const nom = document.getElementById('uf-nom').value.trim();
+    const role = document.getElementById('uf-role').value;
+    if(!nom){ showToast('Nom requis'); return; }
+    try{
+      await fbRootRef.child('users_v2/'+uid).update({ nom, role });
+      if(currentUser.uid === uid){ currentUser.nom = nom; currentUser.role = role; try{ window.sessionStorage.setItem(CACHE_PREFIX+'user', JSON.stringify(currentUser)); }catch(e){} }
+      showToast('Compte mis à jour');
+      nav('sessions');
+    }catch(err){ console.error(err); showToast("Erreur : vérifiez vos droits d'accès."); }
+  };
+  window.changeMyPassword = async () => {
+    const currentPw = document.getElementById('mypw-current').value;
+    const newPw = document.getElementById('mypw-new').value;
+    if(!currentPw || !newPw){ showToast('Renseignez le mot de passe actuel et le nouveau'); return; }
+    if(newPw.length < 6){ showToast('Nouveau mot de passe : 6 caractères minimum'); return; }
+    try{
+      const cred = firebase.auth.EmailAuthProvider.credential(emailForUsername(currentUser.username), currentPw);
+      await fbAuth.currentUser.reauthenticateWithCredential(cred);
+      await fbAuth.currentUser.updatePassword(newPw);
+      showToast('Mot de passe modifié avec succès');
+      nav('sessions');
+    }catch(err){
+      console.error(err);
+      showToast(err.code === 'auth/wrong-password' ? 'Mot de passe actuel incorrect.' : "Erreur lors du changement de mot de passe.");
+    }
+  };
+
+  // ---- Mode local ----
+  window.saveUserFormLocal = (editIndex) => {
     const nom = document.getElementById('uf-nom').value.trim();
     const username = document.getElementById('uf-username').value.trim();
     const password = document.getElementById('uf-password').value;
     const role = document.getElementById('uf-role').value;
     if(!nom || !username){ showToast('Nom et identifiant requis'); return; }
-    let list = getUsers().slice();
+    let list = getLocalUsers().slice();
     if(editIndex === null){
       if(list.find(x=>x.username===username)){ showToast('Cet identifiant existe déjà'); return; }
       if(!password){ showToast('Mot de passe requis pour un nouveau compte'); return; }
@@ -901,29 +1602,27 @@ function renderSessions(container){
     } else {
       list[editIndex] = { ...list[editIndex], nom, role, password: password ? password : list[editIndex].password };
     }
-    setJSON('users', list);
+    saveLocalUsers(list);
     showToast('Compte enregistré');
     nav('sessions');
   };
-
   window.deleteUserAccount = (i) => {
-    let list = getUsers().slice();
+    let list = getLocalUsers().slice();
     if(list.length <= 1){ showToast('Impossible de supprimer le dernier compte'); return; }
     if(!confirm(`Supprimer le compte de ${list[i].nom} ?`)) return;
     list.splice(i,1);
-    setJSON('users', list);
+    saveLocalUsers(list);
     showToast('Compte supprimé');
     nav('sessions');
   };
-
-  window.changeMyPassword = () => {
+  window.changeMyPasswordLocal = () => {
     const pw = document.getElementById('mypw-new').value;
     if(!pw){ showToast('Entrez un nouveau mot de passe'); return; }
-    let list = getUsers().slice();
+    let list = getLocalUsers().slice();
     const idx = list.findIndex(x => x.username === currentUser.username);
     if(idx === -1){ showToast('Compte introuvable'); return; }
     list[idx] = { ...list[idx], password: pw };
-    setJSON('users', list);
+    saveLocalUsers(list);
     currentUser = list[idx];
     try { window.sessionStorage.setItem(CACHE_PREFIX+'user', JSON.stringify(currentUser)); } catch(e) {}
     showToast('Mot de passe modifié avec succès');
@@ -934,10 +1633,11 @@ function renderSessions(container){
 // --- EXPORT CSV ---
 window.exportCSV = () => {
   const data = getDay(histDate); const totals = computeTotals(data); const ops = getOps(); const obj = getObjForDay(data);
+  const dayHours = getHoursForDate(histDate);
   let csv = `Horaires;${ops[0]};${ops[1]};${ops[2]};${ops[3]};Total Heure;Total Cumule;Observations\n`;
   let cumul = 0;
-  HOURS.forEach(h => {
-    const d = data.hours[h]; 
+  dayHours.forEach(h => {
+    const d = data.hours[h] || {op1:'',op2:'',op3:'',op4:'',obs:''};
     const rTot = OP_KEYS.reduce((sum, k) => sum + (parseInt(d[k])||0), 0);
     cumul += rTot;
     csv += `${h};${d.op1};${d.op2};${d.op3};${d.op4};${rTot};${cumul};"${d.obs}"\n`;
