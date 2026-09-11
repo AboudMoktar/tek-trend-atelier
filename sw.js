@@ -1,26 +1,60 @@
-const CACHE_NAME = 'tek-trend-v1';
-const urlsToCache = [
+// TEK-TREND — Service Worker
+// Change ce numéro de version à chaque mise à jour du site pour forcer
+// les téléphones déjà installés à récupérer la nouvelle version.
+const CACHE_NAME = 'tek-trend-v2';
+
+// Fichiers essentiels de l'application (mêmes dossier que sw.js)
+const APP_SHELL = [
   './',
   './index.html',
   './manifest.json',
   './icon-192.png',
-  './icon-512.png',
-  'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js',
-  'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@500;600;700&display=swap'
+  './icon-512.png'
 ];
 
-self.addEventListener('install', event => {
+// --- Installation : on met en cache le strict nécessaire pour que ---
+// --- l'application s'ouvre même sans connexion internet.          ---
+self.addEventListener('install', function(event){
   event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => {
-      return cache.addAll(urlsToCache);
-    })
+    caches.open(CACHE_NAME)
+      .then(function(cache){ return cache.addAll(APP_SHELL); })
+      .then(function(){ return self.skipWaiting(); })
+      .catch(function(err){ console.error('Erreur mise en cache initiale :', err); })
   );
 });
 
-self.addEventListener('fetch', event => {
+// --- Activation : on supprime les anciennes versions du cache ---
+self.addEventListener('activate', function(event){
+  event.waitUntil(
+    caches.keys().then(function(keys){
+      return Promise.all(
+        keys.filter(function(k){ return k !== CACHE_NAME; })
+            .map(function(k){ return caches.delete(k); })
+      );
+    }).then(function(){ return self.clients.claim(); })
+  );
+});
+
+// --- Requêtes réseau : on répond depuis le cache si possible, ---
+// --- puis on va chercher sur le réseau et on met à jour le cache. ---
+self.addEventListener('fetch', function(event){
+  if(event.request.method !== 'GET') return;
+
   event.respondWith(
-    caches.match(event.request).then(response => {
-      return response || fetch(event.request);
+    caches.match(event.request).then(function(cached){
+      const networkFetch = fetch(event.request).then(function(response){
+        // On ne met en cache que les réponses valides (classiques ou opaques CDN)
+        if(response && (response.ok || response.type === 'opaque')){
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then(function(cache){ cache.put(event.request, copy); });
+        }
+        return response;
+      }).catch(function(){
+        // Pas de réseau : on retombe sur le cache si on en a un
+        return cached;
+      });
+      // Cache d'abord pour un affichage instantané, sinon on attend le réseau
+      return cached || networkFetch;
     })
   );
 });

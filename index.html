@@ -6,17 +6,20 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="TEK-TREND">
-<meta name="theme-color" content="#FFFFFF">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#1C2430">
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" href="./icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="./icon-192.png">
 <title>Rendement Atelier - TEK-TREND</title>
-<link rel="manifest" href="manifest.json">
-<link rel="apple-touch-icon" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
   :root{
     --bg:#EEF1F4; --surface:#FFFFFF; --surface-2:#F5F7F9;
     --ink:#1C2430; --ink-soft:#5B6472; --ink-faint:#8992A0;
-    --accent:#1a4b82; --good:#1F8F5F; --good-bg:#E7F5EE;
+    --accent:#1a4b82; /* Bleu TEK-TREND */
+    --good:#1F8F5F; --good-bg:#E7F5EE;
     --warn:#C8790C; --warn-bg:#FCF1DE; --bad:#C43B32; --bad-bg:#FBEAE8;
     --border:#DEE3E9; --radius:10px;
     --sans:'Inter',system-ui,sans-serif; --mono:'IBM Plex Mono',monospace;
@@ -26,42 +29,55 @@
   input,select,button{font-family:inherit;font-size:15px;}
   #app{min-height:100vh;display:flex;flex-direction:column;}
   
+  /* --- LOGO CSS TEK-TREND --- */
   .logo-wrap { display:flex; flex-direction:column; align-items:center; line-height:1; }
   .logo-tt { font-size:28px; font-weight:800; letter-spacing:-2px; margin-bottom:2px; }
   .logo-text { font-size:22px; font-weight:900; letter-spacing:1px; }
   .logo-sub { font-size:10px; color:var(--ink-soft); font-weight:500; letter-spacing:1.5px; margin-top:3px; }
-  .t-blue, .tek { color:var(--accent); } .t-black, .trend { color:#111; }
+  .t-blue, .tek { color:var(--accent); }
+  .t-black, .trend { color:#111; }
+  
   .topbar .logo-wrap { align-items:flex-start; }
-  .topbar .logo-tt { display:none; }
-  .topbar .logo-text { font-size:18px; } .topbar .logo-sub { font-size:8px; }
+  .topbar .logo-tt { display:none; } /* Masqué dans la barre du haut pour gagner de la place */
+  .topbar .logo-text { font-size:18px; }
+  .topbar .logo-sub { font-size:8px; }
 
+  /* --- LOGIN --- */
   .login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:#fff;}
   .login-card{background:var(--surface);border-radius:16px;padding:32px 28px;width:100%;max-width:380px;box-shadow:0 20px 50px rgba(0,0,0,.1);}
   .field{margin-bottom:14px;}
   .field label{display:block;font-size:13px;font-weight:600;color:var(--ink-soft);margin-bottom:6px;}
-  .field input, .field select{width:100%;padding:11px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--surface-2);color:var(--ink);}
+  .field input{width:100%;padding:11px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--surface-2);color:var(--ink);}
   .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:none;border-radius:8px;padding:11px 16px;font-weight:600;font-size:14.5px;cursor:pointer;}
-  .btn-sm{padding:6px 10px;font-size:12px;border-radius:6px;}
-  .btn-primary{background:var(--accent);color:#fff;} .btn-danger{background:var(--bad);color:#fff;}
+  .btn-primary{background:var(--accent);color:#fff;}
   .btn-ghost{background:var(--surface-2);color:var(--ink);border:1.5px solid var(--border);}
-  .btn-success{background:var(--good);color:#fff;} .btn-warning{background:var(--warn);color:#fff;}
+  .btn-success{background:var(--good);color:#fff;}
+  .btn-warning{background:var(--warn);color:#fff;}
   .btn-block{width:100%;margin-top:6px;}
   .login-error{background:var(--bad-bg);color:var(--bad);padding:10px 12px;border-radius:8px;font-size:13.5px;margin-bottom:14px;display:none; text-align:center; font-weight:bold;}
   
+  /* --- SHELL --- */
   .topbar{background:#fff; color:var(--ink); padding:10px 18px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:20; border-bottom:1px solid var(--border); box-shadow:0 2px 10px rgba(0,0,0,0.05);}
   .user-chip{display:flex;align-items:center;gap:8px;font-size:12.5px;}
+  .sync-badge{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:20px;white-space:nowrap;}
+  .sync-badge.sync-off{background:rgba(255,255,255,.12);color:rgba(255,255,255,.65);}
+  .sync-badge.sync-connecting{background:rgba(255,255,255,.12);color:#F5C46B;}
+  .sync-badge.sync-ok{background:rgba(31,143,95,.2);color:#4ADE9B;}
+  .sync-badge.sync-error{background:rgba(196,59,50,.25);color:#FF8A80;}
   .user-chip .role{background:var(--surface-2); color:var(--ink); padding:4px 10px; border-radius:20px; font-size:11px; font-weight:700;}
   .user-chip button{background:none;border:none;color:var(--bad);cursor:pointer;padding:4px;}
   main{flex:1;padding:16px 14px 88px; max-width: 900px; margin: 0 auto; width: 100%;}
   .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:14px;overflow-x:auto; box-shadow:0 2px 5px rgba(0,0,0,0.02);}
   .card h2{font-size:15px;margin:0 0 12px;font-weight:700;}
   
-  .bottomnav{position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1px solid var(--border);display:flex;z-index:30; overflow-x:auto;}
-  .bottomnav button{flex:1;background:none;border:none;padding:9px 2px 8px;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--ink-faint);cursor:pointer; min-width:60px;}
+  /* --- NAVIGATION --- */
+  .bottomnav{position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1px solid var(--border);display:flex;z-index:30;}
+  .bottomnav button{flex:1;background:none;border:none;padding:9px 2px 8px;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--ink-faint);cursor:pointer; transition:0.2s;}
   .bottomnav button.active{color:var(--accent);}
   .bottomnav svg{width:20px;height:20px;}
   .bottomnav span{font-size:10px;font-weight:700;}
   
+  /* --- KPIS & TABLES --- */
   .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit, minmax(140px, 1fr));gap:10px;margin-bottom:14px;}
   .kpi{background:var(--surface);border-radius:9px;padding:12px 13px;border:1px solid var(--border);}
   .kpi .label{font-size:11.5px;color:var(--ink-soft);font-weight:600;margin-bottom:5px;}
@@ -69,17 +85,22 @@
   .kpi .value.good{color:var(--good);} .kpi .value.warn{color:var(--warn);} .kpi .value.bad{color:var(--bad);}
   
   table{width:100%;border-collapse:collapse;font-size:13px;}
-  th{text-align:left;font-size:12px;background:var(--ink);color:#fff;padding:10px 6px;border:1px solid var(--border);}
-  td{padding:6px 4px;border:1px solid var(--border);white-space:nowrap;vertical-align:middle;}
-  .input-cell input{width:100%;min-width:55px;padding:8px 4px;border:1.5px solid var(--border);border-radius:6px;font-family:var(--sans);text-align:center;font-weight:900;color:#000;font-size:14px;background:#fff;}
+  th{text-align:left;font-size:11px;background:var(--surface-2);color:var(--ink-soft);padding:10px 6px;border-bottom:2px solid var(--border);}
+  td{padding:6px 4px;border-bottom:1px solid var(--border);white-space:nowrap;vertical-align:middle;}
+  
+  /* Inputs Saisie */
+  .input-cell input{width:100%;min-width:55px;padding:8px 4px;border:1.5px solid var(--border);border-radius:6px;font-family:var(--mono);text-align:center;font-weight:700;color:var(--ink);font-size:14px;background:#fff;}
   .input-cell input:focus{outline:none;border-color:var(--accent);background:#F0F7FF;}
   .input-cell input:disabled{background:var(--surface-2);color:var(--ink-soft);border-color:transparent;}
-  .obs-cell input{width:100%;min-width:110px;text-align:left;font-weight:700;color:#000;}
-  .hist-cell { text-align:center; font-family:var(--sans); font-weight:900; font-size:14px; color:#000; }
-  .hist-obs { font-size:12px; color:var(--ink-soft); white-space:normal; min-width:120px; font-weight:700;}
-  .total-col{font-weight:900;font-family:var(--mono);background:var(--surface-2);text-align:center;color:var(--ink);}
+  .obs-cell input{width:100%;min-width:110px;text-align:left;}
+  
+  /* Affichage Historique (Sans input) */
+  .hist-cell { text-align:center; font-family:var(--mono); font-weight:700; font-size:14px; }
+  .hist-obs { font-size:12px; color:var(--ink-soft); white-space:normal; min-width:120px; }
+  
+  .total-col{font-weight:bold;font-family:var(--mono);background:var(--surface-2);text-align:center;color:var(--ink);}
   .total-row{font-weight:bold;background:var(--surface-2);}
-  .cumul-col{font-weight:900;font-family:var(--mono);background:#E7F5EE;color:var(--good);text-align:center;}
+  .cumul-col{font-weight:bold;font-family:var(--mono);background:#E7F5EE;color:var(--good);text-align:center;}
   
   .toast{position:fixed;bottom:96px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:30px;font-size:13.5px;font-weight:600;z-index:50;}
   .flex-header{display:flex;gap:10px;margin-bottom:14px;align-items:center;flex-wrap:wrap;justify-content:space-between;}
@@ -87,43 +108,141 @@
   .flex-header input[type="date"]{padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-family:var(--sans); font-weight:600;}
   
   .badge{padding:4px 8px;border-radius:4px;font-size:11px;font-weight:bold;text-transform:uppercase;letter-spacing:0.5px;}
-  .badge.orange{background:var(--warn-bg);color:var(--warn);} .badge.green{background:var(--good-bg);color:var(--good);} .badge.red{background:var(--bad-bg);color:var(--bad);}
-  .badge.admin{background:#4F46E5;color:#fff;} .badge.user{background:var(--ink-soft);color:#fff;}
+  .badge.orange{background:var(--warn-bg);color:var(--warn);}
+  .badge.green{background:var(--good-bg);color:var(--good);}
+  .badge.red{background:var(--bad-bg);color:var(--bad);}
   
+  /* --- GRAPHIQUES NATIFS --- */
   .native-chart { display: flex; align-items: flex-end; justify-content: space-around; height: 180px; padding: 20px 5px 0; border-bottom: 2px solid var(--border); margin-top: 15px; gap: 4px; }
   .nc-col { display: flex; flex-direction: column; align-items: center; flex: 1; height: 100%; justify-content: flex-end; }
   .nc-val { font-size: 11px; font-weight: 700; color: var(--ink); margin-bottom: 4px; font-family: var(--mono); }
   .nc-bar { width: 100%; max-width: 35px; background: var(--accent); border-radius: 4px 4px 0 0; transition: height 0.3s ease-out; min-height: 2px; }
   .nc-lbl { margin-top: 6px; font-size: 10px; color: var(--ink-soft); font-weight: 600; text-align: center; line-height: 1.1; word-wrap: break-word; }
-  .nc-bar.green { background: var(--good); } .nc-bar.blue { background: #33415A; }
+  .nc-bar.green { background: var(--good); }
+  .nc-bar.blue { background: #33415A; }
   
-  @media print{ .bottomnav, .topbar, .no-print, .btn{display:none !important;} body{background:#fff;} main{padding:0;} .card{border:none;box-shadow:none;} th{color:#fff !important; background:var(--ink) !important; border-bottom:1px solid #000;} td{border-bottom:1px solid #ccc;}}
+  @media print{ .bottomnav, .topbar, .no-print, .btn{display:none !important;} body{background:#fff;} main{padding:0;} .card{border:none;box-shadow:none;} th{color:#000 !important; background:#eee !important; border-bottom:1px solid #000;} td{border-bottom:1px solid #ccc;}}
 </style>
 </head>
 <body>
 <div id="app"></div>
 
-<script>
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js').catch(err => console.error(err));
-}
+<!-- SDK Firebase (nécessaire uniquement si vous configurez le partage entre appareils, voir plus bas) -->
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-database-compat.js"></script>
 
-const CACHE_PREFIX = 'tek_v10_'; 
+<script>
+/* ====================================================
+   TEK-TREND - VERSION 6 (RESET CACHE COMPLET)
+   ==================================================== */
+const CACHE_PREFIX = 'tt6_'; // Changement de préfixe pour forcer la mise à jour
 const HOURS = ["08h00 - 09h00","09h00 - 10h00","10h00 - 11h00","11h00 - 12h00","12h30 - 13h30","13h30 - 14h30","14h30 - 15h30","15h30 - 16h30","16h30 - 17h00"];
 const STATS_HOURS_LABELS = ["9h", "10h", "11h", "12h", "13h30", "14h30", "15h30", "16h30", "17h"];
 const OP_KEYS = ['op1', 'op2', 'op3', 'op4'];
+const DEFAULT_USERS = [{username:"responsable", password:"123", role:"admin", nom:"Resp. Magasin"},{username:"direction", password:"123", role:"viewer", nom:"Direction"}];
 
 const ICONS = {
   dashboard: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>',
   saisie: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
   historique: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>',
   stats: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12.5" y="8" width="3" height="10"/><rect x="18" y="5" width="3" height="13"/></svg>',
-  params: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
-  users: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+  params: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
   logout: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>',
   export: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>'
 };
 
+// ============================================================
+// PARTAGE ENTRE APPAREILS (Firebase Realtime Database — gratuit)
+// ============================================================
+// Pour activer le partage des données entre tous les téléphones/PC :
+// 1. Allez sur https://console.firebase.google.com → créez un projet gratuit.
+// 2. Menu de gauche → "Realtime Database" → "Créer une base de données".
+// 3. Dans l'onglet "Règles", collez : {"rules": {".read": true, ".write": true}}
+//    (⚠️ ceci rend la base ouverte à quiconque connaît son adresse — acceptable
+//    pour des chiffres de production internes, mais à savoir.)
+// 4. Icône ⚙️ → "Paramètres du projet" → tout en bas "Vos applications" → </> (Web)
+//    → copiez l'objet affiché et collez ses valeurs ci-dessous à la place de
+//    celles qui commencent par "VOTRE_".
+// Tant que ces valeurs ne sont pas remplacées, l'application fonctionne
+// normalement mais UNIQUEMENT en local sur chaque appareil (pas de partage).
+const firebaseConfig = {
+  apiKey: "VOTRE_API_KEY",
+  authDomain: "VOTRE_PROJET.firebaseapp.com",
+  databaseURL: "https://VOTRE_PROJET-default-rtdb.firebaseio.com",
+  projectId: "VOTRE_PROJET",
+  storageBucket: "VOTRE_PROJET.appspot.com",
+  messagingSenderId: "000000000000",
+  appId: "1:000000000000:web:xxxxxxxxxxxxxxxxxxxxxx"
+};
+const FIREBASE_PATH = 'tt6'; // dossier racine des données dans la base
+
+let firebaseReady = false;
+let fbRootRef = null;
+let fbFirstLoad = true;
+function firebaseConfigured(){ return firebaseConfig.apiKey && firebaseConfig.apiKey.indexOf('VOTRE_') !== 0; }
+
+function setSyncBadge(state){
+  // state: 'off' | 'connecting' | 'ok' | 'error'
+  const el = document.getElementById('sync-badge');
+  if(!el) return;
+  const map = {
+    off:       {cls:'sync-off',   txt:'○ Mode local'},
+    connecting:{cls:'sync-connecting', txt:'● Connexion...'},
+    ok:        {cls:'sync-ok',    txt:'● Synchronisé'},
+    error:     {cls:'sync-error', txt:'● Erreur de connexion'}
+  };
+  const m = map[state] || map.off;
+  el.className = 'sync-badge ' + m.cls;
+  el.textContent = m.txt;
+}
+
+function initFirebase(){
+  if(!firebaseConfigured()){
+    console.warn('Firebase non configuré : mode local uniquement (pas de partage entre appareils).');
+    setSyncBadge('off');
+    return;
+  }
+  if(typeof firebase === 'undefined'){
+    console.error('SDK Firebase indisponible (pas de connexion internet au premier chargement ?).');
+    setSyncBadge('error');
+    return;
+  }
+  try{
+    setSyncBadge('connecting');
+    firebase.initializeApp(firebaseConfig);
+    fbRootRef = firebase.database().ref(FIREBASE_PATH);
+    firebaseReady = true;
+    fbRootRef.on('value', function(snap){
+      const data = snap.val() || {};
+      Object.keys(data).forEach(function(k){ memoryCache[CACHE_PREFIX+k] = data[k]; });
+      setSyncBadge('ok');
+      if(!currentUser) return;
+      // On ne force pas le rafraîchissement pendant une saisie en cours
+      // (pour ne pas faire perdre le focus/curseur dans un champ), sauf
+      // au tout premier chargement après connexion.
+      if(fbFirstLoad){ fbFirstLoad = false; nav(activeTab); }
+      else if(activeTab !== 'saisie'){ nav(activeTab); }
+    }, function(err){
+      console.error('Erreur Firebase (lecture) :', err);
+      setSyncBadge('error');
+    });
+  }catch(err){
+    console.error('Erreur initialisation Firebase :', err);
+    setSyncBadge('error');
+  }
+}
+function syncToFirebase(key, value){
+  if(!firebaseReady || !fbRootRef) return;
+  fbRootRef.child(key).set(value).then(function(){
+    setSyncBadge('ok');
+  }).catch(function(err){
+    console.error('Erreur de synchronisation Firebase :', err);
+    setSyncBadge('error');
+    showToast("⚠️ Non synchronisé (vérifiez la connexion)");
+  });
+}
+
+// --- DATA MANAGEMENT ---
 let memoryCache = {};
 function getJSON(key, fallback){ 
   let fullKey = CACHE_PREFIX + key;
@@ -135,19 +254,13 @@ function setJSON(key, value){
   let fullKey = CACHE_PREFIX + key;
   memoryCache[fullKey] = JSON.parse(JSON.stringify(value));
   try { window.localStorage.setItem(fullKey, JSON.stringify(value)); } catch(e) {} 
-}
-
-function getUsers() {
-  let defaultUsers = [
-    {username:"admin", password:"123", role:"admin", nom:"Mokhtar", active: true},
-    {username:"user", password:"123", role:"user", nom:"Consultant", active: true}
-  ];
-  return getJSON('users_list', defaultUsers);
+  syncToFirebase(key, value);
 }
 
 let currentUser = null;
 let activeTab = 'dashboard';
 const getTodayISO = () => new Date().toISOString().slice(0,10);
+
 let todayISO = getTodayISO();
 let saisieDate = todayISO; 
 let histDate = todayISO;
@@ -155,6 +268,7 @@ let statRangeEnd = todayISO;
 let statRangeStart = new Date(new Date().setDate(new Date().getDate() - 6)).toISOString().slice(0,10);
 let toastTimer = null;
 
+// Variables Globales
 function getOps() { return getJSON('ops', ["Hela", "Marwa", "Mabrouka", "Wahida"]); }
 function getObj() { return getJSON('objectif', 800); }
 
@@ -163,16 +277,16 @@ function getDay(date){
   if(!d){ d = { date: date, status: 'draft', hours: {} }; HOURS.forEach(h => d.hours[h] = { op1:'', op2:'', op3:'', op4:'', obs:'' }); }
   return d;
 }
-function saveDay(date, data){ 
-  if(currentUser.role !== 'admin') return; 
-  setJSON('prod_'+date, data); 
-}
+function saveDay(date, data){ setJSON('prod_'+date, data); }
 
 function computeTotals(dayData){
   let totals = { op1:0, op2:0, op3:0, op4:0, totalGeneral:0, arrets:0 };
   HOURS.forEach(h => {
     let rowTotal = 0;
-    OP_KEYS.forEach(k => { let val = parseInt(dayData.hours[h][k]) || 0; totals[k] += val; rowTotal += val; });
+    OP_KEYS.forEach(k => { 
+      let val = parseInt(dayData.hours[h][k]) || 0; // Ignores text like "ABS"
+      totals[k] += val; rowTotal += val; 
+    });
     totals.totalGeneral += rowTotal;
     if(dayData.hours[h].obs && dayData.hours[h].obs.trim() !== '') totals.arrets++;
   });
@@ -185,8 +299,10 @@ function showToast(msg){
   document.body.appendChild(t); toastTimer=setTimeout(()=>t.remove(),2500); 
 }
 
+// --- INIT & ROUTING ---
 function init(){
-  try { let u = window.localStorage.getItem(CACHE_PREFIX+'session'); if(u) currentUser = JSON.parse(u); } catch(e) {}
+  try { let u = window.sessionStorage.getItem(CACHE_PREFIX+'user'); if(u) currentUser = JSON.parse(u); } catch(e) {}
+  initFirebase();
   if(currentUser) renderShell(); else renderLogin('');
 }
 
@@ -201,63 +317,46 @@ function renderLogin(err){
       </div>
       <div class="login-error" style="display:${err ? 'block' : 'none'}">${err}</div>
       <form id="login-form">
-        <div class="field"><label>Identifiant</label><input type="text" id="login-user" required></div>
+        <div class="field"><label>Utilisateur</label><input type="text" id="login-user" required></div>
         <div class="field"><label>Mot de passe</label><input type="password" id="login-pass" required></div>
-        <button type="submit" class="btn btn-primary btn-block">Connexion Sécurisée</button>
+        <button type="submit" class="btn btn-primary btn-block">Se connecter</button>
       </form>
     </div>
   </div>`;
   document.getElementById('login-form').onsubmit = (e) => {
     e.preventDefault();
-    const u = document.getElementById('login-user').value.trim(); const p = document.getElementById('login-pass').value.trim();
-    const users = getUsers();
-    const user = users.find(x => x.username === u && x.password === p);
-    if(user){ 
-      if(!user.active) { renderLogin('Ce compte a été désactivé.'); return; }
-      currentUser = user; 
-      try { window.localStorage.setItem(CACHE_PREFIX+'session', JSON.stringify(user)); } catch(e) {} 
-      renderShell(); 
-    } 
+    const u = document.getElementById('login-user').value; const p = document.getElementById('login-pass').value;
+    const user = DEFAULT_USERS.find(x => x.username === u && x.password === p);
+    if(user){ currentUser = user; try { window.sessionStorage.setItem(CACHE_PREFIX+'user', JSON.stringify(user)); } catch(e) {} renderShell(); } 
     else { renderLogin('Identifiants incorrects.'); }
   };
 }
 
-function logout(){ 
-  currentUser = null; 
-  try { window.localStorage.removeItem(CACHE_PREFIX+'session'); } catch(e) {} 
-  renderLogin(''); 
-}
+function logout(){ currentUser = null; try { window.sessionStorage.removeItem(CACHE_PREFIX+'user'); } catch(e) {} renderLogin(''); }
 
 function renderShell(){
   document.getElementById('app').innerHTML = `
     <div class="topbar no-print">
       <div class="logo-wrap">
         <div class="logo-text"><span class="tek">TEK</span> <span class="trend">TREND</span></div>
+        <div class="logo-sub">TECHNICAL WEAR</div>
       </div>
-      <div class="user-chip">
-        <span class="role">${currentUser.nom} (${currentUser.role === 'admin' ? 'Admin' : 'Lecture'})</span>
-        <button onclick="logout()">${ICONS.logout}</button>
-      </div>
+      <div class="user-chip"><span id="sync-badge" class="sync-badge sync-off">○ Mode local</span><span class="role">${currentUser.nom}</span><button onclick="logout()">${ICONS.logout}</button></div>
     </div>
     <main id="main"></main>
     <div class="bottomnav no-print">
       <button onclick="nav('dashboard')" id="nav-dashboard">${ICONS.dashboard}<span>Tableau</span></button>
-      ${currentUser.role === 'admin' ? `<button onclick="saisieDate = getTodayISO(); nav('saisie')" id="nav-saisie">${ICONS.saisie}<span>Saisie</span></button>` : ''}
+      <button onclick="saisieDate = getTodayISO(); nav('saisie')" id="nav-saisie">${ICONS.saisie}<span>Saisie</span></button>
       <button onclick="nav('historique')" id="nav-historique">${ICONS.historique}<span>Historique</span></button>
       <button onclick="nav('stats')" id="nav-stats">${ICONS.stats}<span>Stats</span></button>
-      ${currentUser.role === 'admin' ? `
-        <button onclick="nav('params')" id="nav-params">${ICONS.params}<span>Params</span></button>
-        <button onclick="nav('users')" id="nav-users">${ICONS.users}<span>Users</span></button>
-      ` : ''}
+      ${currentUser.role === 'admin' ? `<button onclick="nav('params')" id="nav-params">${ICONS.params}<span>Params</span></button>` : ''}
     </div>
   `;
+  setSyncBadge(firebaseConfigured() ? (firebaseReady ? 'ok' : 'connecting') : 'off');
   nav('dashboard');
 }
 
 function nav(tab){
-  if(currentUser.role !== 'admin' && ['saisie', 'params', 'users'].includes(tab)) {
-    tab = 'dashboard';
-  }
   activeTab = tab;
   document.querySelectorAll('.bottomnav button').forEach(b => b.classList.remove('active'));
   let activeBtn = document.getElementById('nav-'+tab);
@@ -269,7 +368,6 @@ function nav(tab){
   else if(tab === 'historique') renderHistorique(main);
   else if(tab === 'stats') renderStats(main);
   else if(tab === 'params') renderParams(main);
-  else if(tab === 'users') renderUsers(main);
 }
 
 function buildNativeChart(labels, values, colorClass = '') {
@@ -288,6 +386,7 @@ function buildNativeChart(labels, values, colorClass = '') {
   html += `</div>`; return html;
 }
 
+// --- ONGLET 1: TABLEAU DE BORD ---
 function renderDashboard(container){
   const data = getDay(getTodayISO()); const totals = computeTotals(data);
   const obj = getObj(); const ops = getOps();
@@ -308,24 +407,26 @@ function renderDashboard(container){
   `;
 }
 
+// --- ONGLET 2: SAISIE (AVEC INPUTS) ---
 window.toggleValidation = (date, status) => {
-  if(currentUser.role !== 'admin') return;
   let d = getDay(date); d.status = status; saveDay(date, d);
   if(activeTab === 'saisie') renderSaisie(document.getElementById('main'), date);
-  showToast(status === 'validated' ? "Journée Validée" : "Saisie Déverrouillée");
+  showToast(status === 'validated' ? "Journée Validée et Verrouillée" : "Saisie Déverrouillée");
 };
 
 function renderSaisie(container, date){
-  if(currentUser.role !== 'admin') return;
   const data = getDay(date); const totals = computeTotals(data);
-  const ops = getOps();
+  const ops = getOps(); const obj = getObj();
+  const isAdmin = currentUser.role === 'admin';
   const isDraft = data.status === 'draft';
-  const disabled = isDraft ? '' : 'disabled';
-  let badgeHtml = isDraft ? `<span class="badge orange">Brouillon</span>` : `<span class="badge green">Validé</span>`;
-  let actionBtns = isDraft ? `<button class="btn btn-success" onclick="toggleValidation('${date}', 'validated')">Verrouiller & Valider</button>` : `<button class="btn btn-warning" onclick="toggleValidation('${date}', 'draft')">Déverrouiller (Correction)</button>`;
+  const disabled = (isAdmin && isDraft) ? '' : 'disabled';
+
+  let badgeHtml = !isAdmin ? `<span class="badge red">Lecture Seule</span>` : (isDraft ? `<span class="badge orange">Brouillon</span>` : `<span class="badge green">Validé</span>`);
+  let actionBtns = isAdmin ? (isDraft ? `<button class="btn btn-success" onclick="toggleValidation('${date}', 'validated')">Verrouiller & Valider</button>` : `<button class="btn btn-warning" onclick="toggleValidation('${date}', 'draft')">Déverrouiller pour correction</button>`) : '';
 
   window.handleInput = (h, k, val) => {
-    data.hours[h][k] = val; saveDay(date, data); let newTots = computeTotals(data);
+    data.hours[h][k] = val; saveDay(date, data);
+    let newTots = computeTotals(data);
     OP_KEYS.forEach(opKey => document.getElementById(`tot_col_${opKey}`).innerText = newTots[opKey]);
     document.getElementById('tot_gen').innerText = newTots.totalGeneral;
     
@@ -341,7 +442,8 @@ function renderSaisie(container, date){
     OP_KEYS.forEach((opKey, index) => {
       let safeName = ops[index].replace(/\s/g,'');
       let bVal = document.getElementById(`chart_val_${safeName}`); let bBar = document.getElementById(`chart_bar_${safeName}`);
-      if(bVal) bVal.innerText = newTots[opKey]; if(bBar) bBar.style.height = (newTots[opKey] / maxVal * 100) + '%';
+      if(bVal) bVal.innerText = newTots[opKey];
+      if(bBar) bBar.style.height = (newTots[opKey] / maxVal * 100) + '%';
     });
   };
   window.handleObs = (h, val) => { data.hours[h].obs = val; saveDay(date, data); };
@@ -355,26 +457,33 @@ function renderSaisie(container, date){
       ${OP_KEYS.map(k => `<td class="input-cell"><input type="text" value="${data.hours[h][k]}" oninput="handleInput('${h}', '${k}', this.value)" ${disabled} placeholder="-"></td>`).join('')}
       <td class="total-col" id="tot_${hId}">${rTot}</td>
       <td class="cumul-col" id="cumul_${hId}">${cumulGeneral}</td>
-      <td class="input-cell obs-cell"><input type="text" value="${data.hours[h].obs}" onchange="handleObs('${h}', this.value)" placeholder="ABS..." ${disabled}></td>
+      <td class="input-cell obs-cell"><input type="text" value="${data.hours[h].obs}" onchange="handleObs('${h}', this.value)" placeholder="Cause, ABS..." ${disabled}></td>
     </tr>`;
   });
 
   container.innerHTML = `
     <div class="card" style="padding-bottom: 24px; border-top: 4px solid var(--accent);">
       <div class="flex-header no-print">
-        <div><h2 style="margin:0; color:var(--accent);">ESPACE SAISIE</h2><div style="font-size:13px; font-weight:bold; margin-top:4px;">Date : ${date.split('-').reverse().join('/')} ${badgeHtml}</div></div>
+        <div>
+          <h2 style="margin:0; color:var(--accent);">ESPACE SAISIE</h2>
+          <div style="font-size:13px; font-weight:bold; margin-top:4px;">Date : ${date.split('-').reverse().join('/')} ${badgeHtml}</div>
+        </div>
         <div class="actions">${actionBtns}</div>
       </div>
+      
       <div style="overflow-x:auto;">
         <table>
-          <thead><tr><th>Horaires</th>${ops.map(o=>`<th style="text-align:center;">${o}</th>`).join('')}<th>Total/h</th><th>Cumul</th><th>Observations</th></tr></thead>
+          <thead>
+            <tr><th>Horaires</th>${ops.map(o=>`<th style="text-align:center;">${o}</th>`).join('')}<th>Total/h</th><th>Cumul</th><th>Observations</th></tr>
+          </thead>
           <tbody>
             ${rows}
             <tr class="total-row">
-              <td>TOTAL</td>
+              <td>TOTAL JOUR</td>
               ${OP_KEYS.map(k=>`<td class="total-col" id="tot_col_${k}">${totals[k]}</td>`).join('')}
               <td class="total-col" id="tot_gen" style="background:var(--accent);color:#fff;font-size:16px;">${totals.totalGeneral}</td>
-              <td class="cumul-col">-</td><td></td>
+              <td class="cumul-col">-</td>
+              <td></td>
             </tr>
           </tbody>
         </table>
@@ -385,6 +494,7 @@ function renderSaisie(container, date){
   `;
 }
 
+// --- ONGLET 3: HISTORIQUE (SANS INPUTS, LECTURE SEULE) ---
 window.editPastDate = (date) => { saisieDate = date; nav('saisie'); };
 window.loadHist = () => { histDate = document.getElementById('hist-date').value; nav('historique'); };
 
@@ -412,24 +522,33 @@ function renderHistorique(container){
         <button class="btn btn-ghost" onclick="exportCSV()">${ICONS.export} Excel</button>
       </div>
     </div>
+    
     <div class="card" style="padding-bottom: 24px; border-top: 4px solid var(--ink-soft);">
       <div class="flex-header">
-        <div><h2 style="margin:0; color:var(--ink-soft);">MODE LECTURE SEULE</h2><div style="font-size:13px; font-weight:bold; margin-top:4px;">Date : ${histDate.split('-').reverse().join('/')} ${data.status === 'validated' ? '<span class="badge green">Validé</span>' : '<span class="badge orange">Brouillon</span>'}</div></div>
+        <div>
+          <h2 style="margin:0; color:var(--ink-soft);">MODE CONSULTATION (Lecture Seule)</h2>
+          <div style="font-size:13px; font-weight:bold; margin-top:4px;">Date : ${histDate.split('-').reverse().join('/')} ${data.status === 'validated' ? '<span class="badge green">Validé</span>' : '<span class="badge orange">Brouillon</span>'}</div>
+        </div>
       </div>
+      
       <div style="overflow-x:auto;">
         <table>
-          <thead><tr><th>Horaires</th>${ops.map(o=>`<th style="text-align:center;">${o}</th>`).join('')}<th>Total/h</th><th>Cumul</th><th>Observations</th></tr></thead>
+          <thead>
+            <tr><th>Horaires</th>${ops.map(o=>`<th style="text-align:center;">${o}</th>`).join('')}<th>Total/h</th><th>Cumul</th><th>Observations</th></tr>
+          </thead>
           <tbody>
             ${rows}
             <tr class="total-row">
-              <td>TOTAL</td>
+              <td>TOTAL JOUR</td>
               ${OP_KEYS.map(k=>`<td class="total-col">${totals[k]}</td>`).join('')}
               <td class="total-col" style="background:var(--accent);color:#fff;font-size:16px;">${totals.totalGeneral}</td>
-              <td class="cumul-col">-</td><td></td>
+              <td class="cumul-col">-</td>
+              <td></td>
             </tr>
           </tbody>
         </table>
       </div>
+      
       ${(currentUser.role === 'admin') ? `
         <div style="margin-top:20px; text-align:center;" class="no-print">
           <button class="btn btn-warning" onclick="editPastDate('${histDate}')">Ouvrir cette date dans l'onglet Saisie</button>
@@ -439,21 +558,35 @@ function renderHistorique(container){
   `;
 }
 
-window.updateStatRange = () => { statRangeStart = document.getElementById('stat-start').value; statRangeEnd = document.getElementById('stat-end').value; renderStats(document.getElementById('main')); };
+// --- ONGLET 4: STATISTIQUES (PLAGE DE DATES DYNAMIQUE) ---
+window.updateStatRange = () => {
+  statRangeStart = document.getElementById('stat-start').value;
+  statRangeEnd = document.getElementById('stat-end').value;
+  renderStats(document.getElementById('main'));
+};
 
 function renderStats(container){
   let selectedData = getDay(statRangeEnd);
   let valsHourly = HOURS.map(h => OP_KEYS.reduce((sum, k) => sum + (parseInt(selectedData.hours[h][k])||0), 0));
   
+  // Calcul de la plage de dates
   let labelsDyn = []; let valsDyn = [];
   let curr = new Date(statRangeStart); let end = new Date(statRangeEnd);
   
-  if (curr <= end) {
+  if (curr > end) { showToast("Erreur : Date de début > Date de fin"); } 
+  else {
     let safeGuard = 0;
-    while(curr <= end && safeGuard < 60) {
-       let iso = curr.toISOString().slice(0,10); let d = getDay(iso); let tot = computeTotals(d).totalGeneral;
-       if(tot > 0) { labelsDyn.push(iso.slice(5).replace('-','/')); valsDyn.push(tot); }
-       curr.setDate(curr.getDate() + 1); safeGuard++;
+    while(curr <= end && safeGuard < 60) { // Max 60 jours d'affichage
+       let iso = curr.toISOString().slice(0,10);
+       let d = getDay(iso);
+       let tot = computeTotals(d).totalGeneral;
+       // Ajoute seulement si la prod > 0 (Ignore les dimanches/jours vides)
+       if(tot > 0) {
+         labelsDyn.push(iso.slice(5).replace('-','/'));
+         valsDyn.push(tot);
+       }
+       curr.setDate(curr.getDate() + 1);
+       safeGuard++;
     }
   }
   if(labelsDyn.length === 0){ labelsDyn = ['-']; valsDyn = [0]; }
@@ -466,135 +599,89 @@ function renderStats(container){
         <div class="field" style="margin:0; flex:1;"><label>Au :</label><input type="date" id="stat-end" value="${statRangeEnd}" onchange="updateStatRange()"></div>
       </div>
     </div>
+    
     <h2>Évolution Globale (Jours travaillés sur la période)</h2>
     <div class="card">${buildNativeChart(labelsDyn, valsDyn, 'blue')}</div>
-    <h2>Production Horaire (du ${statRangeEnd.split('-').reverse().join('/')})</h2>
+    
+    <h2>Production Horaire (Moyenne/Graphe du ${statRangeEnd.split('-').reverse().join('/')})</h2>
     <div class="card">${buildNativeChart(STATS_HOURS_LABELS, valsHourly, 'green')}</div>
   `;
 }
 
+// --- ONGLET 5: PARAMETRES (ADMIN) ---
 function renderParams(container){
-  if(currentUser.role !== 'admin') return;
   let ops = getOps(); let obj = getObj();
   container.innerHTML = `
     <div class="flex-header"><h2>Paramètres de l'Atelier</h2></div>
     <div class="card">
       <h3 style="margin-top:0;">Rendement Journalier</h3>
-      <div class="field"><label>Objectif (Total des pièces pour 8h30)</label><input type="number" id="setting_obj" value="${obj}" style="font-weight:bold; font-size:18px;"></div>
-      <hr style="border:0; border-top:1px solid var(--border); margin:24px 0;">
-      <h3>Noms des Opératrices</h3>
-      <div class="kpi-grid">
-        ${OP_KEYS.map((k, i) => `<div class="field"><label>Poste ${i+1}</label><input type="text" id="setting_op${i}" value="${ops[i]}" style="font-weight:bold;"></div>`).join('')}
+      <div class="field">
+        <label>Objectif (Total des pièces pour 8h30)</label>
+        <input type="number" id="setting_obj" value="${obj}" style="font-weight:bold; font-size:18px;">
       </div>
+      
+      <hr style="border:0; border-top:1px solid var(--border); margin:24px 0;">
+      
+      <h3>Noms des Opératrices</h3>
+      <p style="font-size:12px; color:var(--ink-soft); margin-bottom:15px;">La modification s'applique instantanément partout, y compris dans l'historique.</p>
+      
+      <div class="kpi-grid">
+        ${OP_KEYS.map((k, i) => `
+          <div class="field">
+            <label>Poste ${i+1}</label>
+            <input type="text" id="setting_op${i}" value="${ops[i]}" style="font-weight:bold;">
+          </div>
+        `).join('')}
+      </div>
+      
       <button class="btn btn-primary btn-block" style="margin-top:15px;" onclick="saveParams()">Enregistrer les paramètres</button>
     </div>
   `;
+  
   window.saveParams = () => {
-    let v = parseInt(document.getElementById('setting_obj').value); if(!isNaN(v) && v > 0) setJSON('objectif', v);
-    let newOps = [document.getElementById('setting_op0').value.trim(), document.getElementById('setting_op1').value.trim(), document.getElementById('setting_op2').value.trim(), document.getElementById('setting_op3').value.trim()];
-    setJSON('ops', newOps); showToast("Paramètres appliqués avec succès !");
+    let v = parseInt(document.getElementById('setting_obj').value);
+    if(!isNaN(v) && v > 0) setJSON('objectif', v);
+    
+    let newOps = [
+      document.getElementById('setting_op0').value.trim() || "Opératrice 1",
+      document.getElementById('setting_op1').value.trim() || "Opératrice 2",
+      document.getElementById('setting_op2').value.trim() || "Opératrice 3",
+      document.getElementById('setting_op3').value.trim() || "Opératrice 4"
+    ];
+    setJSON('ops', newOps);
+    showToast("Paramètres appliqués avec succès !");
   };
 }
 
-window.toggleUserStatus = (index) => {
-  let users = getUsers();
-  users[index].active = !users[index].active;
-  setJSON('users_list', users);
-  renderUsers(document.getElementById('main'));
-};
-
-window.updateUserRole = (index, newRole) => {
-  let users = getUsers();
-  users[index].role = newRole;
-  setJSON('users_list', users);
-  showToast("Rôle mis à jour.");
-};
-
-window.deleteUser = (index) => {
-  if(!confirm("Supprimer cet utilisateur ?")) return;
-  let users = getUsers(); users.splice(index, 1); setJSON('users_list', users);
-  showToast("Utilisateur supprimé."); renderUsers(document.getElementById('main'));
-};
-
-window.addUser = () => {
-  let u = document.getElementById('nu_user').value.trim(); let p = document.getElementById('nu_pass').value.trim();
-  let n = document.getElementById('nu_nom').value.trim(); let r = document.getElementById('nu_role').value;
-  if(u && p && n) {
-    let users = getUsers();
-    if(users.find(x => x.username === u)) { showToast("Cet identifiant existe déjà !"); return; }
-    users.push({username:u, password:p, nom:n, role:r, active:true}); setJSON('users_list', users);
-    showToast("Utilisateur ajouté !"); renderUsers(document.getElementById('main'));
-  } else showToast("Remplissez tous les champs.");
-};
-
-function renderUsers(container) {
-  if(currentUser.role !== 'admin') return;
-  let usersList = getUsers();
-  let rows = usersList.map((u, index) => `
-    <tr>
-      <td><strong>${u.username}</strong><br><span style="font-size:10px; color:var(--ink-soft)">${u.nom}</span></td>
-      <td>
-        <select onchange="updateUserRole(${index}, this.value)" style="padding:4px; font-size:12px;" ${u.username === 'admin' ? 'disabled' : ''}>
-          <option value="user" ${u.role === 'user' ? 'selected' : ''}>Consultation</option>
-          <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Administrateur</option>
-        </select>
-      </td>
-      <td><span class="badge ${u.active ? 'green' : 'red'}">${u.active ? 'Actif' : 'Inactif'}</span></td>
-      <td>
-        ${u.username !== 'admin' ? `
-          <div style="display:flex; gap:4px;">
-            <button class="btn btn-ghost btn-sm" onclick="toggleUserStatus(${index})">${u.active ? 'Désactiver' : 'Activer'}</button>
-            <button class="btn btn-danger btn-sm" onclick="deleteUser(${index})">X</button>
-          </div>
-        ` : '-'}
-      </td>
-    </tr>
-  `).join('');
-
-  container.innerHTML = `
-    <div class="flex-header"><h2>Créer un nouveau compte</h2></div>
-    <div class="card">
-      <div class="kpi-grid">
-        <div class="field"><label>Identifiant de connexion</label><input type="text" id="nu_user"></div>
-        <div class="field"><label>Mot de passe</label><input type="text" id="nu_pass"></div>
-        <div class="field"><label>Nom complet</label><input type="text" id="nu_nom"></div>
-        <div class="field">
-          <label>Niveau d'accès</label>
-          <select id="nu_role">
-            <option value="user">USER (Consultation uniquement)</option>
-            <option value="admin">ADMIN (Responsable Magasin)</option>
-          </select>
-        </div>
-      </div>
-      <button class="btn btn-primary" onclick="addUser()">Créer l'utilisateur</button>
-    </div>
-    
-    <div class="flex-header" style="margin-top:24px;"><h2>Liste des utilisateurs</h2></div>
-    <div class="card" style="overflow-x:auto;">
-      <table>
-        <thead><tr><th>Utilisateur</th><th>Rôle</th><th>Statut</th><th>Actions</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </div>
-  `;
-}
-
+// --- EXPORT CSV ---
 window.exportCSV = () => {
   const data = getDay(histDate); const totals = computeTotals(data); const ops = getOps(); const obj = getObj();
   let csv = `Horaires;${ops[0]};${ops[1]};${ops[2]};${ops[3]};Total Heure;Total Cumule;Observations\n`;
   let cumul = 0;
   HOURS.forEach(h => {
-    const d = data.hours[h]; const rTot = OP_KEYS.reduce((sum, k) => sum + (parseInt(d[k])||0), 0);
-    cumul += rTot; csv += `${h};${d.op1};${d.op2};${d.op3};${d.op4};${rTot};${cumul};"${d.obs}"\n`;
+    const d = data.hours[h]; 
+    const rTot = OP_KEYS.reduce((sum, k) => sum + (parseInt(d[k])||0), 0);
+    cumul += rTot;
+    csv += `${h};${d.op1};${d.op2};${d.op3};${d.op4};${rTot};${cumul};"${d.obs}"\n`;
   });
-  csv += `TOTAL;${totals.op1};${totals.op2};${totals.op3};${totals.op4};${totals.totalGeneral};-;Objectif Jour: ${obj}\n`;
+  csv += `TOTAL JOUR;${totals.op1};${totals.op2};${totals.op3};${totals.op4};${totals.totalGeneral};-;Objectif Jour: ${obj}\n`;
   const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob); const a = document.createElement('a');
   a.href = url; a.download = `TEK-TREND_${histDate}.csv`; a.click(); URL.revokeObjectURL(url);
   showToast("Fichier Excel Téléchargé");
 };
 
+// Start
 window.onload = init;
+</script>
+<script>
+if('serviceWorker' in navigator){
+  window.addEventListener('load', function(){
+    navigator.serviceWorker.register('./sw.js').catch(function(err){
+      console.error('Echec enregistrement du Service Worker :', err);
+    });
+  });
+}
 </script>
 </body>
 </html>
