@@ -486,16 +486,28 @@ function setJSON(key, value){
 
 let currentUser = null;
 let activeTab = 'dashboard';
-const getTodayISO = () => new Date().toISOString().slice(0,10);
+// IMPORTANT : ne jamais utiliser .toISOString() pour obtenir une date "YYYY-MM-DD" —
+// toISOString() convertit en UTC, ce qui décale la date d'un jour pour les fuseaux
+// horaires en avance sur UTC (ex : GMT+1). On utilise toujours la date LOCALE.
+function toISODateLocal(d){
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,'0');
+  const day = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
+const getTodayISO = () => toISODateLocal(new Date());
+// Format court JJ/MM (français) à partir d'une date ISO "YYYY-MM-DD" — utilisé
+// pour les étiquettes de graphiques. Ne jamais utiliser MM/JJ (format US).
+function shortDateFR(iso){ const [y,m,d] = iso.split('-'); return `${d}/${m}`; }
 
 let todayISO = getTodayISO();
 let saisieDate = todayISO; 
 let histDate = todayISO;
 let histViewMode = 'jour';
-let histPeriodStart = new Date(new Date().setDate(new Date().getDate() - 6)).toISOString().slice(0,10);
+let histPeriodStart = toISODateLocal(new Date(new Date().setDate(new Date().getDate() - 6)));
 let histPeriodEnd = todayISO;
 let statRangeEnd = todayISO;
-let statRangeStart = new Date(new Date().setDate(new Date().getDate() - 6)).toISOString().slice(0,10);
+let statRangeStart = toISODateLocal(new Date(new Date().setDate(new Date().getDate() - 6)));
 let toastTimer = null;
 let mySessionId = null;
 let heartbeatTimer = null;
@@ -1107,7 +1119,7 @@ function renderHistorique(container){
     if(curr <= end){
       let g=0;
       while(curr<=end && g<93){
-        let iso = curr.toISOString().slice(0,10);
+        let iso = toISODateLocal(curr);
         let d = getDay(iso); let t = computeTotals(d); let o = getObjForDay(d);
         if(o > 0) list.push({iso, total:t.totalGeneral, rend: o>0?Math.round(t.totalGeneral/o*100):0, status:d.status, lastEditBy:d.lastEditBy});
         curr.setDate(curr.getDate()+1); g++;
@@ -1212,7 +1224,7 @@ window.updateStatRange = () => {
 window.setStatPeriod = (period) => {
   const today = getTodayISO();
   if(period === 'jour'){ statRangeStart = today; statRangeEnd = today; }
-  else if(period === 'semaine'){ statRangeStart = new Date(new Date().setDate(new Date().getDate()-6)).toISOString().slice(0,10); statRangeEnd = today; }
+  else if(period === 'semaine'){ statRangeStart = toISODateLocal(new Date(new Date().setDate(new Date().getDate()-6))); statRangeEnd = today; }
   else if(period === 'mois'){ statRangeStart = today.slice(0,8)+'01'; statRangeEnd = today; }
   statActivePeriod = period;
   renderStats(document.getElementById('main'));
@@ -1230,7 +1242,7 @@ function renderStats(container){
   else {
     let g = 0;
     while(curr <= end && g < 93){
-      let iso = curr.toISOString().slice(0,10);
+      let iso = toISODateLocal(curr);
       let d = getDay(iso);
       let t = computeTotals(d);
       let obj = getObjForDay(d);
@@ -1241,9 +1253,9 @@ function renderStats(container){
   const workedDays = days.filter(d => d.obj > 0); // jours réellement programmés (hors dimanche / samedi désactivé)
   const activeDays = workedDays.filter(d => d.total > 0); // jours avec au moins une saisie
 
-  const labelsDyn = activeDays.length ? activeDays.map(d=>d.iso.slice(5).replace('-','/')) : ['-'];
+  const labelsDyn = activeDays.length ? activeDays.map(d=>shortDateFR(d.iso)) : ['-'];
   const valsDyn = activeDays.length ? activeDays.map(d=>d.total) : [0];
-  const rendLabelsDyn = activeDays.length ? activeDays.map(d=>d.iso.slice(5).replace('-','/')) : ['-'];
+  const rendLabelsDyn = activeDays.length ? activeDays.map(d=>shortDateFR(d.iso)) : ['-'];
   const rendValsDyn = activeDays.length ? activeDays.map(d=>Math.round(d.rend)) : [0];
 
   const ops = getOps();
