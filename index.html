@@ -248,8 +248,6 @@
    TEK-TREND - VERSION 6 (RESET CACHE COMPLET)
    ==================================================== */
 const CACHE_PREFIX = 'tt6_'; // Changement de préfixe pour forcer la mise à jour
-const HOURS = ["08h00 - 09h00","09h00 - 10h00","10h00 - 11h00","11h00 - 12h00","12h30 - 13h30","13h30 - 14h30","14h30 - 15h30","15h30 - 16h30","16h30 - 17h00"];
-const STATS_HOURS_LABELS = ["9h", "10h", "11h", "12h", "13h30", "14h30", "15h30", "16h30", "17h"];
 const OP_KEYS = ['op1', 'op2', 'op3', 'op4'];
 // Domaine fictif utilisé pour convertir un identifiant simple en email valide pour
 // Firebase Authentication (qui exige un email). Aucun email n'est réellement envoyé
@@ -549,7 +547,6 @@ function getHourDurationForDate(dateISO, h){
   const found = getSlotsForDate(dateISO).find(s=>s.label===h);
   return found ? found.minutes : 60;
 }
-function isWorkingDay(dateISO){ return getSlotsForDate(dateISO).length > 0; }
 
 function isAbsentMark(v){
   if(v === undefined || v === null) return false;
