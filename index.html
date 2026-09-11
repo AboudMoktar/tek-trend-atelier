@@ -85,6 +85,8 @@
   .kpi .value.good{color:var(--good);} .kpi .value.warn{color:var(--warn);} .kpi .value.bad{color:var(--bad);}
   .hour-rend{font-size:10px;font-weight:800;margin-top:2px;}
   .hour-rend.good{color:var(--good);} .hour-rend.warn{color:var(--warn);} .hour-rend.bad{color:var(--bad);}
+  .session-row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);gap:10px;}
+  .session-row:last-child{border-bottom:none;}
   
   table{width:100%;border-collapse:collapse;font-size:13px;}
   th{text-align:left;font-size:11px;background:var(--surface-2);color:var(--ink-soft);padding:10px 6px;border-bottom:2px solid var(--border);}
@@ -142,6 +144,7 @@ const HOURS = ["08h00 - 09h00","09h00 - 10h00","10h00 - 11h00","11h00 - 12h00","
 const STATS_HOURS_LABELS = ["9h", "10h", "11h", "12h", "13h30", "14h30", "15h30", "16h30", "17h"];
 const OP_KEYS = ['op1', 'op2', 'op3', 'op4'];
 const DEFAULT_USERS = [{username:"responsable", password:"123", role:"admin", nom:"Resp. Magasin"},{username:"direction", password:"123", role:"viewer", nom:"Direction"}];
+function getUsers() { return getJSON('users', DEFAULT_USERS); }
 
 const ICONS = {
   dashboard: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>',
@@ -150,7 +153,8 @@ const ICONS = {
   stats: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12.5" y="8" width="3" height="10"/><rect x="18" y="5" width="3" height="13"/></svg>',
   params: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
   logout: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>',
-  export: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>'
+  export: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
+  sessions: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>'
 };
 
 // ============================================================
@@ -244,6 +248,84 @@ function syncToFirebase(key, value){
   });
 }
 
+// ============================================================
+// SESSIONS (suivi des connexions + déconnexion à distance)
+// ============================================================
+// Écrites à part de memoryCache (chemin Firebase dédié "sessions/<id>")
+// pour éviter tout écrasement concurrent quand plusieurs appareils
+// sont connectés en même temps.
+let sessionsCache = {};
+function genId(){ return Math.random().toString(36).slice(2) + Date.now().toString(36); }
+function shortDevice(){
+  const ua = navigator.userAgent || '';
+  if(/Android/i.test(ua)) return 'Téléphone Android';
+  if(/iPhone|iPad/i.test(ua)) return 'iPhone / iPad';
+  if(/Windows/i.test(ua)) return 'PC Windows';
+  if(/Macintosh/i.test(ua)) return 'Mac';
+  return 'Appareil';
+}
+function timeAgo(ts){
+  if(!ts) return '—';
+  const diff = Math.max(0, Date.now() - ts);
+  const mins = Math.floor(diff/60000);
+  if(mins < 1) return "à l'instant";
+  if(mins < 60) return `il y a ${mins} min`;
+  const hrs = Math.floor(mins/60);
+  if(hrs < 24) return `il y a ${hrs} h`;
+  return `il y a ${Math.floor(hrs/24)} j`;
+}
+function watchSessions(){
+  try { const s = window.localStorage.getItem(CACHE_PREFIX+'sessions'); if(s) sessionsCache = JSON.parse(s); } catch(e) {}
+  if(!firebaseReady || !fbRootRef) return;
+  fbRootRef.child('sessions').on('value', function(snap){
+    sessionsCache = snap.val() || {};
+    try { window.localStorage.setItem(CACHE_PREFIX+'sessions', JSON.stringify(sessionsCache)); } catch(e) {}
+    if(currentUser && mySessionId && !sessionsCache[mySessionId]){
+      forceLocalLogout();
+      return;
+    }
+    if(currentUser && activeTab === 'sessions') nav('sessions');
+  });
+}
+function writeMySession(){
+  if(!currentUser || !mySessionId) return;
+  const payload = {
+    username: currentUser.username, nom: currentUser.nom, role: currentUser.role,
+    loginAt: (sessionsCache[mySessionId] && sessionsCache[mySessionId].loginAt) || Date.now(),
+    lastSeen: Date.now(), device: shortDevice()
+  };
+  sessionsCache[mySessionId] = payload;
+  try { window.localStorage.setItem(CACHE_PREFIX+'sessions', JSON.stringify(sessionsCache)); } catch(e) {}
+  if(firebaseReady && fbRootRef){
+    fbRootRef.child('sessions').child(mySessionId).set(payload).catch(function(err){ console.error('Erreur session Firebase', err); });
+  }
+}
+function endMySession(){
+  if(mySessionId){
+    delete sessionsCache[mySessionId];
+    try { window.localStorage.setItem(CACHE_PREFIX+'sessions', JSON.stringify(sessionsCache)); } catch(e) {}
+    if(firebaseReady && fbRootRef){
+      fbRootRef.child('sessions').child(mySessionId).remove().catch(function(){});
+    }
+  }
+  if(heartbeatTimer){ clearInterval(heartbeatTimer); heartbeatTimer = null; }
+}
+function forceLocalLogout(){
+  currentUser = null; mySessionId = null;
+  try { window.sessionStorage.removeItem(CACHE_PREFIX+'user'); window.sessionStorage.removeItem(CACHE_PREFIX+'sid'); } catch(e) {}
+  if(heartbeatTimer){ clearInterval(heartbeatTimer); heartbeatTimer = null; }
+  renderLogin('Votre session a été terminée par un administrateur.');
+}
+window.forceEndSession = (sid) => {
+  if(!confirm('Déconnecter cette session ?')) return;
+  delete sessionsCache[sid];
+  try { window.localStorage.setItem(CACHE_PREFIX+'sessions', JSON.stringify(sessionsCache)); } catch(e) {}
+  if(firebaseReady && fbRootRef){
+    fbRootRef.child('sessions').child(sid).remove().catch(function(){});
+  }
+  nav('sessions');
+};
+
 // --- DATA MANAGEMENT ---
 let memoryCache = {};
 function getJSON(key, fallback){ 
@@ -269,6 +351,8 @@ let histDate = todayISO;
 let statRangeEnd = todayISO;
 let statRangeStart = new Date(new Date().setDate(new Date().getDate() - 6)).toISOString().slice(0,10);
 let toastTimer = null;
+let mySessionId = null;
+let heartbeatTimer = null;
 
 // Variables Globales
 function getOps() { return getJSON('ops', ["Hela", "Marwa", "Mabrouka", "Wahida"]); }
@@ -328,8 +412,16 @@ function showToast(msg){
 // --- INIT & ROUTING ---
 function init(){
   try { let u = window.sessionStorage.getItem(CACHE_PREFIX+'user'); if(u) currentUser = JSON.parse(u); } catch(e) {}
+  try { let sid = window.sessionStorage.getItem(CACHE_PREFIX+'sid'); if(sid) mySessionId = sid; } catch(e) {}
   initFirebase();
-  if(currentUser) renderShell(); else renderLogin('');
+  watchSessions();
+  if(currentUser){
+    if(!mySessionId){ mySessionId = genId(); try { window.sessionStorage.setItem(CACHE_PREFIX+'sid', mySessionId); } catch(e) {} }
+    writeMySession();
+    if(heartbeatTimer) clearInterval(heartbeatTimer);
+    heartbeatTimer = setInterval(writeMySession, 30000);
+    renderShell();
+  } else renderLogin('');
 }
 
 function renderLogin(err){
@@ -352,13 +444,22 @@ function renderLogin(err){
   document.getElementById('login-form').onsubmit = (e) => {
     e.preventDefault();
     const u = document.getElementById('login-user').value; const p = document.getElementById('login-pass').value;
-    const user = DEFAULT_USERS.find(x => x.username === u && x.password === p);
-    if(user){ currentUser = user; try { window.sessionStorage.setItem(CACHE_PREFIX+'user', JSON.stringify(user)); } catch(e) {} renderShell(); } 
+    const user = getUsers().find(x => x.username === u && x.password === p);
+    if(user){
+      currentUser = user;
+      try { window.sessionStorage.setItem(CACHE_PREFIX+'user', JSON.stringify(user)); } catch(e) {}
+      mySessionId = genId();
+      try { window.sessionStorage.setItem(CACHE_PREFIX+'sid', mySessionId); } catch(e) {}
+      writeMySession();
+      if(heartbeatTimer) clearInterval(heartbeatTimer);
+      heartbeatTimer = setInterval(writeMySession, 30000);
+      renderShell();
+    }
     else { renderLogin('Identifiants incorrects.'); }
   };
 }
 
-function logout(){ currentUser = null; try { window.sessionStorage.removeItem(CACHE_PREFIX+'user'); } catch(e) {} renderLogin(''); }
+function logout(){ endMySession(); currentUser = null; mySessionId = null; try { window.sessionStorage.removeItem(CACHE_PREFIX+'user'); window.sessionStorage.removeItem(CACHE_PREFIX+'sid'); } catch(e) {} renderLogin(''); }
 
 function renderShell(){
   document.getElementById('app').innerHTML = `
@@ -376,6 +477,7 @@ function renderShell(){
       <button onclick="nav('historique')" id="nav-historique">${ICONS.historique}<span>Historique</span></button>
       <button onclick="nav('stats')" id="nav-stats">${ICONS.stats}<span>Stats</span></button>
       ${currentUser.role === 'admin' ? `<button onclick="nav('params')" id="nav-params">${ICONS.params}<span>Params</span></button>` : ''}
+      ${currentUser.role === 'admin' ? `<button onclick="nav('sessions')" id="nav-sessions">${ICONS.sessions}<span>Sessions</span></button>` : ''}
     </div>
   `;
   setSyncBadge(firebaseConfigured() ? (firebaseReady ? 'ok' : 'connecting') : 'off');
@@ -394,6 +496,7 @@ function nav(tab){
   else if(tab === 'historique') renderHistorique(main);
   else if(tab === 'stats') renderStats(main);
   else if(tab === 'params') renderParams(main);
+  else if(tab === 'sessions') renderSessions(main);
 }
 
 function buildNativeChart(labels, values, colorClass = '') {
@@ -704,6 +807,127 @@ function renderParams(container){
     setJSON('ops', newOps);
     showToast("Paramètres appliqués avec succès !");
     nav('params');
+  };
+}
+
+// --- SESSIONS & COMPTES ---
+function renderSessions(container){
+  const users = getUsers();
+  const sessionEntries = Object.entries(sessionsCache).sort((a,b)=> (b[1].lastSeen||0)-(a[1].lastSeen||0));
+
+  container.innerHTML = `
+    <div class="flex-header"><h2>Comptes & Sessions</h2></div>
+
+    <div class="card">
+      <h3 style="margin-top:0;">Mon mot de passe</h3>
+      <p style="font-size:12px;color:var(--ink-soft);margin-top:0;">Connecté en tant que <b>${currentUser.nom}</b> (${currentUser.username}).</p>
+      <div class="field"><label>Nouveau mot de passe</label><input type="text" id="mypw-new" placeholder="Laisser vide pour ne rien changer"></div>
+      <button class="btn btn-primary" onclick="changeMyPassword()">Changer mon mot de passe</button>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0;">Sessions actives</h3>
+      ${!firebaseConfigured() ? `<p style="font-size:12px;color:var(--ink-soft);margin-top:0;">Le partage entre appareils n'est pas configuré : seule la session de cet appareil est visible ici.</p>` : ''}
+      ${sessionEntries.length === 0 ? `<p style="font-size:13px;color:var(--ink-soft);">Aucune session enregistrée.</p>` : sessionEntries.map(([sid, s]) => {
+        const active = (Date.now() - (s.lastSeen||0)) < 5*60000;
+        return `
+        <div class="session-row">
+          <div>
+            <div style="font-weight:700;">${s.nom || s.username} <span class="badge ${s.role==='admin'?'green':''}" style="font-size:10px;">${s.role==='admin'?'Responsable':'Direction'}</span> ${sid===mySessionId?'<span style="font-size:11px;color:var(--ink-soft);">(cet appareil)</span>':''}</div>
+            <div style="font-size:11.5px;color:var(--ink-soft);">${s.device||'Appareil'} · ${active?'🟢 active':'⚪ inactive'} · vue ${timeAgo(s.lastSeen)}</div>
+          </div>
+          ${sid!==mySessionId ? `<button class="btn btn-warning" style="padding:6px 10px;font-size:12px;" onclick="forceEndSession('${sid}')">Déconnecter</button>` : ''}
+        </div>`;
+      }).join('')}
+    </div>
+
+    <div class="card">
+      <div class="flex-header" style="margin-bottom:10px;">
+        <h3 style="margin:0;">Comptes utilisateurs</h3>
+        <button class="btn btn-primary" style="padding:6px 12px;font-size:12px;" onclick="showAddUserForm()">+ Ajouter</button>
+      </div>
+      <div id="user-form-zone"></div>
+      ${users.map((u,i) => `
+        <div class="session-row">
+          <div>
+            <div style="font-weight:700;">${u.nom} <span class="badge ${u.role==='admin'?'green':''}" style="font-size:10px;">${u.role==='admin'?'Responsable':'Direction'}</span></div>
+            <div style="font-size:11.5px;color:var(--ink-soft);">Identifiant : ${u.username}</div>
+          </div>
+          <div style="display:flex;gap:6px;">
+            <button class="btn btn-ghost" style="padding:6px 10px;font-size:12px;" onclick="showEditUserForm(${i})">Modifier</button>
+            ${users.length > 1 ? `<button class="btn btn-warning" style="padding:6px 10px;font-size:12px;" onclick="deleteUserAccount(${i})">Suppr.</button>` : ''}
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+
+  function renderUserForm(editIndex){
+    const zone = document.getElementById('user-form-zone');
+    const editing = editIndex !== null;
+    const u = editing ? users[editIndex] : {nom:'', username:'', password:'', role:'viewer'};
+    zone.innerHTML = `
+      <div class="card" style="background:var(--surface-2); margin-bottom:14px;">
+        <div class="field"><label>Nom affiché</label><input type="text" id="uf-nom" value="${u.nom}"></div>
+        <div class="field"><label>Identifiant</label><input type="text" id="uf-username" value="${u.username}" ${editing?'disabled':''}></div>
+        <div class="field"><label>Mot de passe</label><input type="text" id="uf-password" value="" placeholder="${editing?'Laisser vide pour ne pas changer':''}"></div>
+        <div class="field"><label>Rôle</label>
+          <select id="uf-role">
+            <option value="viewer" ${u.role==='viewer'?'selected':''}>Direction (consultation)</option>
+            <option value="admin" ${u.role==='admin'?'selected':''}>Responsable (saisie)</option>
+          </select>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button class="btn btn-primary" style="flex:1;" onclick="saveUserForm(${editing?editIndex:'null'})">${editing?'Enregistrer':'Créer le compte'}</button>
+          <button class="btn btn-ghost" onclick="document.getElementById('user-form-zone').innerHTML=''">Annuler</button>
+        </div>
+      </div>
+    `;
+  }
+  window.showAddUserForm = () => renderUserForm(null);
+  window.showEditUserForm = (i) => renderUserForm(i);
+
+  window.saveUserForm = (editIndex) => {
+    const nom = document.getElementById('uf-nom').value.trim();
+    const username = document.getElementById('uf-username').value.trim();
+    const password = document.getElementById('uf-password').value;
+    const role = document.getElementById('uf-role').value;
+    if(!nom || !username){ showToast('Nom et identifiant requis'); return; }
+    let list = getUsers().slice();
+    if(editIndex === null){
+      if(list.find(x=>x.username===username)){ showToast('Cet identifiant existe déjà'); return; }
+      if(!password){ showToast('Mot de passe requis pour un nouveau compte'); return; }
+      list.push({nom, username, password, role});
+    } else {
+      list[editIndex] = { ...list[editIndex], nom, role, password: password ? password : list[editIndex].password };
+    }
+    setJSON('users', list);
+    showToast('Compte enregistré');
+    nav('sessions');
+  };
+
+  window.deleteUserAccount = (i) => {
+    let list = getUsers().slice();
+    if(list.length <= 1){ showToast('Impossible de supprimer le dernier compte'); return; }
+    if(!confirm(`Supprimer le compte de ${list[i].nom} ?`)) return;
+    list.splice(i,1);
+    setJSON('users', list);
+    showToast('Compte supprimé');
+    nav('sessions');
+  };
+
+  window.changeMyPassword = () => {
+    const pw = document.getElementById('mypw-new').value;
+    if(!pw){ showToast('Entrez un nouveau mot de passe'); return; }
+    let list = getUsers().slice();
+    const idx = list.findIndex(x => x.username === currentUser.username);
+    if(idx === -1){ showToast('Compte introuvable'); return; }
+    list[idx] = { ...list[idx], password: pw };
+    setJSON('users', list);
+    currentUser = list[idx];
+    try { window.sessionStorage.setItem(CACHE_PREFIX+'user', JSON.stringify(currentUser)); } catch(e) {}
+    showToast('Mot de passe modifié avec succès');
+    nav('sessions');
   };
 }
 
