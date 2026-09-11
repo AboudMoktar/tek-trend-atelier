@@ -1219,8 +1219,11 @@ function renderHistorique(container){
 
 // --- ONGLET 4: STATISTIQUES (PLAGE DE DATES DYNAMIQUE) ---
 window.updateStatRange = () => {
-  statRangeStart = document.getElementById('stat-start').value;
-  statRangeEnd = document.getElementById('stat-end').value;
+  const s = document.getElementById('stat-start').value;
+  const e = document.getElementById('stat-end').value;
+  if(!s || !e){ showToast('Merci de renseigner les deux dates'); return; }
+  statRangeStart = s;
+  statRangeEnd = e;
   statActivePeriod = 'perso';
   renderStats(document.getElementById('main'));
 };
@@ -1242,8 +1245,13 @@ function renderStats(container){
   // Construit un jour par jour sur la période (plafonné à 93 jours ~ 3 mois)
   let days = [];
   let curr = new Date(statRangeStart+'T00:00:00'); let end = new Date(statRangeEnd+'T00:00:00');
-  if (curr > end) { showToast("Erreur : Date de début > Date de fin"); }
-  else {
+  const invalidStart = isNaN(curr.getTime());
+  const invalidEnd = isNaN(end.getTime());
+  let rangeError = '';
+  if(invalidStart || invalidEnd) rangeError = "Date invalide — vérifiez les champs Du / Au ci-dessous.";
+  else if(curr > end) rangeError = "La date de début est après la date de fin — corrigez les champs Du / Au ci-dessous.";
+
+  if(!rangeError){
     let g = 0;
     while(curr <= end && g < 93){
       let iso = toISODateLocal(curr);
@@ -1287,13 +1295,16 @@ function renderStats(container){
         <div class="field" style="margin:0; flex:1;"><label>Du :</label><input type="date" id="stat-start" value="${statRangeStart}" onchange="updateStatRange()"></div>
         <div class="field" style="margin:0; flex:1;"><label>Au :</label><input type="date" id="stat-end" value="${statRangeEnd}" onchange="updateStatRange()"></div>
       </div>
+      ${rangeError ? `<div style="margin-top:10px;">${buildAlert('bad', rangeError)}</div>` : ''}
     </div>
 
     <div class="kpi-grid">
       <div class="kpi"><div class="label">Production période</div><div class="value">${totalAll}</div></div>
       <div class="kpi"><div class="label">Rendement moyen</div><div class="value ${rendClass(avgRend)}">${avgRend.toFixed(1)}%</div></div>
-      <div class="kpi"><div class="label">Meilleur jour</div><div class="value good" style="font-size:15px;">${bestDay ? bestDay.iso.split('-').reverse().join('/')+' ('+Math.round(bestDay.rend)+'%)' : '—'}</div></div>
-      <div class="kpi"><div class="label">Jour le plus faible</div><div class="value bad" style="font-size:15px;">${worstDay ? worstDay.iso.split('-').reverse().join('/')+' ('+Math.round(worstDay.rend)+'%)' : '—'}</div></div>
+      ${activeDays.length >= 2 ? `
+      <div class="kpi"><div class="label">Meilleur jour</div><div class="value good" style="font-size:15px;">${bestDay.iso.split('-').reverse().join('/')+' ('+Math.round(bestDay.rend)+'%)'}</div></div>
+      <div class="kpi"><div class="label">Jour le plus faible</div><div class="value bad" style="font-size:15px;">${worstDay.iso.split('-').reverse().join('/')+' ('+Math.round(worstDay.rend)+'%)'}</div></div>
+      ` : ''}
     </div>
 
     <h2>Évolution du Rendement</h2>
