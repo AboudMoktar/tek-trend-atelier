@@ -847,12 +847,14 @@ function nav(tab){
 function buildNativeChart(labels, values, colorClass = '') {
   let maxVal = Math.max(...values, 1);
   const hasVariation = values.some(v=>v>0);
-  const bestIdx = hasVariation ? values.indexOf(Math.max(...values)) : -1;
-  const worstIdx = hasVariation ? values.indexOf(Math.min(...values.filter(v=>v>=0))) : -1;
+  const trueMax = hasVariation ? Math.max(...values) : null;
+  const trueMin = hasVariation ? Math.min(...values.filter(v=>v>=0)) : null;
   let html = `<div class="native-chart">`;
   for(let i=0; i<labels.length; i++){
     let heightPct = (values[i] / maxVal) * 100;
-    let extra = (i===bestIdx && bestIdx!==worstIdx) ? ' best' : (i===worstIdx && hasVariation ? ' worst' : '');
+    const isBest = hasVariation && values[i] === trueMax;
+    const isWorst = hasVariation && values[i] === trueMin && trueMax !== trueMin;
+    let extra = isBest ? ' best' : (isWorst ? ' worst' : '');
     html += `
       <div class="nc-col${extra}">
         <div class="nc-val" id="chart_val_${labels[i].replace(/\s/g,'')}">${values[i]}</div>
@@ -992,7 +994,8 @@ function renderDashboard(container){
   const todayHours = getHoursForDate(getTodayISO());
   const activeOpCount = todayHours.reduce((max,h) => Math.max(max, getActiveOpCount(h, data)), 0);
   const perOpVals = OP_KEYS.map(k => totals[k]);
-  const bestIdx = perOpVals.indexOf(Math.max(...perOpVals));
+  const maxVal = Math.max(...perOpVals);
+  const bestNames = (maxVal > 0) ? ops.filter((name,i) => perOpVals[i] === maxVal) : [];
   const dayLabel = new Date(getTodayISO()+'T00:00:00').toLocaleDateString('fr-FR', {weekday:'long'});
   const isEmpty = totals.totalGeneral === 0;
   const notWorking = todayHours.length === 0;
@@ -1045,7 +1048,7 @@ function renderDashboard(container){
       <div class="kpi"><div class="label">Production totale</div><div class="value">${totals.totalGeneral}</div></div>
       <div class="kpi"><div class="label">Opératrices actives</div><div class="value">${activeOpCount}/${OP_KEYS.length}</div></div>
       <div class="kpi"><div class="label">Pertes / Arrêts</div><div class="value">${totals.arrets}</div></div>
-      <div class="kpi"><div class="label">Meilleure perf.</div><div class="value good" style="font-size:16px;">${totals.totalGeneral>0?ops[bestIdx]:'—'}</div></div>
+      <div class="kpi"><div class="label">Meilleure perf.</div><div class="value good" style="font-size:${bestNames.length>1?'13px':'16px'};">${bestNames.length ? bestNames.join(' & ') : '—'}</div></div>
     </div>
 
     <div class="card">
