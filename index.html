@@ -1087,7 +1087,7 @@ function renderSaisie(container, date){
   }
 
   let badgeHtml = !isAdmin ? `<span class="badge red">Lecture Seule</span>` : (isDraft ? `<span class="badge orange">Brouillon</span>` : `<span class="badge green">Validé</span>`);
-  let actionBtns = isAdmin ? (isDraft ? `<button class="btn btn-success" onclick="toggleValidation('${date}', 'validated')">Verrouiller & Valider</button>` : `<button class="btn btn-warning" onclick="toggleValidation('${date}', 'draft')">Déverrouiller pour correction</button>`) : '';
+  let actionBtns = isAdmin ? (isDraft ? `<button class="btn btn-success" onclick="toggleValidation('${date}', 'validated')">Verrouiller & Valider</button>` : `<button class="btn btn-warning" onclick="toggleValidation('${date}', 'draft')">Déverrouiller pour saisie et correction</button>`) : '';
 
   window.handleInput = (h, k, val) => {
     // Validation : on n'accepte qu'un nombre positif ou un texte d'absence (ABS, etc.)
@@ -1437,7 +1437,7 @@ function renderStats(container){
     </div>
 
     <h2>Production Horaire (${statRangeEnd.split('-').reverse().join('/')})</h2>
-    <div class="card">${noHourlyData ? buildEmptyState(dateEndHours.length===0 ? "Jour non travaillé" : "Aucune donnée pour ce jour") : buildNativeChart(dateEndHours.map(h=>h.split(' - ')[0]), valsHourly, 'green')}</div>
+    <div class="card">${noHourlyData ? buildEmptyState(dateEndHours.length===0 ? "Jour non travaillé" : "Aucune donnée pour ce jour") : buildNativeChart(dateEndHours.map(h=>h.split(' - ')[1]), valsHourly, 'green')}</div>
   `;
 }
 
