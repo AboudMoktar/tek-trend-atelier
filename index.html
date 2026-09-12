@@ -962,6 +962,25 @@ function addBrandHeader(sheet, title, numCols){
   sheet.getRow(5).height = 6;
 }
 
+// Objectif "attendu à cette heure" : somme des objectifs des créneaux déjà
+// écoulés (entièrement ou partiellement) depuis le début de la journée.
+// Sert UNIQUEMENT à donner un commentaire réaliste en cours de journée —
+// ne remplace jamais le Rendement officiel (réel / objectif du jour × 100),
+// qui reste affiché tel quel dans la jauge.
+function getElapsedObjective(dayData, dateISO){
+  const slots = getSlotsForDate(dateISO);
+  const now = new Date();
+  const nowMin = now.getHours()*60 + now.getMinutes();
+  let elapsed = 0;
+  slots.forEach(s => {
+    // Un créneau ne compte que lorsqu'il est ENTIÈREMENT terminé (à sa propre
+    // heure de fin — 9h, 10h... et pour le dernier créneau, souvent 30 min
+    // après son début). Pas de calcul proportionnel à la minute en cours.
+    if(nowMin >= s.end) elapsed += getHourTarget(s.label, dayData);
+  });
+  return elapsed;
+}
+
 // --- ONGLET 1: TABLEAU DE BORD ---
 function renderDashboard(container){
   const data = getDay(getTodayISO()); const totals = computeTotals(data);
@@ -976,11 +995,14 @@ function renderDashboard(container){
   const dayLabel = new Date(getTodayISO()+'T00:00:00').toLocaleDateString('fr-FR', {weekday:'long'});
   const isEmpty = totals.totalGeneral === 0;
   const notWorking = todayHours.length === 0;
+  const elapsedObj = notWorking ? 0 : getElapsedObjective(data, getTodayISO());
+  const paceRend = elapsedObj > 0 ? (totals.totalGeneral / elapsedObj * 100) : null;
+  const paceCls = paceRend !== null ? rendClass(paceRend) : null;
 
   let alertHtml = '';
   if(notWorking) { /* pas d'alerte rendement un jour non travaillé */ }
   else if(rendement >= 100) alertHtml = buildAlert('excellent', `Objectif journalier atteint (${rendement.toFixed(1)}%). Bravo à l'équipe !`);
-  else if(!isEmpty && rendement < 60) alertHtml = buildAlert('bad', `Rendement critique : ${rendement.toFixed(1)}% — objectif à ${obj} pièces.`);
+  else if(!isEmpty && paceRend !== null && paceRend < 60) alertHtml = buildAlert('bad', `En retard par rapport au rythme attendu à cette heure : ${Math.round(paceRend)}% (environ ${Math.round(elapsedObj)} pièces attendues à ce stade, ${totals.totalGeneral} produites).`);
 
   if(notWorking){
     container.innerHTML = `
@@ -1010,6 +1032,7 @@ function renderDashboard(container){
         ${buildGauge(rendement, isEmpty)}
         <div class="gauge-side">
           <div class="gauge-status ${isEmpty ? 'off' : cls}">${isEmpty ? 'Pas encore commencé' : rendLabel(rendement)}</div>
+          ${paceRend !== null ? `<div class="gauge-stat"><span>Rythme à cette heure</span><b><span class="hour-rend ${paceCls}" style="font-size:13px;">${Math.round(paceRend)}%</span></b></div>` : ''}
           <div class="gauge-stat"><span>Produit</span><b>${totals.totalGeneral}</b></div>
           <div class="gauge-stat"><span>Objectif</span><b>${obj}</b></div>
           <div class="gauge-stat"><span>Restant</span><b>${restant}</b></div>
