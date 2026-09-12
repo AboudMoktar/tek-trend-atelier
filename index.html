@@ -608,6 +608,7 @@ function getObj() {
 // <60% critique · 60-79% insuffisant · 80-99% bon · ≥100% objectif atteint/dépassé
 function rendClass(pct) { return pct >= 100 ? 'excellent' : (pct >= 80 ? 'good' : (pct >= 60 ? 'warn' : 'bad')); }
 function rendLabel(pct) { return pct >= 100 ? 'Objectif atteint' : (pct >= 80 ? 'Bon' : (pct >= 60 ? 'Insuffisant' : 'Critique')); }
+function paceLabel(pct) { return pct >= 100 ? 'En avance' : (pct >= 80 ? 'Bon' : (pct >= 60 ? 'Insuffisant' : 'Critique')); }
 
 function getDay(date){
   let d = getJSON('prod_'+date, null);
@@ -1032,7 +1033,7 @@ function renderDashboard(container){
         ${buildGauge(rendement, isEmpty)}
         <div class="gauge-side">
           <div class="gauge-status ${isEmpty ? 'off' : cls}">${isEmpty ? 'Pas encore commencé' : rendLabel(rendement)}</div>
-          ${paceRend !== null ? `<div class="gauge-stat"><span>Rythme à cette heure</span><b><span class="hour-rend ${paceCls}" style="font-size:13px;">${Math.round(paceRend)}%</span></b></div>` : ''}
+          ${paceRend !== null ? `<div class="gauge-stat"><span>Rythme à cette heure</span><b><span class="hour-rend ${paceCls}" style="font-size:13px;">${Math.round(paceRend)}% · ${paceLabel(paceRend)}</span></b></div>` : ''}
           <div class="gauge-stat"><span>Produit</span><b>${totals.totalGeneral}</b></div>
           <div class="gauge-stat"><span>Objectif</span><b>${obj}</b></div>
           <div class="gauge-stat"><span>Restant</span><b>${restant}</b></div>
