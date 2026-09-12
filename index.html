@@ -416,6 +416,18 @@ function timeAgo(ts){
   if(hrs < 24) return `il y a ${hrs} h`;
   return `il y a ${Math.floor(hrs/24)} j`;
 }
+// Une session sans battement depuis plus de 30 minutes est considérée comme
+// abandonnée (app fermée sans déconnexion propre) et supprimée automatiquement.
+const SESSION_STALE_MS = 30 * 60 * 1000;
+function cleanupStaleSessions(){
+  if(!firebaseReady || !fbRootRef) return;
+  const now = Date.now();
+  Object.entries(sessionsCache).forEach(([sid, s]) => {
+    if(sid !== mySessionId && s && s.lastSeen && (now - s.lastSeen) > SESSION_STALE_MS){
+      fbRootRef.child('sessions').child(sid).remove().catch(function(){});
+    }
+  });
+}
 function watchSessions(){
   try { const s = window.localStorage.getItem(CACHE_PREFIX+'sessions'); if(s) sessionsCache = JSON.parse(s); } catch(e) {}
   if(!firebaseReady || !fbRootRef) return;
@@ -426,6 +438,7 @@ function watchSessions(){
       forceLocalLogout();
       return;
     }
+    cleanupStaleSessions();
     if(currentUser && activeTab === 'sessions'){
       const formZone = document.getElementById('user-form-zone');
       const formOpen = formZone && formZone.innerHTML.trim() !== '';
@@ -445,6 +458,7 @@ function writeMySession(){
   if(firebaseReady && fbRootRef){
     fbRootRef.child('sessions').child(mySessionId).set(payload).catch(function(err){ console.error('Erreur session Firebase', err); });
   }
+  cleanupStaleSessions();
 }
 function endMySession(){
   if(mySessionId){
@@ -458,7 +472,7 @@ function endMySession(){
 }
 function forceLocalLogout(){
   currentUser = null; mySessionId = null;
-  try { window.sessionStorage.removeItem(CACHE_PREFIX+'user'); window.sessionStorage.removeItem(CACHE_PREFIX+'sid'); } catch(e) {}
+  try { window.sessionStorage.removeItem(CACHE_PREFIX+'user'); window.localStorage.removeItem(CACHE_PREFIX+'sid'); } catch(e) {}
   if(heartbeatTimer){ clearInterval(heartbeatTimer); heartbeatTimer = null; }
   detachFirebaseDataListeners();
   if(firebaseConfigured() && fbAuth){ fbAuth.signOut().catch(()=>{}); }
@@ -635,8 +649,8 @@ function showToast(msg){
 
 // --- INIT & ROUTING ---
 function startSessionAndRender(){
-  try { let sid = window.sessionStorage.getItem(CACHE_PREFIX+'sid'); if(sid) mySessionId = sid; } catch(e) {}
-  if(!mySessionId){ mySessionId = genId(); try { window.sessionStorage.setItem(CACHE_PREFIX+'sid', mySessionId); } catch(e) {} }
+  try { let sid = window.localStorage.getItem(CACHE_PREFIX+'sid'); if(sid) mySessionId = sid; } catch(e) {}
+  if(!mySessionId){ mySessionId = genId(); try { window.localStorage.setItem(CACHE_PREFIX+'sid', mySessionId); } catch(e) {} }
   attachFirebaseDataListeners();
   writeMySession();
   if(heartbeatTimer) clearInterval(heartbeatTimer);
@@ -756,7 +770,7 @@ function logout(){
   endMySession();
   detachFirebaseDataListeners();
   currentUser = null; mySessionId = null;
-  try { window.sessionStorage.removeItem(CACHE_PREFIX+'user'); window.sessionStorage.removeItem(CACHE_PREFIX+'sid'); } catch(e) {}
+  try { window.sessionStorage.removeItem(CACHE_PREFIX+'user'); window.localStorage.removeItem(CACHE_PREFIX+'sid'); } catch(e) {}
   if(firebaseConfigured() && fbAuth){ fbAuth.signOut(); /* déclenche onAuthStateChanged -> renderLogin */ }
   else renderLogin('');
 }
@@ -1367,8 +1381,8 @@ function renderStats(container){
       <div class="kpi"><div class="label">Production période</div><div class="value">${totalAll}</div></div>
       <div class="kpi"><div class="label">Rendement moyen</div><div class="value ${rendClass(avgRend)}">${avgRend.toFixed(1)}%</div></div>
       ${activeDays.length >= 2 ? `
-      <div class="kpi"><div class="label">Meilleur jour</div><div class="value good" style="font-size:15px;">${bestDay.iso.split('-').reverse().join('/')+' ('+Math.round(bestDay.rend)+'%)'}</div></div>
-      <div class="kpi"><div class="label">Jour le plus faible</div><div class="value bad" style="font-size:15px;">${worstDay.iso.split('-').reverse().join('/')+' ('+Math.round(worstDay.rend)+'%)'}</div></div>
+      <div class="kpi"><div class="label">Meilleur jour</div><div class="value good" style="font-size:14px;">${bestDay.iso.split('-').reverse().join('/')}<br>${bestDay.total} pièces (${Math.round(bestDay.rend)}%)</div></div>
+      <div class="kpi"><div class="label">Jour le plus faible</div><div class="value bad" style="font-size:14px;">${worstDay.iso.split('-').reverse().join('/')}<br>${worstDay.total} pièces (${Math.round(worstDay.rend)}%)</div></div>
       ` : ''}
     </div>
 
