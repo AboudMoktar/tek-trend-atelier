@@ -23,7 +23,7 @@
     --crit:#D64545; --crit-bg:#FCEAEA;
     --warn:#D9822B; --warn-bg:#FDF1E3;
     --good:#1F8F5F; --good-bg:#E7F5EE;
-    --excellent:#0F3D66; --excellent-bg:#E9F1F9;
+    --excellent:#B8860B; --excellent-bg:#FBF1D9;
     --bad:#D64545; --bad-bg:#FCEAEA; /* alias de compatibilité (= --crit) */
     --border:#E4E8ED; --border-soft:#EDF0F3; --radius:14px; --radius-sm:9px;
     --sans:'Inter',system-ui,sans-serif; --mono:'IBM Plex Mono',monospace;
@@ -117,6 +117,16 @@
   .nav-icon-wrap{position:relative;display:inline-flex;}
   .nav-badge{position:absolute;top:-3px;right:-5px;width:9px;height:9px;border-radius:50%;background:var(--bad);border:2px solid var(--surface);animation:navBadgePulse 1.3s infinite;}
   @keyframes navBadgePulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.35;transform:scale(1.35);}}
+
+  /* --- Barre de progression animée (réel vs objectif) avec repère de rythme --- */
+  .pace-track{position:relative;height:16px;border-radius:20px;background:var(--surface-3);margin:22px 2px 6px;overflow:visible;}
+  .pace-fill{position:absolute;left:0;top:0;height:100%;width:0%;border-radius:20px;transition:width 1s cubic-bezier(.22,1,.36,1);}
+  .pace-fill.bad{background:var(--bad);} .pace-fill.warn{background:var(--warn);} .pace-fill.good{background:var(--good);} .pace-fill.excellent{background:var(--excellent);}
+  .pace-marker{position:absolute;top:-5px;width:3px;height:26px;background:var(--ink);border-radius:2px;transform:translateX(-50%);opacity:0;transition:left 1s cubic-bezier(.22,1,.36,1), opacity .3s .6s;}
+  .pace-marker .pm-label{position:absolute;top:-19px;left:50%;transform:translateX(-50%);font-size:9px;font-weight:800;color:var(--ink-soft);white-space:nowrap;text-transform:uppercase;letter-spacing:.02em;}
+  .pace-legend{display:flex;justify-content:space-between;font-size:10.5px;color:var(--ink-faint);margin-top:4px;font-weight:600;}
+  .pulse-attn{animation:pulseAttn 1.4s ease-in-out infinite;}
+  @keyframes pulseAttn{0%,100%{opacity:1;}50%{opacity:.55;}}
   .bottomnav span{font-size:10px;font-weight:700;}
   
   /* --- KPIS & TABLES --- */
@@ -1058,17 +1068,24 @@ function renderDashboard(container){
       <div class="gauge-wrap">
         ${buildGauge(rendement, isEmpty)}
         <div class="gauge-side">
-          <div class="gauge-status ${isEmpty ? 'off' : cls}">${isEmpty ? 'Pas encore commencé' : rendLabel(rendement)}</div>
-          ${paceRend !== null ? `<div class="gauge-stat"><span>Rythme à cette heure</span><b><span class="hour-rend ${paceCls}" style="font-size:13px;">${Math.round(paceRend)}% · ${paceLabel(paceRend)}</span></b></div>` : ''}
+          <div class="gauge-status ${isEmpty ? 'off' : cls} ${(!isEmpty && cls==='bad') ? 'pulse-attn' : ''}">${isEmpty ? 'Pas encore commencé' : rendLabel(rendement)}</div>
+          ${paceRend !== null ? `<div class="gauge-stat"><span>Rythme à cette heure</span><b><span class="hour-rend ${paceCls} ${paceCls==='bad'?'pulse-attn':''}" style="font-size:13px;">${Math.round(paceRend)}% · ${paceLabel(paceRend)}</span></b></div>` : ''}
           <div class="gauge-stat"><span>Produit</span><b>${totals.totalGeneral}</b></div>
           <div class="gauge-stat"><span>Objectif</span><b>${obj}</b></div>
           <div class="gauge-stat"><span>Restant</span><b>${restant}</b></div>
         </div>
       </div>
+      ${!isEmpty ? `
+      <div class="pace-track">
+        <div class="pace-fill ${cls}" id="pace-fill-el"></div>
+        ${paceRend !== null ? `<div class="pace-marker" id="pace-marker-el"><span class="pm-label">Attendu</span></div>` : ''}
+      </div>
+      <div class="pace-legend"><span>0</span><span>${obj} pièces (objectif du jour)</span></div>
+      ` : ''}
     </div>
 
     <div class="kpi-grid">
-      <div class="kpi"><div class="label">Production totale (PC)</div><div class="value">${totals.totalGeneral}</div></div>
+      <div class="kpi"><div class="label">Production totale</div><div class="value">${totals.totalGeneral} <span style="font-size:13px;font-weight:700;color:var(--ink-faint);">PC</span></div></div>
       <div class="kpi"><div class="label">Opératrices actives</div><div class="value">${activeOpCount}/${OP_KEYS.length}</div></div>
       <div class="kpi"><div class="label">Pertes / Arrêts</div><div class="value">${totals.arrets}</div></div>
       <div class="kpi"><div class="label">Meilleure perf.</div><div class="value good" style="font-size:${bestNames.length>1?'13px':'16px'};">${bestNames.length ? bestNames.join(' & ') : '—'}</div></div>
@@ -1079,6 +1096,23 @@ function renderDashboard(container){
       ${totals.totalGeneral>0 ? buildNativeChart(ops, perOpVals) : buildEmptyState('Aucune donnée à afficher')}
     </div>
   `;
+
+  if(!isEmpty){
+    // Double requestAnimationFrame : force le navigateur à peindre l'état 0%
+    // avant d'appliquer la valeur réelle, pour que la transition CSS s'anime
+    // à chaque affichage du Tableau de bord (et pas seulement au 1er chargement).
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const fillEl = document.getElementById('pace-fill-el');
+        if(fillEl) fillEl.style.width = Math.min(100, rendement) + '%';
+        const markerEl = document.getElementById('pace-marker-el');
+        if(markerEl && paceRend !== null && elapsedObj > 0){
+          markerEl.style.left = Math.min(100, (elapsedObj/obj)*100) + '%';
+          markerEl.style.opacity = '1';
+        }
+      });
+    });
+  }
 }
 
 // --- ONGLET 2: SAISIE (AVEC INPUTS) ---
@@ -1428,7 +1462,7 @@ function renderStats(container){
     </div>
 
     <div class="kpi-grid">
-      <div class="kpi"><div class="label">Production période (PC)</div><div class="value">${totalAll}</div></div>
+      <div class="kpi"><div class="label">Production période</div><div class="value">${totalAll} <span style="font-size:13px;font-weight:700;color:var(--ink-faint);">PC</span></div></div>
       <div class="kpi"><div class="label">Rendement moyen</div><div class="value ${rendClass(avgRend)}">${avgRend.toFixed(1)}%</div></div>
       ${activeDays.length >= 2 ? `
       <div class="kpi"><div class="label">Meilleur jour</div><div class="value good" style="font-size:14px;">${bestDay.iso.split('-').reverse().join('/')}<br>${bestDay.total} pièces (${Math.round(bestDay.rend)}%)</div></div>
