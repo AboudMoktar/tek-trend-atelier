@@ -114,6 +114,9 @@
   .bottomnav button.active{color:var(--accent);}
   .bottomnav button.active::before{content:'';position:absolute;top:0;left:50%;transform:translateX(-50%);width:28px;height:3px;border-radius:0 0 3px 3px;background:var(--accent);}
   .bottomnav svg{width:20px;height:20px;}
+  .nav-icon-wrap{position:relative;display:inline-flex;}
+  .nav-badge{position:absolute;top:-3px;right:-5px;width:9px;height:9px;border-radius:50%;background:var(--bad);border:2px solid var(--surface);animation:navBadgePulse 1.3s infinite;}
+  @keyframes navBadgePulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.35;transform:scale(1.35);}}
   .bottomnav span{font-size:10px;font-weight:700;}
   
   /* --- KPIS & TABLES --- */
@@ -376,6 +379,8 @@ function attachFirebaseDataListeners(){
     Object.keys(data).forEach(function(k){ memoryCache[CACHE_PREFIX+k] = data[k]; });
     setSyncBadge('ok');
     if(!currentUser) return;
+    checkForNewMessages(data);
+    updateNavBadges();
     if(fbFirstLoad){ fbFirstLoad = false; nav(activeTab); }
     else if(activeTab === 'saisie' || activeTab === 'sessions'){ /* ne pas interrompre une saisie en cours */ }
     else if(activeTab === 'messages'){
@@ -806,7 +811,7 @@ function navItems(){
 
 function renderShell(){
   const items = navItems();
-  const navBtn = (i, cls) => `<button class="${cls}" data-tab="${i.tab}" onclick="${i.onclick || `nav('${i.tab}')`}">${i.icon}<span>${i.label}</span></button>`;
+  const navBtn = (i, cls) => `<button class="${cls}" data-tab="${i.tab}" onclick="${i.onclick || `nav('${i.tab}')`}"><span class="nav-icon-wrap">${i.icon}</span><span>${i.label}</span></button>`;
 
   document.getElementById('app').innerHTML = `
     <div class="sidebar no-print">
@@ -858,7 +863,8 @@ function nav(tab){
   else if(tab === 'stats') renderStats(main);
   else if(tab === 'params') renderParams(main);
   else if(tab === 'sessions') renderSessions(main);
-  else if(tab === 'messages') renderMessages(main);
+  else if(tab === 'messages'){ renderMessages(main); setLastSeenMessagesNow(); }
+  updateNavBadges();
 }
 
 function buildNativeChart(labels, values, colorClass = '') {
@@ -1062,7 +1068,7 @@ function renderDashboard(container){
     </div>
 
     <div class="kpi-grid">
-      <div class="kpi"><div class="label">Production totale</div><div class="value">${totals.totalGeneral}</div></div>
+      <div class="kpi"><div class="label">Production totale (PC)</div><div class="value">${totals.totalGeneral}</div></div>
       <div class="kpi"><div class="label">Opératrices actives</div><div class="value">${activeOpCount}/${OP_KEYS.length}</div></div>
       <div class="kpi"><div class="label">Pertes / Arrêts</div><div class="value">${totals.arrets}</div></div>
       <div class="kpi"><div class="label">Meilleure perf.</div><div class="value good" style="font-size:${bestNames.length>1?'13px':'16px'};">${bestNames.length ? bestNames.join(' & ') : '—'}</div></div>
@@ -1422,7 +1428,7 @@ function renderStats(container){
     </div>
 
     <div class="kpi-grid">
-      <div class="kpi"><div class="label">Production période</div><div class="value">${totalAll}</div></div>
+      <div class="kpi"><div class="label">Production période (PC)</div><div class="value">${totalAll}</div></div>
       <div class="kpi"><div class="label">Rendement moyen</div><div class="value ${rendClass(avgRend)}">${avgRend.toFixed(1)}%</div></div>
       ${activeDays.length >= 2 ? `
       <div class="kpi"><div class="label">Meilleur jour</div><div class="value good" style="font-size:14px;">${bestDay.iso.split('-').reverse().join('/')}<br>${bestDay.total} pièces (${Math.round(bestDay.rend)}%)</div></div>
@@ -1783,6 +1789,75 @@ function renderSessions(container){
 
 // --- MESSAGES (communication entre Responsable / Chef de chaîne / Direction) ---
 function getMessages(){ return getJSON('messages', {}); }
+
+// --- Badge "non lu" sur l'onglet Messages ---
+function getLastSeenMessages(){
+  try { return parseInt(window.localStorage.getItem(CACHE_PREFIX+'msg_seen_'+currentUser.username)) || 0; } catch(e){ return 0; }
+}
+function setLastSeenMessagesNow(){
+  try { window.localStorage.setItem(CACHE_PREFIX+'msg_seen_'+currentUser.username, String(Date.now())); } catch(e) {}
+}
+function getUnreadMessageCount(){
+  if(!currentUser) return 0;
+  const msgs = getMessages();
+  const lastSeen = getLastSeenMessages();
+  return Object.values(msgs).filter(m => (m.at||0) > lastSeen && m.authorUsername !== currentUser.username).length;
+}
+function updateNavBadges(){
+  const unread = getUnreadMessageCount();
+  document.querySelectorAll('.nav-badge').forEach(el => el.remove());
+  if(unread > 0){
+    document.querySelectorAll('[data-tab="messages"] .nav-icon-wrap').forEach(wrap => {
+      const dot = document.createElement('span');
+      dot.className = 'nav-badge';
+      wrap.appendChild(dot);
+    });
+  }
+}
+
+// --- Notifications système (tant que l'app reste ouverte, même en arrière-plan) ---
+// IMPORTANT : ceci ne fonctionne QUE si l'application est encore chargée en
+// mémoire (onglet ouvert, même non actif). Si l'application est complètement
+// fermée, aucune notification ne peut arriver — cela nécessiterait un serveur
+// d'envoi (Firebase Cloud Functions, payant), ce qui n'est pas mis en place ici.
+let knownMessageIds = null;
+function checkForNewMessages(allData){
+  const msgs = (allData && allData.messages) || {};
+  const ids = Object.keys(msgs);
+  if(knownMessageIds === null){
+    knownMessageIds = new Set(ids); // premier chargement : pas de notification rétroactive
+    return;
+  }
+  ids.forEach(id => {
+    if(!knownMessageIds.has(id)){
+      knownMessageIds.add(id);
+      const m = msgs[id];
+      if(currentUser && m.authorUsername !== currentUser.username) notifyNewMessage(m);
+    }
+  });
+}
+function notifyNewMessage(m){
+  updateNavBadges();
+  if(typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+  const title = 'TEK-TREND — ' + (m.authorName || 'Nouveau message');
+  const opts = { body: m.text, icon: './icon-192.png', tag: 'tek-trend-msg-'+Date.now() };
+  try{
+    if(navigator.serviceWorker && navigator.serviceWorker.ready){
+      navigator.serviceWorker.ready.then(function(reg){ reg.showNotification(title, opts); }).catch(function(){ new Notification(title, opts); });
+    } else {
+      new Notification(title, opts);
+    }
+  }catch(e){ console.error('Erreur notification :', e); }
+}
+window.requestNotifPermission = () => {
+  if(typeof Notification === 'undefined'){ showToast("Les notifications ne sont pas prises en charge par ce navigateur."); return; }
+  Notification.requestPermission().then(function(perm){
+    if(perm === 'granted') showToast('Notifications activées !');
+    else showToast('Notifications refusées — vous pouvez les activer plus tard dans les réglages du navigateur.');
+    nav('messages');
+  });
+};
+
 function timeAgoOrDate(ts){
   if(!ts) return '';
   const diff = Date.now() - ts;
@@ -1794,9 +1869,16 @@ function timeAgoOrDate(ts){
 function renderMessages(container){
   const msgs = getMessages();
   const list = Object.entries(msgs).sort((a,b) => (b[1].at||0) - (a[1].at||0));
+  const notifStatus = (typeof Notification !== 'undefined') ? Notification.permission : 'unsupported';
 
   container.innerHTML = `
     <div class="flex-header"><h2>Messages</h2></div>
+    ${notifStatus === 'default' ? `
+    <div class="alert warn" style="cursor:pointer;" onclick="requestNotifPermission()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+      <span>Activer les notifications pour être alerté des nouveaux messages, même quand l'app est en arrière-plan. Touchez ici.</span>
+    </div>` : ''}
+    ${notifStatus === 'denied' ? `<div class="alert bad"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.9" y1="4.9" x2="19.1" y2="19.1"/></svg><span>Notifications refusées. Pour les réactiver : réglages du navigateur → autorisations du site.</span></div>` : ''}
     <div class="card">
       <p style="font-size:12px;color:var(--ink-soft);margin-top:0;">Visible par le Responsable, la Direction et le Chef de chaîne. Utilisez-le pour signaler un problème ou laisser une consigne.</p>
       <div class="field"><label>Nouveau message</label><textarea id="msg-text" rows="3" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;background:var(--surface-2);font-family:inherit;font-size:15px;resize:vertical;" placeholder="Écrire un message…"></textarea></div>
