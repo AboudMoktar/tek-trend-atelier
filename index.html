@@ -684,8 +684,9 @@ let todayISO = getTodayISO();
 let saisieDate = todayISO; 
 let histDate = todayISO;
 let histViewMode = 'jour';
-let rhSubTab = 'employes';
-let rhAttDate = null; // initialisé à aujourd'hui au premier rendu
+let rhAttDate = null; // date de pointage affichée, initialisée à aujourd'hui au premier rendu
+let rhFicheEmpId = null; // employé actuellement affiché dans "Fiche salarié"
+let rhMonthKey = null; // mois affiché pour les heures travaillées / base mensuelle (YYYY-MM), init. au mois courant
 let histPeriodStart = toISODateLocal(new Date(new Date().setDate(new Date().getDate() - 6)));
 let histPeriodEnd = todayISO;
 let statRangeEnd = todayISO;
@@ -698,22 +699,8 @@ let heartbeatTimer = null;
 function getOps() { return getJSON('ops', ["Hela", "Marwa", "Mabrouka", "Wahida"]); }
 function getObjHoraireOp() { return getJSON('obj_horaire_op', 20); } // pièces/heure/opératrice (réf: 3 min/pièce)
 
-// --- MODULE RH : Employés, Pointage, Congés ---
-// Registre RH indépendant de la liste des 4 opératrices utilisée pour la
-// production (celle-ci reste inchangée). Le registre RH couvre TOUT le
-// personnel (opératrices, responsable, chef de chaîne, autres postes).
-function getEmployees(){ return getJSON('employees', {}); }
-function saveEmployees(list){ setJSON('employees', list); }
-function getAttendance(dateISO){ return getJSON('attendance_'+dateISO, {}); }
-function saveAttendance(dateISO, data){ setJSON('attendance_'+dateISO, data); }
-function getLeaves(){ return getJSON('leaves', {}); }
-function saveLeaves(list){ setJSON('leaves', list); }
-const ATT_STATUS = {
-  present: {label:'Présent', cls:'good', icon:'✓'},
-  absent:  {label:'Absent',  cls:'bad',  icon:'✕'},
-  retard:  {label:'Retard',  cls:'warn', icon:'⏱'}
-};
-const LEAVE_TYPES = ['Congé payé', 'Congé maladie', 'Absence non justifiée', 'Autre'];
+// Le module RH (Personnel, Présence, Base mensuelle...) est chargé séparément
+// depuis rh-module.js — voir cette balise <script> en fin de fichier.
 
 // ============================================================
 // HORAIRES CONFIGURABLES (Lot C) — Lun-Ven + Samedi
@@ -994,9 +981,9 @@ function logout(){
 function navItems(){
   if(activeModule === 'rh'){
     const items = [
-      {tab:'rh-employes', label:'Employés', icon:ICONS.idBadge, show:true, onclick:"nav('rh-employes')"},
-      {tab:'rh-pointage', label:'Pointage', icon:ICONS.clock, show:true, onclick:"nav('rh-pointage')"},
-      {tab:'rh-conges', label:'Congés', icon:ICONS.plane, show:true, onclick:"nav('rh-conges')"},
+      {tab:'rh-dashboard', label:'Tableau', icon:ICONS.dashboard, show:true},
+      {tab:'rh-personnel', label:'Personnel', icon:ICONS.idBadge, show:true},
+      {tab:'rh-pointage', label:'Pointage', icon:ICONS.clock, show:true},
       {tab:'messages', label:'Messages', icon:ICONS.messages, show:true},
       {tab:'sessions', label:'Sessions', icon:ICONS.sessions, show:true}
     ];
@@ -1057,7 +1044,7 @@ function renderShell(){
     </div>
   `;
   setSyncBadge(firebaseConfigured() ? (firebaseReady ? 'ok' : 'connecting') : 'off');
-  nav(activeModule === 'rh' ? 'rh-employes' : 'dashboard');
+  nav(activeModule === 'rh' ? 'rh-dashboard' : 'dashboard');
 }
 
 function nav(tab){
@@ -1073,9 +1060,10 @@ function nav(tab){
   else if(tab === 'params') renderParams(main);
   else if(tab === 'sessions') renderSessions(main);
   else if(tab === 'messages'){ renderMessages(main); setLastSeenMessagesNow(); }
-  else if(tab === 'rh-employes'){ rhSubTab='employes'; renderRHEmployes(rhSectionContainer(main,'Employés'), currentUser.role==='admin'); }
-  else if(tab === 'rh-pointage'){ rhSubTab='pointage'; renderRHPointage(rhSectionContainer(main,'Pointage'), currentUser.role==='admin'); }
-  else if(tab === 'rh-conges'){ rhSubTab='conges'; renderRHConges(rhSectionContainer(main,'Congés & Absences'), currentUser.role==='admin'); }
+  else if(tab === 'rh-dashboard'){ renderRHDashboard(rhSectionContainer(main,'Tableau de bord RH')); }
+  else if(tab === 'rh-personnel'){ renderRHPersonnel(rhSectionContainer(main,'Personnel'), currentUser.role==='admin'); }
+  else if(tab === 'rh-pointage'){ renderRHPointage(rhSectionContainer(main,'Pointage'), currentUser.role==='admin'); }
+  else if(tab === 'rh-fiche'){ renderRHFiche(rhSectionContainer(main,'Fiche salarié'), currentUser.role==='admin', rhFicheEmpId); }
   updateNavBadges();
 }
 
@@ -2226,197 +2214,8 @@ function timeAgoOrDate(ts){
 }
 
 // --- MODULE RH : Employés / Pointage / Congés ---
-function rhSectionContainer(container, title){
-  container.innerHTML = `<div class="flex-header"><h2>${ICONS.idBadge} ${title}</h2></div><div id="rh-body"></div>`;
-  return document.getElementById('rh-body');
-}
+// (rendu RH déplacé dans rh-module.js)
 
-function renderRHEmployes(container, canEdit){
-  const emps = getEmployees();
-  const rows = Object.entries(emps).sort((a,b)=> (a[1].nom||'').localeCompare(b[1].nom||''));
-  container.innerHTML = `
-    <div class="card">
-      <div class="flex-header" style="margin-bottom:10px;">
-        <h3 style="margin:0;">Employés (${rows.length})</h3>
-        ${canEdit ? `<button class="btn btn-primary" style="padding:6px 12px;font-size:12px;" onclick="showAddEmployeeForm()">+ Ajouter</button>` : ''}
-      </div>
-      <div id="emp-form-zone"></div>
-      ${rows.length===0 ? buildEmptyState("Aucun employé enregistré", canEdit ? "Ajoutez le premier membre du personnel." : "") : rows.map(([id,e]) => `
-        <div class="session-row">
-          <div>
-            <div style="font-weight:700;">${esc(e.nom)}</div>
-            <div style="font-size:11.5px;color:var(--ink-soft);">${esc(e.poste||'—')}</div>
-          </div>
-          ${canEdit ? `<div style="display:flex;gap:6px;flex-shrink:0;">
-            <button class="btn btn-ghost" style="padding:6px 10px;font-size:12px;" onclick="showEditEmployeeForm('${id}')">Modifier</button>
-            <button class="btn btn-warning" style="padding:6px 10px;font-size:12px;" onclick="deleteEmployee('${id}')">Suppr.</button>
-          </div>` : ''}
-        </div>
-      `).join('')}
-    </div>
-  `;
-
-  window.showAddEmployeeForm = () => renderEmployeeForm('add', null);
-  window.showEditEmployeeForm = (id) => renderEmployeeForm('edit', id);
-  window.deleteEmployee = (id) => {
-    if(!confirm("Supprimer cet employé ? Son historique de pointage/congés sera conservé mais ne sera plus rattaché à un nom.")) return;
-    const list = getEmployees();
-    delete list[id];
-    saveEmployees(list);
-    nav('rh');
-  };
-
-  function renderEmployeeForm(mode, id){
-    const e = mode==='edit' ? emps[id] : {nom:'', poste:''};
-    const zone = document.getElementById('emp-form-zone');
-    zone.innerHTML = `
-      <div class="card" style="background:var(--surface-2);margin-bottom:14px;">
-        <h3 style="margin-top:0;">${mode==='add' ? 'Nouvel employé' : "Modifier l'employé"}</h3>
-        <div class="field"><label>Nom complet</label><input id="ef-nom" value="${esc(e.nom)}" placeholder="Ex : Salma Ben Ali"></div>
-        <div class="field"><label>Poste / Fonction</label><input id="ef-poste" value="${esc(e.poste||'')}" placeholder="Ex : Opératrice couture, Responsable magasin..."></div>
-        <div style="display:flex;gap:8px;">
-          <button class="btn btn-primary" onclick="saveEmployeeForm('${mode}','${id||''}')">Enregistrer</button>
-          <button class="btn btn-ghost" onclick="document.getElementById('emp-form-zone').innerHTML=''">Annuler</button>
-        </div>
-      </div>
-    `;
-  }
-  window.saveEmployeeForm = (mode, id) => {
-    const nom = document.getElementById('ef-nom').value.trim();
-    const poste = document.getElementById('ef-poste').value.trim();
-    if(!nom){ showToast('Le nom est obligatoire'); return; }
-    const list = getEmployees();
-    if(mode==='add'){
-      const newId = 'e'+Date.now()+Math.floor(Math.random()*1000);
-      list[newId] = {nom, poste};
-    } else {
-      list[id] = {...list[id], nom, poste};
-    }
-    saveEmployees(list);
-    showToast('Employé enregistré');
-    nav('rh');
-  };
-}
-
-function renderRHPointage(container, canEdit){
-  if(!rhAttDate) rhAttDate = getTodayISO();
-  const emps = getEmployees();
-  const empRows = Object.entries(emps).sort((a,b)=> (a[1].nom||'').localeCompare(b[1].nom||''));
-  const att = getAttendance(rhAttDate);
-  container.innerHTML = `
-    <div class="card">
-      <div class="field" style="margin:0;"><label>Date</label><input type="date" value="${rhAttDate}" max="${getTodayISO()}" onchange="rhAttDate=this.value; nav('rh')"></div>
-    </div>
-    <div class="card">
-      ${empRows.length===0 ? buildEmptyState("Aucun employé enregistré", "Ajoutez du personnel dans l'onglet Employés.") : empRows.map(([id,e]) => {
-        const a = att[id] || {};
-        const st = a.status;
-        return `
-        <div class="session-row" style="flex-direction:column;align-items:stretch;gap:8px;">
-          <div style="display:flex;justify-content:space-between;align-items:center;">
-            <div style="font-weight:700;">${esc(e.nom)}</div>
-            <div style="font-size:11px;color:var(--ink-soft);">${esc(e.poste||'')}</div>
-          </div>
-          ${canEdit ? `
-          <div style="display:flex;gap:5px;">
-            ${Object.entries(ATT_STATUS).map(([k,v]) => `<button class="btn ${st===k?'btn-primary':'btn-ghost'}" style="flex:1;padding:6px 2px;font-size:11px;" onclick="setAttendanceStatus('${id}','${k}')">${v.icon} ${v.label}</button>`).join('')}
-          </div>
-          ${st && st!=='absent' ? `
-          <div style="display:flex;gap:8px;">
-            <div class="field" style="margin:0;flex:1;"><label style="font-size:10px;">Arrivée</label><input type="time" value="${a.in||''}" onchange="setAttendanceTime('${id}','in',this.value)"></div>
-            <div class="field" style="margin:0;flex:1;"><label style="font-size:10px;">Départ</label><input type="time" value="${a.out||''}" onchange="setAttendanceTime('${id}','out',this.value)"></div>
-          </div>` : ''}
-          ` : `
-          <div class="hour-rend ${st?ATT_STATUS[st].cls:''}" style="font-size:12px;width:fit-content;">${st?ATT_STATUS[st].icon+' '+ATT_STATUS[st].label:'Non renseigné'}</div>
-          ${a.in || a.out ? `<div style="font-size:11px;color:var(--ink-soft);">${a.in||'—'} → ${a.out||'—'}</div>` : ''}
-          `}
-        </div>
-      `;}).join('')}
-    </div>
-  `;
-
-  window.setAttendanceStatus = (empId, status) => {
-    const a = getAttendance(rhAttDate);
-    a[empId] = {...(a[empId]||{}), status};
-    saveAttendance(rhAttDate, a);
-    nav('rh');
-  };
-  window.setAttendanceTime = (empId, field, value) => {
-    const a = getAttendance(rhAttDate);
-    a[empId] = {...(a[empId]||{}), [field]:value};
-    saveAttendance(rhAttDate, a);
-  };
-}
-
-function renderRHConges(container, canEdit){
-  const emps = getEmployees();
-  const leaves = getLeaves();
-  const rows = Object.entries(leaves).sort((a,b)=> (b[1].dateStart||'').localeCompare(a[1].dateStart||''));
-  container.innerHTML = `
-    <div class="card">
-      <div class="flex-header" style="margin-bottom:10px;">
-        <h3 style="margin:0;">Congés & Absences</h3>
-        ${canEdit ? `<button class="btn btn-primary" style="padding:6px 12px;font-size:12px;" onclick="showAddLeaveForm()">+ Ajouter</button>` : ''}
-      </div>
-      <div id="leave-form-zone"></div>
-      ${rows.length===0 ? buildEmptyState("Aucun congé enregistré") : rows.map(([id,l]) => `
-        <div class="session-row">
-          <div>
-            <div style="font-weight:700;">${esc((emps[l.empId] && emps[l.empId].nom) || 'Employé supprimé')}</div>
-            <div style="font-size:11.5px;color:var(--ink-soft);">${esc(l.type)} · ${l.dateStart.split('-').reverse().join('/')} → ${l.dateEnd.split('-').reverse().join('/')}</div>
-            ${l.note ? `<div style="font-size:11px;color:var(--ink-faint);margin-top:2px;">${esc(l.note)}</div>` : ''}
-          </div>
-          ${canEdit ? `<button class="btn btn-warning" style="padding:6px 10px;font-size:12px;flex-shrink:0;" onclick="deleteLeave('${id}')">Suppr.</button>` : ''}
-        </div>
-      `).join('')}
-    </div>
-  `;
-
-  window.showAddLeaveForm = () => {
-    const empOptions = Object.entries(emps).sort((a,b)=>(a[1].nom||'').localeCompare(b[1].nom||'')).map(([id,e])=>`<option value="${id}">${esc(e.nom)}</option>`).join('');
-    const zone = document.getElementById('leave-form-zone');
-    zone.innerHTML = `
-      <div class="card" style="background:var(--surface-2);margin-bottom:14px;">
-        <h3 style="margin-top:0;">Nouveau congé / absence</h3>
-        ${Object.keys(emps).length===0 ? `<p style="color:var(--ink-soft);">Ajoutez d'abord un employé dans l'onglet Employés.</p>` : `
-        <div class="field"><label>Employé</label><select id="lf-emp">${empOptions}</select></div>
-        <div class="field"><label>Type</label><select id="lf-type">${LEAVE_TYPES.map(t=>`<option>${t}</option>`).join('')}</select></div>
-        <div style="display:flex;gap:8px;">
-          <div class="field" style="flex:1;"><label>Du</label><input type="date" id="lf-start" value="${getTodayISO()}"></div>
-          <div class="field" style="flex:1;"><label>Au</label><input type="date" id="lf-end" value="${getTodayISO()}"></div>
-        </div>
-        <div class="field"><label>Note (optionnel)</label><input id="lf-note" placeholder="Précisions..."></div>
-        <div style="display:flex;gap:8px;">
-          <button class="btn btn-primary" onclick="saveLeaveForm()">Enregistrer</button>
-          <button class="btn btn-ghost" onclick="document.getElementById('leave-form-zone').innerHTML=''">Annuler</button>
-        </div>
-        `}
-      </div>
-    `;
-  };
-  window.saveLeaveForm = () => {
-    const empId = document.getElementById('lf-emp').value;
-    const type = document.getElementById('lf-type').value;
-    const dateStart = document.getElementById('lf-start').value;
-    const dateEnd = document.getElementById('lf-end').value;
-    const note = document.getElementById('lf-note').value.trim();
-    if(!dateStart || !dateEnd){ showToast('Dates requises'); return; }
-    if(new Date(dateEnd) < new Date(dateStart)){ showToast('La date de fin doit être après la date de début'); return; }
-    const id = 'l'+Date.now()+Math.floor(Math.random()*1000);
-    const list = getLeaves();
-    list[id] = {empId, type, dateStart, dateEnd, note};
-    saveLeaves(list);
-    showToast('Congé enregistré');
-    nav('rh');
-  };
-  window.deleteLeave = (id) => {
-    if(!confirm('Supprimer ce congé ?')) return;
-    const list = getLeaves();
-    delete list[id];
-    saveLeaves(list);
-    nav('rh');
-  };
-}
 
 function renderMessages(container){
   const msgs = getMessages();
@@ -2629,6 +2428,7 @@ window.exportCSV = () => {
 // Start
 window.onload = init;
 </script>
+<script src="./rh-module.js"></script>
 <script>
 if('serviceWorker' in navigator){
   window.addEventListener('load', function(){
