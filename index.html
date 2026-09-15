@@ -95,11 +95,15 @@
   .user-chip button{background:rgba(255,255,255,.14);border:none;color:#fff;cursor:pointer;padding:7px;border-radius:9px;display:flex;transition:background .15s,color .15s;flex-shrink:0;}
   .user-chip button:hover{background:var(--bad-bg);color:var(--bad);}
   .user-chip button svg{width:16px;height:16px;}
-  @media (max-width:420px){
-    .sync-time{display:none;}
-    .user-chip .role{display:none;}
-    .topbar .logo-sub{display:none;}
-  }
+  .sync-time{display:none;}
+  .user-chip .role{display:none;}
+  .topbar .logo-sub{display:none;}
+  .sync-badge span{display:none;}
+  .user-avatar-ic{width:22px;height:22px;}
+  .user-chip{gap:4px;}
+  .topbar{padding:8px 10px;flex-wrap:nowrap;}
+  .topbar .logo-text{font-size:16px;}
+  .user-chip .uname{font-size:11px;max-width:70px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .app-body{flex:1;display:flex;flex-direction:column;min-width:0;}
   main{flex:1;display:flex;flex-direction:column;padding:6px 5px 56px; max-width: 900px; margin: 0 auto; width: 100%;}
   .anchor-bottom{margin-top:auto;}
@@ -139,27 +143,27 @@
   @keyframes pulseAttn{0%,100%{opacity:1;}50%{opacity:.55;}}
 
   /* --- Carte héro du Tableau de bord --- */
-  .hero-card{position:relative;overflow:hidden;border-radius:14px;background:linear-gradient(100deg,rgba(15,61,102,.97) 0%,rgba(15,61,102,.75) 45%,rgba(15,61,102,.35) 100%),url('./hero-bg.jpg');background-size:cover;background-position:right center;color:#fff;padding:10px 12px 11px;margin-bottom:8px;box-shadow:var(--shadow-md);}
+  .hero-card{position:relative;overflow:hidden;border-radius:13px;background:linear-gradient(100deg,rgba(15,61,102,.97) 0%,rgba(15,61,102,.75) 45%,rgba(15,61,102,.35) 100%),url('./hero-bg.jpg');background-size:cover;background-position:right center;color:#fff;padding:9px 10px 9px;margin-bottom:6px;box-shadow:var(--shadow-md);}
   .hero-illus{position:absolute;right:-30px;top:-10px;height:115%;width:62%;color:rgba(255,255,255,.09);pointer-events:none;}
-  .page-date-row{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px;}
+  .page-date-row{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:5px;}
   .hero-date{display:flex;align-items:center;gap:10px;}
-  .hero-date-icon{width:30px;height:30px;border-radius:9px;background:var(--accent-bg);color:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .hero-date-icon{width:26px;height:26px;border-radius:8px;background:var(--accent-bg);color:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
   .hero-date-icon svg{width:19px;height:19px;}
-  .hero-date h2{margin:0;font-size:15px;font-weight:800;color:var(--ink);}
+  .hero-date h2{margin:0;font-size:14px;font-weight:800;color:var(--ink);}
   .hero-date .hd-sub{font-size:12px;color:var(--ink-soft);text-transform:capitalize;}
-  .hero-obj-badge{border-radius:10px;padding:5px 10px;display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;flex-shrink:0;}
+  .hero-obj-badge{border-radius:9px;padding:4px 8px;display:flex;align-items:center;gap:5px;font-size:10px;font-weight:700;flex-shrink:0;}
   .hero-obj-badge.bad{background:var(--bad-bg);color:var(--bad);}
   .hero-obj-badge.warn{background:var(--warn-bg);color:var(--warn);}
   .hero-obj-badge.good{background:var(--good-bg);color:var(--good);}
   .hero-obj-badge.excellent{background:var(--excellent-bg);color:var(--excellent);}
   .hero-obj-badge svg{width:18px;height:18px;color:currentColor;flex-shrink:0;}
   .hero-obj-badge .hob-sub{font-weight:500;color:currentColor;opacity:.75;font-size:10.5px;}
-  .hero-main{display:flex;align-items:center;gap:18px;margin-top:6px;position:relative;z-index:1;flex-wrap:wrap;}
-  .hero-info{display:flex;flex-direction:column;gap:8px;min-width:140px;}
+  .hero-main{display:flex;align-items:center;gap:12px;margin-top:3px;position:relative;z-index:1;flex-wrap:wrap;}
+  .hero-info{display:flex;flex-direction:column;gap:5px;min-width:130px;}
   .hero-info-row{display:flex;align-items:center;gap:9px;}
   .hero-info-icon{width:26px;height:26px;border-radius:7px;background:rgba(255,255,255,.14);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
   .hero-info-icon svg{width:14px;height:14px;}
-  .hero-stat-big{font-size:26px;font-weight:800;line-height:1;}
+  .hero-stat-big{font-size:21px;font-weight:800;line-height:1;}
   .hero-stat-lbl{font-size:11.5px;color:rgba(255,255,255,.65);font-weight:600;}
   .hero-obj-line{font-size:13px;color:rgba(255,255,255,.85);font-weight:600;}
   .hero-ahead-pill{display:inline-flex;align-items:stretch;border-radius:20px;overflow:hidden;font-size:12.5px;font-weight:800;margin-top:2px;}
@@ -169,7 +173,7 @@
   .hero-ahead-pill.behind .hap-txt{background:rgba(214,69,69,.18);color:#FF9B92;}
   .hero-divider{width:1px;align-self:stretch;background:rgba(255,255,255,.25);flex-shrink:0;margin:0 2px;}
   .hero-tagline{position:relative;z-index:1;text-align:right;font-family:'Caveat',cursive;font-weight:700;font-style:italic;font-size:14px;color:rgba(255,255,255,.6);margin-top:3px;transform:rotate(-2deg);}
-  .hero-track-wrap{position:relative;z-index:1;margin-top:14px;}
+  .hero-track-wrap{position:relative;z-index:1;margin-top:8px;}
   .hero-track{position:relative;height:14px;border-radius:20px;background:rgba(255,255,255,.14);overflow:visible;}
   .hero-track-fill{position:absolute;left:0;top:0;height:100%;width:0%;border-radius:20px;transition:width 1.1s cubic-bezier(.22,1,.36,1);background:linear-gradient(90deg,#E0A519,#FFC72C);}
   .hero-track-fill.bad{background:linear-gradient(90deg,#c4453f,var(--bad));}
@@ -1230,7 +1234,7 @@ function renderDashboard(container){
     </div>
     <div class="hero-card">
       <div class="hero-main">
-        ${buildGauge(rendement, isEmpty, true, 96)}
+        ${buildGauge(rendement, isEmpty, true, 84)}
         <div class="hero-divider"></div>
         <div class="hero-info">
           <div class="hero-info-row"><div class="hero-info-icon">${ICONS.box}</div><div><div class="hero-stat-big">${totals.totalGeneral}</div><div class="hero-stat-lbl">Pièces produites</div></div></div>
