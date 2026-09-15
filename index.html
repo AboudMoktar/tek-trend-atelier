@@ -135,7 +135,7 @@
   @keyframes pulseAttn{0%,100%{opacity:1;}50%{opacity:.55;}}
 
   /* --- Carte héro du Tableau de bord --- */
-  .hero-card{position:relative;overflow:hidden;border-radius:14px;background:linear-gradient(100deg,rgba(15,61,102,.97) 0%,rgba(15,61,102,.75) 45%,rgba(15,61,102,.35) 100%),url('./hero-bg.jpg');background-size:cover;background-position:right center;color:#fff;padding:9px 12px 10px;margin-bottom:8px;box-shadow:var(--shadow-md);}
+  .hero-card{position:relative;overflow:hidden;border-radius:14px;background:linear-gradient(100deg,rgba(15,61,102,.97) 0%,rgba(15,61,102,.75) 45%,rgba(15,61,102,.35) 100%),url('./hero-bg.jpg');background-size:cover;background-position:right center;color:#fff;padding:8px 10px 9px;margin-bottom:6px;box-shadow:var(--shadow-md);}
   .hero-illus{position:absolute;right:-30px;top:-10px;height:115%;width:62%;color:rgba(255,255,255,.09);pointer-events:none;}
   .page-date-row{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;}
   .hero-date{display:flex;align-items:center;gap:10px;}
@@ -160,7 +160,7 @@
   .hero-obj-line{font-size:13px;color:rgba(255,255,255,.85);font-weight:600;}
   .hero-ahead-pill{display:inline-flex;align-items:center;gap:6px;background:var(--excellent-bg);color:var(--excellent);border-radius:20px;padding:6px 12px;font-size:12.5px;font-weight:800;margin-top:2px;}
   .hero-ahead-pill.behind{background:rgba(214,69,69,.18);color:#FF9B92;}
-  .hero-divider{width:1px;align-self:stretch;background:rgba(255,255,255,.25);flex-shrink:0;}
+  .hero-divider{width:1px;align-self:stretch;background:rgba(255,255,255,.25);flex-shrink:0;margin:0 2px;}
   .hero-tagline{position:relative;z-index:1;text-align:right;font-family:'Caveat',cursive;font-weight:700;font-style:italic;font-size:16px;color:rgba(255,255,255,.6);margin-top:6px;transform:rotate(-2deg);}
   .hero-track-wrap{position:relative;z-index:1;margin-top:6px;}
   .hero-track{position:relative;height:14px;border-radius:20px;background:rgba(255,255,255,.14);overflow:visible;}
@@ -214,11 +214,12 @@
 
   /* --- Bandeau résumé bas de page --- */
   .summary-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;}
-  .summary-item{display:flex;flex-direction:row;align-items:center;text-align:left;gap:6px;padding:4px 2px;}
-  .summary-item .si-icon{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;}
-  .summary-item .si-icon svg{width:15px;height:15px;}
-  .summary-item .si-lbl{font-size:10px;color:var(--ink-soft);font-weight:700;}
-  .summary-item .si-val{font-family:var(--mono);font-weight:800;font-size:14px;}
+  .summary-item{display:flex;flex-direction:row;align-items:center;text-align:left;gap:4px;padding:2px 3px;border-right:1px solid var(--border-soft);min-width:0;overflow:hidden;}
+  .summary-item:last-child{border-right:none;}
+  .summary-item .si-icon{width:22px;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .summary-item .si-icon svg{width:11px;height:11px;}
+  .summary-item .si-lbl{font-size:8px;color:var(--ink-soft);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .summary-item .si-val{font-family:var(--mono);font-weight:800;font-size:11px;white-space:nowrap;}
 
   /* --- Modale de détail opératrice --- */
   .modal-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:90;display:flex;align-items:flex-end;justify-content:center;animation:fadein .15s;}
@@ -1214,7 +1215,7 @@ function renderDashboard(container){
     </div>
     <div class="hero-card">
       <div class="hero-main">
-        ${buildGauge(rendement, isEmpty, true, 92)}
+        ${buildGauge(rendement, isEmpty, true, 96)}
         <div class="hero-divider"></div>
         <div class="hero-info">
           <div class="hero-info-row"><div class="hero-info-icon">${ICONS.box}</div><div><div class="hero-stat-big">${totals.totalGeneral}</div><div class="hero-stat-lbl">Pièces produites</div></div></div>
@@ -1278,10 +1279,10 @@ function renderDashboard(container){
 
     <div class="card">
       <div class="summary-strip">
-        <div class="summary-item"><div class="si-icon" style="background:var(--accent-bg);color:var(--accent);">${ICONS.calendarCheck}</div><div><div class="si-lbl">Objectif du jour</div><div class="si-val">${obj} PC</div></div></div>
-        <div class="summary-item"><div class="si-icon" style="background:var(--good-bg);color:var(--good);">${ICONS.check}</div><div><div class="si-lbl">Réalisé</div><div class="si-val">${totals.totalGeneral} PC</div></div></div>
-        <div class="summary-item"><div class="si-icon" style="background:${ecart>=0?'var(--good-bg)':'var(--bad-bg)'};color:${ecart>=0?'var(--good)':'var(--bad)'};">${ICONS.trend}</div><div><div class="si-lbl">Écart</div><div class="si-val" style="color:${ecart>=0?'var(--good)':'var(--bad)'};">${ecart>=0?'+':''}${ecart} PC</div></div></div>
-        <div class="summary-item"><div class="si-icon" style="background:var(--excellent-bg);color:var(--excellent);">${ICONS.crown}</div><div><div class="si-lbl">Meilleure perf.</div><div class="si-val" style="font-size:11px;">${bestNames.length?bestNames[0]:'—'}</div>${bestNames.length && maxVal>0 ? `<div style="font-size:10px;color:var(--ink-faint);font-weight:700;">${maxVal} PC</div>` : ''}</div></div>
+        <div class="summary-item"><div class="si-icon" style="background:var(--accent-bg);color:var(--accent);">${ICONS.calendarCheck}</div><div style="min-width:0;overflow:hidden;"><div class="si-lbl">Objectif du jour</div><div class="si-val">${obj} PC</div></div></div>
+        <div class="summary-item"><div class="si-icon" style="background:var(--good-bg);color:var(--good);">${ICONS.check}</div><div style="min-width:0;overflow:hidden;"><div class="si-lbl">Réalisé</div><div class="si-val">${totals.totalGeneral} PC</div></div></div>
+        <div class="summary-item"><div class="si-icon" style="background:${ecart>=0?'var(--good-bg)':'var(--bad-bg)'};color:${ecart>=0?'var(--good)':'var(--bad)'};">${ICONS.trend}</div><div style="min-width:0;overflow:hidden;"><div class="si-lbl">Écart</div><div class="si-val" style="color:${ecart>=0?'var(--good)':'var(--bad)'};">${ecart>=0?'+':''}${ecart} PC</div></div></div>
+        <div class="summary-item" style="border-right:none;"><div class="si-icon" style="background:var(--excellent-bg);color:var(--excellent);">${ICONS.crown}</div><div style="min-width:0;overflow:hidden;"><div class="si-lbl" style="color:var(--excellent);">Meilleure perf.</div><div class="si-val" style="font-size:11px;color:var(--excellent);">${bestNames.length?bestNames[0]:'—'}</div>${bestNames.length && maxVal>0 ? `<div style="font-size:9px;color:var(--ink-faint);font-weight:700;">${maxVal} PC</div>` : ''}</div></div>
       </div>
       <div style="display:flex;align-items:center;justify-content:space-between;margin-top:16px;padding-top:14px;border-top:1px solid var(--border-soft);">
         <div style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--ink-faint);">${ICONS.factory}<span>Une équipe engagée pour vos objectifs</span></div>
