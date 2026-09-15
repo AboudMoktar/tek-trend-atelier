@@ -90,6 +90,8 @@
   @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.3;}}
   .user-chip .role{background:rgba(255,255,255,.14); color:#fff; padding:4px 8px; border-radius:20px; font-size:10.5px; font-weight:700;white-space:nowrap;}
   .user-chip .uname{font-weight:700;font-size:12.5px;white-space:nowrap;color:#fff;}
+  .user-avatar-ic{width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,.16);display:flex;align-items:center;justify-content:center;color:#fff;flex-shrink:0;}
+  .user-chevron{color:rgba(255,255,255,.6);display:flex;align-items:center;flex-shrink:0;}
   .user-chip button{background:rgba(255,255,255,.14);border:none;color:#fff;cursor:pointer;padding:7px;border-radius:9px;display:flex;transition:background .15s,color .15s;flex-shrink:0;}
   .user-chip button:hover{background:var(--bad-bg);color:var(--bad);}
   .user-chip button svg{width:16px;height:16px;}
@@ -111,7 +113,7 @@
   .sidebar nav button.active{background:var(--accent-bg);color:var(--accent);}
   .sidebar .side-sep{height:1px;background:var(--border);margin:10px 20px;}
 
-  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:15px 16px;margin-bottom:14px;overflow-x:auto; box-shadow:var(--shadow-sm); animation:fadein .25s var(--ease);}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:11px 12px;margin-bottom:8px;overflow-x:auto; box-shadow:var(--shadow-sm); animation:fadein .25s var(--ease);}
   .card h2{font-size:15.5px;margin:0 0 12px;font-weight:800;letter-spacing:-.01em;}
   .card h3{font-weight:700;}
   @keyframes fadein{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}}
@@ -137,7 +139,7 @@
   @keyframes pulseAttn{0%,100%{opacity:1;}50%{opacity:.55;}}
 
   /* --- Carte héro du Tableau de bord --- */
-  .hero-card{position:relative;overflow:hidden;border-radius:16px;background:linear-gradient(100deg,rgba(15,61,102,.97) 0%,rgba(15,61,102,.75) 45%,rgba(15,61,102,.35) 100%),url('./hero-bg.jpg');background-size:cover;background-position:right center;color:#fff;padding:16px 18px 18px;margin-bottom:14px;box-shadow:var(--shadow-md);}
+  .hero-card{position:relative;overflow:hidden;border-radius:14px;background:linear-gradient(100deg,rgba(15,61,102,.97) 0%,rgba(15,61,102,.75) 45%,rgba(15,61,102,.35) 100%),url('./hero-bg.jpg');background-size:cover;background-position:right center;color:#fff;padding:10px 12px 11px;margin-bottom:8px;box-shadow:var(--shadow-md);}
   .hero-illus{position:absolute;right:-30px;top:-10px;height:115%;width:62%;color:rgba(255,255,255,.09);pointer-events:none;}
   .page-date-row{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px;}
   .hero-date{display:flex;align-items:center;gap:10px;}
@@ -160,8 +162,11 @@
   .hero-stat-big{font-size:26px;font-weight:800;line-height:1;}
   .hero-stat-lbl{font-size:11.5px;color:rgba(255,255,255,.65);font-weight:600;}
   .hero-obj-line{font-size:13px;color:rgba(255,255,255,.85);font-weight:600;}
-  .hero-ahead-pill{display:inline-flex;align-items:center;gap:6px;background:var(--excellent-bg);color:var(--excellent);border-radius:20px;padding:6px 12px;font-size:12.5px;font-weight:800;margin-top:2px;}
-  .hero-ahead-pill.behind{background:rgba(214,69,69,.18);color:#FF9B92;}
+  .hero-ahead-pill{display:inline-flex;align-items:stretch;border-radius:20px;overflow:hidden;font-size:12.5px;font-weight:800;margin-top:2px;}
+  .hero-ahead-pill .hap-num{background:var(--excellent);color:#fff;padding:6px 12px;display:flex;align-items:center;}
+  .hero-ahead-pill .hap-txt{background:var(--excellent-bg);color:var(--excellent);padding:6px 12px 6px 10px;display:flex;align-items:center;gap:6px;}
+  .hero-ahead-pill.behind .hap-num{background:#D64545;}
+  .hero-ahead-pill.behind .hap-txt{background:rgba(214,69,69,.18);color:#FF9B92;}
   .hero-divider{width:1px;align-self:stretch;background:rgba(255,255,255,.25);flex-shrink:0;margin:0 2px;}
   .hero-tagline{position:relative;z-index:1;text-align:right;font-family:'Caveat',cursive;font-weight:700;font-style:italic;font-size:14px;color:rgba(255,255,255,.6);margin-top:3px;transform:rotate(-2deg);}
   .hero-track-wrap{position:relative;z-index:1;margin-top:14px;}
@@ -175,12 +180,16 @@
 
   /* --- Cartes KPI avec badge icône coloré --- */
   .kpi-ic{display:flex;flex-direction:column;gap:10px;}
-  .kpi-mini-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px;}
-  .kpi-mini{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 5px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:4px;}
-  .kpi-mini-icon{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin-bottom:4px;box-shadow:0 3px 8px rgba(15,23,42,.14);}
-  .kpi-mini-icon svg{width:19px;height:19px;color:#fff;}
-  .kpi-mini-val{font-family:var(--mono);font-weight:800;font-size:16px;line-height:1;}
-  .kpi-mini-lbl{font-size:9.5px;color:var(--ink-soft);font-weight:700;line-height:1.2;}
+  .kpi-mini-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:8px;}
+  .kpi-mini{border:1px solid var(--border);border-radius:11px;padding:8px 4px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:2px;}
+  .kpi-mini.tint-blue{background:linear-gradient(180deg,var(--accent-bg) 0%,var(--surface) 65%);}
+  .kpi-mini.tint-green{background:linear-gradient(180deg,var(--good-bg) 0%,var(--surface) 65%);}
+  .kpi-mini.tint-red{background:linear-gradient(180deg,var(--bad-bg) 0%,var(--surface) 65%);}
+  .kpi-mini.tint-gold{background:linear-gradient(180deg,var(--excellent-bg) 0%,var(--surface) 65%);}
+  .kpi-mini-icon{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin-bottom:2px;box-shadow:0 2px 6px rgba(15,23,42,.14);}
+  .kpi-mini-icon svg{width:13px;height:13px;color:#fff;}
+  .kpi-mini-val{font-family:var(--mono);font-weight:800;font-size:14px;line-height:1;}
+  .kpi-mini-lbl{font-size:8.5px;color:var(--ink-soft);font-weight:700;line-height:1.15;}
   .kpi-mini-sub{font-size:7.5px;font-weight:800;padding:1px 5px;border-radius:8px;margin-top:1px;}
   .kpi-ic-badge{width:52px;height:52px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 5px 12px rgba(15,23,42,.16);}
   .kpi-ic-badge svg{width:25px;height:25px;color:#fff;stroke-width:2.2;}
@@ -197,7 +206,7 @@
   .kpi-ic-sub.green{background:var(--good-bg);color:var(--good);}
 
   /* --- Classement médaillé des opératrices --- */
-  .rank-row{display:flex;align-items:center;gap:10px;padding:12px 4px;border-bottom:1px solid var(--border-soft);cursor:pointer;transition:background .12s;}
+  .rank-row{display:flex;align-items:center;gap:8px;padding:7px 4px;border-bottom:1px solid var(--border-soft);cursor:pointer;transition:background .12s;}
   .rank-row:last-child{border-bottom:none;}
   .rank-row:active{background:var(--surface-2);}
   .rank-medal{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;flex-shrink:0;}
@@ -399,6 +408,8 @@ const ICONS = {
   stats: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12.5" y="8" width="3" height="10"/><rect x="18" y="5" width="3" height="13"/></svg>',
   params: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
   logout: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>',
+  userAvatar: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
+  chevronDown: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>',
   export: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
   sessions: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
   messages: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>',
@@ -959,7 +970,9 @@ function renderShell(){
             <span id="sync-badge" class="sync-badge sync-off">Mode local</span>
             <span id="sync-time" class="sync-time"></span>
           </div>
+          <span class="user-avatar-ic">${ICONS.userAvatar}</span>
           <span class="uname">${currentUser.nom}</span>
+          <span class="user-chevron">${ICONS.chevronDown}</span>
           <span class="role">${roleLabel(currentUser.role)}</span>
           <button onclick="logout()" title="Déconnexion">${ICONS.logout}</button>
         </div>
@@ -1222,7 +1235,7 @@ function renderDashboard(container){
         <div class="hero-info">
           <div class="hero-info-row"><div class="hero-info-icon">${ICONS.box}</div><div><div class="hero-stat-big">${totals.totalGeneral}</div><div class="hero-stat-lbl">Pièces produites</div></div></div>
           <div class="hero-obj-line"><span style="display:inline-flex;width:15px;height:15px;vertical-align:-3px;">${ICONS.target}</span> Objectif : <b>${obj}</b></div>
-          ${!isEmpty ? `<div class="hero-ahead-pill ${ecart<0?'behind':''}">${ecart>=0?'+'+ecart:ecart} pièce${Math.abs(ecart)>1?'s':''} ${ecart>=0?'d\'avance':'de retard'} ${ICONS.trend}</div>` : ''}
+          ${!isEmpty ? `<div class="hero-ahead-pill ${ecart<0?'behind':''}"><span class="hap-num">${ecart>=0?'+'+ecart:ecart}</span><span class="hap-txt">Pièce${Math.abs(ecart)>1?'s':''} ${ecart>=0?'d\'avance':'de retard'} ${ICONS.trend}</span></div>` : ''}
         </div>
       </div>
       <div class="hero-tagline">Ensemble pour la performance</div>
@@ -1238,23 +1251,23 @@ function renderDashboard(container){
     ${isEmpty ? buildEmptyState("Aucune production enregistrée aujourd'hui", "La saisie du jour n'a pas encore commencé.") : ''}
 
     <div class="kpi-mini-grid">
-      <div class="kpi-mini">
+      <div class="kpi-mini tint-blue">
         <div class="kpi-mini-icon" style="background:linear-gradient(145deg,#4A9EFF,#0F62D6);">${ICONS.box}</div>
         <div class="kpi-mini-val">${totals.totalGeneral} <span style="font-size:9px;color:var(--ink-faint);">PC</span></div>
         <div class="kpi-mini-lbl">Production totale</div>
         ${!isEmpty ? `<div class="kpi-mini-sub" style="background:var(--good-bg);color:var(--good);">${ecart>=0?'+'+ecart:ecart}</div>` : ''}
       </div>
-      <div class="kpi-mini">
+      <div class="kpi-mini tint-green">
         <div class="kpi-mini-icon" style="background:linear-gradient(145deg,#34D18C,#0E8F52);">${ICONS.team}</div>
         <div class="kpi-mini-val">${activeOpCount}/${OP_KEYS.length}</div>
         <div class="kpi-mini-lbl">Opératrices actives</div>
       </div>
-      <div class="kpi-mini">
+      <div class="kpi-mini tint-red">
         <div class="kpi-mini-icon" style="background:linear-gradient(145deg,#FF6B6B,#DC2E2E);">${ICONS.pause}</div>
         <div class="kpi-mini-val">${totals.arrets}</div>
         <div class="kpi-mini-lbl">Pertes / arrêts</div>
       </div>
-      <div class="kpi-mini">
+      <div class="kpi-mini tint-gold">
         <div class="kpi-mini-icon" style="background:linear-gradient(145deg,#FFCB4D,#D9930C);">${ICONS.crown}</div>
         <div class="kpi-mini-val" style="font-size:${bestNames.length>1?'10px':'13.5px'};">${bestNames.length ? bestNames.join(' & ') : '—'}</div>
         <div class="kpi-mini-lbl">Meilleure perf.</div>
@@ -1286,9 +1299,9 @@ function renderDashboard(container){
         <div class="summary-item"><div class="si-icon" style="background:${ecart>=0?'var(--good-bg)':'var(--bad-bg)'};color:${ecart>=0?'var(--good)':'var(--bad)'};">${ICONS.trend}</div><div style="min-width:0;overflow:hidden;"><div class="si-lbl">Écart</div><div class="si-val" style="color:${ecart>=0?'var(--good)':'var(--bad)'};">${ecart>=0?'+':''}${ecart} PC</div></div></div>
         <div class="summary-item" style="border-right:none;"><div class="si-icon" style="background:var(--excellent-bg);color:var(--excellent);">${ICONS.crown}</div><div style="min-width:0;overflow:hidden;"><div class="si-lbl" style="color:var(--excellent);">Meilleure perf.</div><div class="si-val" style="font-size:11px;color:var(--excellent);">${bestNames.length?bestNames[0]:'—'}</div>${bestNames.length && maxVal>0 ? `<div style="font-size:9px;color:var(--ink-faint);font-weight:700;">${maxVal} PC</div>` : ''}</div></div>
       </div>
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:16px;padding-top:14px;border-top:1px solid var(--border-soft);">
-        <div style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--ink-faint);">${ICONS.factory}<span>Une équipe engagée pour vos objectifs</span></div>
-        <div style="font-size:11px;color:var(--ink-faint);font-family:var(--mono);">${new Date().toLocaleDateString('fr-FR')} ${new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</div>
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border-soft);">
+        <div style="display:flex;align-items:flex-start;gap:7px;font-size:10.5px;color:var(--ink-faint);line-height:1.4;">${ICONS.factory}<span>Une équipe engagée pour vos objectifs</span></div>
+        <div style="font-size:10px;color:var(--ink-faint);font-family:var(--mono);margin-top:5px;">${new Date().toLocaleDateString('fr-FR')} ${new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</div>
       </div>
     </div>
 
