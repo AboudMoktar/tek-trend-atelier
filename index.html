@@ -168,12 +168,12 @@
 
   /* --- Cartes KPI avec badge icône coloré --- */
   .kpi-ic{display:flex;flex-direction:column;gap:10px;}
-  .kpi-ic-badge{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
-  .kpi-ic-badge svg{width:19px;height:19px;}
-  .kpi-ic-badge.blue{background:var(--accent-bg);color:var(--accent);}
-  .kpi-ic-badge.green{background:var(--good-bg);color:var(--good);}
-  .kpi-ic-badge.red{background:var(--bad-bg);color:var(--bad);}
-  .kpi-ic-badge.gold{background:var(--excellent-bg);color:var(--excellent);}
+  .kpi-ic-badge{width:52px;height:52px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 5px 12px rgba(15,23,42,.16);}
+  .kpi-ic-badge svg{width:25px;height:25px;color:#fff;stroke-width:2.2;}
+  .kpi-ic-badge.blue{background:linear-gradient(145deg,#4A9EFF,#0F62D6);}
+  .kpi-ic-badge.green{background:linear-gradient(145deg,#34D18C,#0E8F52);}
+  .kpi-ic-badge.red{background:linear-gradient(145deg,#FF6B6B,#DC2E2E);}
+  .kpi-ic-badge.gold{background:linear-gradient(145deg,#FFCB4D,#D9930C);}
   .kpi-ic-label{font-size:12.5px;font-weight:700;color:var(--ink-soft);}
   .kpi-ic-value{font-family:var(--mono);font-size:22px;font-weight:800;}
   .kpi-ic-value.bad{color:var(--bad);} .kpi-ic-value.warn{color:var(--warn);} .kpi-ic-value.good{color:var(--good);} .kpi-ic-value.excellent{color:var(--excellent);}
@@ -1239,7 +1239,7 @@ function renderDashboard(container){
       <div class="kpi kpi-ic">
         <div class="kpi-ic-badge gold">${ICONS.crown}</div>
         <div><div class="kpi-ic-label">Meilleure perf.</div><div class="kpi-ic-value" style="font-size:${bestNames.length>1?'13px':'16px'};">${bestNames.length ? bestNames.join(' & ') : '—'}</div></div>
-        ${bestNames.length && maxVal>0 ? `<div class="kpi-ic-sub" style="background:var(--excellent-bg);color:var(--excellent);">${maxVal} PC</div>` : ''}
+        ${bestNames.length && maxVal>0 ? `<div class="kpi-ic-value" style="font-size:15px;display:flex;align-items:center;gap:5px;">${maxVal} <span style="font-size:11px;color:var(--ink-faint);">PC</span> <span style="width:15px;height:15px;color:#FFC72C;display:inline-flex;">${ICONS.star}</span></div>` : ''}
       </div>
     </div>
 
