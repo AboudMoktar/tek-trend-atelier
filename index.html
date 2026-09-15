@@ -98,7 +98,7 @@
     .user-chip .role{display:none;}
     .topbar .logo-sub{display:none;}
   }
-  main{flex:1;padding:6px 8px 88px; max-width: 900px; margin: 0 auto; width: 100%;}
+  main{flex:1;padding:6px 5px 68px; max-width: 900px; margin: 0 auto; width: 100%;}
 
   .sidebar{display:none;flex-direction:column;width:220px;background:#fff;border-right:1px solid var(--border);position:fixed;top:0;left:0;bottom:0;padding:20px 0;z-index:25;}
   .sidebar .side-logo{padding:0 20px 22px;}
@@ -115,7 +115,7 @@
   @keyframes fadein{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}}
   
   /* --- NAVIGATION --- */
-  .bottomnav{position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1px solid var(--border);display:flex;z-index:30;box-shadow:0 -2px 12px rgba(15,23,42,.04);}
+  .bottomnav{position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1px solid var(--border);display:flex;z-index:30;box-shadow:0 -2px 12px rgba(15,23,42,.04);padding-bottom:env(safe-area-inset-bottom);}
   .bottomnav button{flex:1;background:none;border:none;padding:9px 2px 8px;display:flex;flex-direction:column;align-items:center;gap:4px;color:var(--ink-faint);cursor:pointer;transition:color .15s var(--ease);position:relative;min-height:52px;justify-content:center;}
   .bottomnav button.active{color:var(--accent);}
   .bottomnav button.active::before{content:'';position:absolute;top:0;left:50%;transform:translateX(-50%);width:28px;height:3px;border-radius:0 0 3px 3px;background:var(--accent);}
