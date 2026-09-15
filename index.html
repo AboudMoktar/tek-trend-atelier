@@ -135,7 +135,7 @@
   @keyframes pulseAttn{0%,100%{opacity:1;}50%{opacity:.55;}}
 
   /* --- Carte héro du Tableau de bord --- */
-  .hero-card{position:relative;overflow:hidden;border-radius:18px;background:linear-gradient(135deg,#0F3D66 0%,#123f6d 55%,#1a4d7f 100%);color:#fff;padding:20px 20px 24px;margin-bottom:14px;box-shadow:var(--shadow-md);}
+  .hero-card{position:relative;overflow:hidden;border-radius:18px;background:linear-gradient(100deg,rgba(15,61,102,.97) 0%,rgba(15,61,102,.75) 45%,rgba(15,61,102,.35) 100%),url('./hero-bg.jpg');background-size:cover;background-position:right center;color:#fff;padding:20px 20px 24px;margin-bottom:14px;box-shadow:var(--shadow-md);}
   .hero-illus{position:absolute;right:-30px;top:-10px;height:115%;width:62%;color:rgba(255,255,255,.09);pointer-events:none;}
   .page-date-row{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;}
   .hero-date{display:flex;align-items:center;gap:10px;}
@@ -1195,7 +1195,6 @@ function renderDashboard(container){
       ${!isEmpty ? `<div class="hero-obj-badge">${ICONS.target}<div>${rendLabel(rendement)}<div class="hob-sub">${rendement>=100?'Bravo à l\'équipe !':'Statut du jour'}</div></div></div>` : ''}
     </div>
     <div class="hero-card">
-      ${heroIllustrationSVG()}
       <div class="hero-main">
         ${buildGauge(rendement, isEmpty, true)}
         <div class="hero-info">
