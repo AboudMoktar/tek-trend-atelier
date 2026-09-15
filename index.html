@@ -109,7 +109,7 @@
   .sidebar nav button.active{background:var(--accent-bg);color:var(--accent);}
   .sidebar .side-sep{height:1px;background:var(--border);margin:10px 20px;}
 
-  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px;margin-bottom:14px;overflow-x:auto; box-shadow:var(--shadow-sm); animation:fadein .25s var(--ease);}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:8px;overflow-x:auto; box-shadow:var(--shadow-sm); animation:fadein .25s var(--ease);}
   .card h2{font-size:15.5px;margin:0 0 12px;font-weight:800;letter-spacing:-.01em;}
   .card h3{font-weight:700;}
   @keyframes fadein{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}}
@@ -173,7 +173,7 @@
 
   /* --- Cartes KPI avec badge icône coloré --- */
   .kpi-ic{display:flex;flex-direction:column;gap:10px;}
-  .kpi-mini-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:8px;}
+  .kpi-mini-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-bottom:6px;}
   .kpi-mini{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:8px 4px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:2px;}
   .kpi-mini-icon{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin-bottom:2px;box-shadow:0 3px 8px rgba(15,23,42,.14);}
   .kpi-mini-icon svg{width:15px;height:15px;color:#fff;}
@@ -195,7 +195,7 @@
   .kpi-ic-sub.green{background:var(--good-bg);color:var(--good);}
 
   /* --- Classement médaillé des opératrices --- */
-  .rank-row{display:flex;align-items:center;gap:12px;padding:11px 4px;border-bottom:1px solid var(--border-soft);cursor:pointer;transition:background .12s;}
+  .rank-row{display:flex;align-items:center;gap:7px;padding:4px 3px;border-bottom:1px solid var(--border-soft);cursor:pointer;transition:background .12s;}
   .rank-row:last-child{border-bottom:none;}
   .rank-row:active{background:var(--surface-2);}
   .rank-medal{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;flex-shrink:0;}
@@ -214,7 +214,7 @@
 
   /* --- Bandeau résumé bas de page --- */
   .summary-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;}
-  .summary-item{display:flex;flex-direction:row;align-items:center;text-align:left;gap:8px;padding:6px 2px;}
+  .summary-item{display:flex;flex-direction:row;align-items:center;text-align:left;gap:6px;padding:4px 2px;}
   .summary-item .si-icon{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;}
   .summary-item .si-icon svg{width:15px;height:15px;}
   .summary-item .si-lbl{font-size:10px;color:var(--ink-soft);font-weight:700;}
@@ -1259,9 +1259,9 @@ function renderDashboard(container){
     </div>
 
     <div class="card">
-      <div class="flex-header" style="margin-bottom:6px;">
-        <h2 style="margin:0;display:flex;align-items:center;gap:8px;"><span style="display:inline-flex;width:19px;height:19px;color:var(--accent);">${ICONS.team}</span> Production par opératrice</h2>
-        ${grandTotalOps>0 ? `<div style="font-size:10.5px;background:var(--accent-bg);color:var(--accent);padding:6px 10px;border-radius:10px;font-weight:700;text-align:right;">Moyenne<br>${Math.round(grandTotalOps/OP_KEYS.length)} PC / opératrice</div>` : ''}
+      <div style="display:flex;gap:8px;margin-bottom:6px;align-items:center;justify-content:space-between;flex-wrap:nowrap;">
+        <h2 style="margin:0;display:flex;align-items:center;gap:6px;font-size:15px;white-space:nowrap;"><span style="display:inline-flex;width:16px;height:16px;color:var(--accent);flex-shrink:0;">${ICONS.team}</span> Production par opératrice</h2>
+        ${grandTotalOps>0 ? `<div style="font-size:9.5px;background:var(--accent-bg);color:var(--accent);padding:5px 8px;border-radius:9px;font-weight:700;white-space:nowrap;flex-shrink:0;">Moy. ${Math.round(grandTotalOps/OP_KEYS.length)} PC</div>` : ''}
       </div>
       ${grandTotalOps===0 ? buildEmptyState('Aucune donnée à afficher') : rankingOps.map((r,i) => `
         <div class="rank-row" onclick="openOperatriceDetail('${r.key}')">
@@ -1281,7 +1281,7 @@ function renderDashboard(container){
         <div class="summary-item"><div class="si-icon" style="background:var(--accent-bg);color:var(--accent);">${ICONS.calendarCheck}</div><div><div class="si-lbl">Objectif du jour</div><div class="si-val">${obj} PC</div></div></div>
         <div class="summary-item"><div class="si-icon" style="background:var(--good-bg);color:var(--good);">${ICONS.check}</div><div><div class="si-lbl">Réalisé</div><div class="si-val">${totals.totalGeneral} PC</div></div></div>
         <div class="summary-item"><div class="si-icon" style="background:${ecart>=0?'var(--good-bg)':'var(--bad-bg)'};color:${ecart>=0?'var(--good)':'var(--bad)'};">${ICONS.trend}</div><div><div class="si-lbl">Écart</div><div class="si-val" style="color:${ecart>=0?'var(--good)':'var(--bad)'};">${ecart>=0?'+':''}${ecart} PC</div></div></div>
-        <div class="summary-item"><div class="si-icon" style="background:var(--excellent-bg);color:var(--excellent);">${ICONS.crown}</div><div><div class="si-lbl">Meilleure perf.</div><div class="si-val" style="font-size:11px;">${bestNames.length?bestNames[0]:'—'}</div></div></div>
+        <div class="summary-item"><div class="si-icon" style="background:var(--excellent-bg);color:var(--excellent);">${ICONS.crown}</div><div><div class="si-lbl">Meilleure perf.</div><div class="si-val" style="font-size:11px;">${bestNames.length?bestNames[0]:'—'}</div>${bestNames.length && maxVal>0 ? `<div style="font-size:10px;color:var(--ink-faint);font-weight:700;">${maxVal} PC</div>` : ''}</div></div>
       </div>
       <div style="display:flex;align-items:center;justify-content:space-between;margin-top:16px;padding-top:14px;border-top:1px solid var(--border-soft);">
         <div style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--ink-faint);">${ICONS.factory}<span>Une équipe engagée pour vos objectifs</span></div>
