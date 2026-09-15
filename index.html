@@ -414,6 +414,10 @@ const ICONS = {
   logout: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>',
   userAvatar: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
   chevronDown: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>',
+  idBadge: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M15 8h3M15 12h3M7 16h10"/></svg>',
+  switchModule: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
+  clock: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
+  plane: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.4.7c-.3.5-.1 1.1.4 1.4L9 12l-2 3H4l-1 1.5 3.5 1.5L8 21.5 9.5 20.5v-3l3-2 3.6 5.3c.3.4.9.6 1.4.4l.7-.4c.4-.2.6-.6.5-1.1z"/></svg>',
   export: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
   sessions: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
   messages: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>',
@@ -628,7 +632,7 @@ function endMySession(){
   if(heartbeatTimer){ clearInterval(heartbeatTimer); heartbeatTimer = null; }
 }
 function forceLocalLogout(){
-  currentUser = null; mySessionId = null;
+  currentUser = null; mySessionId = null; activeModule = null;
   try { window.sessionStorage.removeItem(CACHE_PREFIX+'user'); window.localStorage.removeItem(CACHE_PREFIX+'sid'); } catch(e) {}
   if(heartbeatTimer){ clearInterval(heartbeatTimer); heartbeatTimer = null; }
   detachFirebaseDataListeners();
@@ -680,6 +684,8 @@ let todayISO = getTodayISO();
 let saisieDate = todayISO; 
 let histDate = todayISO;
 let histViewMode = 'jour';
+let rhSubTab = 'employes';
+let rhAttDate = null; // initialisé à aujourd'hui au premier rendu
 let histPeriodStart = toISODateLocal(new Date(new Date().setDate(new Date().getDate() - 6)));
 let histPeriodEnd = todayISO;
 let statRangeEnd = todayISO;
@@ -691,6 +697,23 @@ let heartbeatTimer = null;
 // Variables Globales
 function getOps() { return getJSON('ops', ["Hela", "Marwa", "Mabrouka", "Wahida"]); }
 function getObjHoraireOp() { return getJSON('obj_horaire_op', 20); } // pièces/heure/opératrice (réf: 3 min/pièce)
+
+// --- MODULE RH : Employés, Pointage, Congés ---
+// Registre RH indépendant de la liste des 4 opératrices utilisée pour la
+// production (celle-ci reste inchangée). Le registre RH couvre TOUT le
+// personnel (opératrices, responsable, chef de chaîne, autres postes).
+function getEmployees(){ return getJSON('employees', {}); }
+function saveEmployees(list){ setJSON('employees', list); }
+function getAttendance(dateISO){ return getJSON('attendance_'+dateISO, {}); }
+function saveAttendance(dateISO, data){ setJSON('attendance_'+dateISO, data); }
+function getLeaves(){ return getJSON('leaves', {}); }
+function saveLeaves(list){ setJSON('leaves', list); }
+const ATT_STATUS = {
+  present: {label:'Présent', cls:'good', icon:'✓'},
+  absent:  {label:'Absent',  cls:'bad',  icon:'✕'},
+  retard:  {label:'Retard',  cls:'warn', icon:'⏱'}
+};
+const LEAVE_TYPES = ['Congé payé', 'Congé maladie', 'Absence non justifiée', 'Autre'];
 
 // ============================================================
 // HORAIRES CONFIGURABLES (Lot C) — Lun-Ven + Samedi
@@ -807,6 +830,7 @@ function showToast(msg){
 }
 
 // --- INIT & ROUTING ---
+let activeModule = null; // 'rendement' | 'rh' | null (null = pas encore choisi)
 function startSessionAndRender(){
   try { let sid = window.localStorage.getItem(CACHE_PREFIX+'sid'); if(sid) mySessionId = sid; } catch(e) {}
   if(!mySessionId){ mySessionId = genId(); try { window.localStorage.setItem(CACHE_PREFIX+'sid', mySessionId); } catch(e) {} }
@@ -814,7 +838,40 @@ function startSessionAndRender(){
   writeMySession();
   if(heartbeatTimer) clearInterval(heartbeatTimer);
   heartbeatTimer = setInterval(writeMySession, 30000);
-  renderShell();
+  enterApp();
+}
+function canAccessRH(){ return currentUser && (currentUser.role === 'admin' || currentUser.role === 'viewer'); }
+function enterApp(){
+  if(!canAccessRH()){ activeModule = 'rendement'; renderShell(); }
+  else if(activeModule){ renderShell(); }
+  else { renderModuleSelect(); }
+}
+window.chooseModule = (mod) => { activeModule = mod; renderShell(); };
+window.switchModule = () => { activeModule = null; renderModuleSelect(); };
+function renderModuleSelect(){
+  document.getElementById('app').innerHTML = `
+    <div class="login-wrap">
+      <div class="login-card" style="max-width:440px;">
+        <div class="logo-wrap" style="margin-bottom:20px;">
+          <div class="logo-text"><span class="tek">TEK</span> <span class="trend">TREND</span></div>
+          <div class="logo-sub">TECHNICAL WEAR</div>
+        </div>
+        <h2 style="text-align:center;margin:0 0 4px;font-size:18px;">Quel module voulez-vous ouvrir ?</h2>
+        <p style="text-align:center;color:var(--ink-soft);font-size:12.5px;margin:0 0 20px;">Connecté en tant que ${esc(currentUser.nom)}</p>
+        <div style="display:flex;flex-direction:column;gap:12px;">
+          <button class="btn btn-primary" style="padding:16px;font-size:15px;justify-content:flex-start;gap:12px;text-align:left;" onclick="chooseModule('rendement')">
+            <span style="width:24px;height:24px;flex-shrink:0;">${ICONS.dashboard}</span>
+            <span><span style="display:block;">Gestion Rendement</span><span style="display:block;font-size:11px;font-weight:500;opacity:.8;">Production, saisie, statistiques</span></span>
+          </button>
+          <button class="btn btn-primary" style="padding:16px;font-size:15px;justify-content:flex-start;gap:12px;text-align:left;background:var(--good);" onclick="chooseModule('rh')">
+            <span style="width:24px;height:24px;flex-shrink:0;">${ICONS.idBadge}</span>
+            <span><span style="display:block;">Gestion Ressources Humaines</span><span style="display:block;font-size:11px;font-weight:500;opacity:.8;">Employés, pointage, congés</span></span>
+          </button>
+        </div>
+        <button class="btn btn-ghost" style="width:100%;margin-top:18px;" onclick="logout()">Déconnexion</button>
+      </div>
+    </div>
+  `;
 }
 
 async function loadProfileAndEnter(fbUser){
@@ -928,13 +985,23 @@ function renderLogin(err){
 function logout(){
   endMySession();
   detachFirebaseDataListeners();
-  currentUser = null; mySessionId = null;
+  currentUser = null; mySessionId = null; activeModule = null;
   try { window.sessionStorage.removeItem(CACHE_PREFIX+'user'); window.localStorage.removeItem(CACHE_PREFIX+'sid'); } catch(e) {}
   if(firebaseConfigured() && fbAuth){ fbAuth.signOut(); /* déclenche onAuthStateChanged -> renderLogin */ }
   else renderLogin('');
 }
 
 function navItems(){
+  if(activeModule === 'rh'){
+    const items = [
+      {tab:'rh-employes', label:'Employés', icon:ICONS.idBadge, show:true, onclick:"nav('rh-employes')"},
+      {tab:'rh-pointage', label:'Pointage', icon:ICONS.clock, show:true, onclick:"nav('rh-pointage')"},
+      {tab:'rh-conges', label:'Congés', icon:ICONS.plane, show:true, onclick:"nav('rh-conges')"},
+      {tab:'messages', label:'Messages', icon:ICONS.messages, show:true},
+      {tab:'sessions', label:'Sessions', icon:ICONS.sessions, show:true}
+    ];
+    return items.filter(i=>i.show);
+  }
   const items = [
     {tab:'dashboard', label:'Tableau', icon:ICONS.dashboard, show:true},
     {tab:'saisie', label:'Saisie', icon:ICONS.saisie, show:canSaisie(currentUser.role), onclick:"saisieDate = getTodayISO(); nav('saisie')"},
@@ -960,6 +1027,7 @@ function renderShell(){
       <nav>${items.map(i=>navBtn(i,'')).join('')}</nav>
       <div class="side-sep"></div>
       <nav>
+        ${canAccessRH() ? `<button onclick="switchModule()">${ICONS.switchModule}<span>Changer de module</span></button>` : ''}
         <button onclick="logout()" style="color:var(--bad);">${ICONS.logout}<span>Déconnexion</span></button>
       </nav>
     </div>
@@ -978,6 +1046,7 @@ function renderShell(){
           <span class="uname">${currentUser.nom}</span>
           <span class="user-chevron">${ICONS.chevronDown}</span>
           <span class="role">${roleLabel(currentUser.role)}</span>
+          ${canAccessRH() ? `<button onclick="switchModule()" title="Changer de module">${ICONS.switchModule}</button>` : ''}
           <button onclick="logout()" title="Déconnexion">${ICONS.logout}</button>
         </div>
       </div>
@@ -988,7 +1057,7 @@ function renderShell(){
     </div>
   `;
   setSyncBadge(firebaseConfigured() ? (firebaseReady ? 'ok' : 'connecting') : 'off');
-  nav('dashboard');
+  nav(activeModule === 'rh' ? 'rh-employes' : 'dashboard');
 }
 
 function nav(tab){
@@ -1004,6 +1073,9 @@ function nav(tab){
   else if(tab === 'params') renderParams(main);
   else if(tab === 'sessions') renderSessions(main);
   else if(tab === 'messages'){ renderMessages(main); setLastSeenMessagesNow(); }
+  else if(tab === 'rh-employes'){ rhSubTab='employes'; renderRHEmployes(rhSectionContainer(main,'Employés'), currentUser.role==='admin'); }
+  else if(tab === 'rh-pointage'){ rhSubTab='pointage'; renderRHPointage(rhSectionContainer(main,'Pointage'), currentUser.role==='admin'); }
+  else if(tab === 'rh-conges'){ rhSubTab='conges'; renderRHConges(rhSectionContainer(main,'Congés & Absences'), currentUser.role==='admin'); }
   updateNavBadges();
 }
 
@@ -2151,6 +2223,199 @@ function timeAgoOrDate(ts){
   if(diff < 24*3600000) return timeAgo(ts);
   const d = new Date(ts);
   return d.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'}) + ' ' + d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
+}
+
+// --- MODULE RH : Employés / Pointage / Congés ---
+function rhSectionContainer(container, title){
+  container.innerHTML = `<div class="flex-header"><h2>${ICONS.idBadge} ${title}</h2></div><div id="rh-body"></div>`;
+  return document.getElementById('rh-body');
+}
+
+function renderRHEmployes(container, canEdit){
+  const emps = getEmployees();
+  const rows = Object.entries(emps).sort((a,b)=> (a[1].nom||'').localeCompare(b[1].nom||''));
+  container.innerHTML = `
+    <div class="card">
+      <div class="flex-header" style="margin-bottom:10px;">
+        <h3 style="margin:0;">Employés (${rows.length})</h3>
+        ${canEdit ? `<button class="btn btn-primary" style="padding:6px 12px;font-size:12px;" onclick="showAddEmployeeForm()">+ Ajouter</button>` : ''}
+      </div>
+      <div id="emp-form-zone"></div>
+      ${rows.length===0 ? buildEmptyState("Aucun employé enregistré", canEdit ? "Ajoutez le premier membre du personnel." : "") : rows.map(([id,e]) => `
+        <div class="session-row">
+          <div>
+            <div style="font-weight:700;">${esc(e.nom)}</div>
+            <div style="font-size:11.5px;color:var(--ink-soft);">${esc(e.poste||'—')}</div>
+          </div>
+          ${canEdit ? `<div style="display:flex;gap:6px;flex-shrink:0;">
+            <button class="btn btn-ghost" style="padding:6px 10px;font-size:12px;" onclick="showEditEmployeeForm('${id}')">Modifier</button>
+            <button class="btn btn-warning" style="padding:6px 10px;font-size:12px;" onclick="deleteEmployee('${id}')">Suppr.</button>
+          </div>` : ''}
+        </div>
+      `).join('')}
+    </div>
+  `;
+
+  window.showAddEmployeeForm = () => renderEmployeeForm('add', null);
+  window.showEditEmployeeForm = (id) => renderEmployeeForm('edit', id);
+  window.deleteEmployee = (id) => {
+    if(!confirm("Supprimer cet employé ? Son historique de pointage/congés sera conservé mais ne sera plus rattaché à un nom.")) return;
+    const list = getEmployees();
+    delete list[id];
+    saveEmployees(list);
+    nav('rh');
+  };
+
+  function renderEmployeeForm(mode, id){
+    const e = mode==='edit' ? emps[id] : {nom:'', poste:''};
+    const zone = document.getElementById('emp-form-zone');
+    zone.innerHTML = `
+      <div class="card" style="background:var(--surface-2);margin-bottom:14px;">
+        <h3 style="margin-top:0;">${mode==='add' ? 'Nouvel employé' : "Modifier l'employé"}</h3>
+        <div class="field"><label>Nom complet</label><input id="ef-nom" value="${esc(e.nom)}" placeholder="Ex : Salma Ben Ali"></div>
+        <div class="field"><label>Poste / Fonction</label><input id="ef-poste" value="${esc(e.poste||'')}" placeholder="Ex : Opératrice couture, Responsable magasin..."></div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-primary" onclick="saveEmployeeForm('${mode}','${id||''}')">Enregistrer</button>
+          <button class="btn btn-ghost" onclick="document.getElementById('emp-form-zone').innerHTML=''">Annuler</button>
+        </div>
+      </div>
+    `;
+  }
+  window.saveEmployeeForm = (mode, id) => {
+    const nom = document.getElementById('ef-nom').value.trim();
+    const poste = document.getElementById('ef-poste').value.trim();
+    if(!nom){ showToast('Le nom est obligatoire'); return; }
+    const list = getEmployees();
+    if(mode==='add'){
+      const newId = 'e'+Date.now()+Math.floor(Math.random()*1000);
+      list[newId] = {nom, poste};
+    } else {
+      list[id] = {...list[id], nom, poste};
+    }
+    saveEmployees(list);
+    showToast('Employé enregistré');
+    nav('rh');
+  };
+}
+
+function renderRHPointage(container, canEdit){
+  if(!rhAttDate) rhAttDate = getTodayISO();
+  const emps = getEmployees();
+  const empRows = Object.entries(emps).sort((a,b)=> (a[1].nom||'').localeCompare(b[1].nom||''));
+  const att = getAttendance(rhAttDate);
+  container.innerHTML = `
+    <div class="card">
+      <div class="field" style="margin:0;"><label>Date</label><input type="date" value="${rhAttDate}" max="${getTodayISO()}" onchange="rhAttDate=this.value; nav('rh')"></div>
+    </div>
+    <div class="card">
+      ${empRows.length===0 ? buildEmptyState("Aucun employé enregistré", "Ajoutez du personnel dans l'onglet Employés.") : empRows.map(([id,e]) => {
+        const a = att[id] || {};
+        const st = a.status;
+        return `
+        <div class="session-row" style="flex-direction:column;align-items:stretch;gap:8px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <div style="font-weight:700;">${esc(e.nom)}</div>
+            <div style="font-size:11px;color:var(--ink-soft);">${esc(e.poste||'')}</div>
+          </div>
+          ${canEdit ? `
+          <div style="display:flex;gap:5px;">
+            ${Object.entries(ATT_STATUS).map(([k,v]) => `<button class="btn ${st===k?'btn-primary':'btn-ghost'}" style="flex:1;padding:6px 2px;font-size:11px;" onclick="setAttendanceStatus('${id}','${k}')">${v.icon} ${v.label}</button>`).join('')}
+          </div>
+          ${st && st!=='absent' ? `
+          <div style="display:flex;gap:8px;">
+            <div class="field" style="margin:0;flex:1;"><label style="font-size:10px;">Arrivée</label><input type="time" value="${a.in||''}" onchange="setAttendanceTime('${id}','in',this.value)"></div>
+            <div class="field" style="margin:0;flex:1;"><label style="font-size:10px;">Départ</label><input type="time" value="${a.out||''}" onchange="setAttendanceTime('${id}','out',this.value)"></div>
+          </div>` : ''}
+          ` : `
+          <div class="hour-rend ${st?ATT_STATUS[st].cls:''}" style="font-size:12px;width:fit-content;">${st?ATT_STATUS[st].icon+' '+ATT_STATUS[st].label:'Non renseigné'}</div>
+          ${a.in || a.out ? `<div style="font-size:11px;color:var(--ink-soft);">${a.in||'—'} → ${a.out||'—'}</div>` : ''}
+          `}
+        </div>
+      `;}).join('')}
+    </div>
+  `;
+
+  window.setAttendanceStatus = (empId, status) => {
+    const a = getAttendance(rhAttDate);
+    a[empId] = {...(a[empId]||{}), status};
+    saveAttendance(rhAttDate, a);
+    nav('rh');
+  };
+  window.setAttendanceTime = (empId, field, value) => {
+    const a = getAttendance(rhAttDate);
+    a[empId] = {...(a[empId]||{}), [field]:value};
+    saveAttendance(rhAttDate, a);
+  };
+}
+
+function renderRHConges(container, canEdit){
+  const emps = getEmployees();
+  const leaves = getLeaves();
+  const rows = Object.entries(leaves).sort((a,b)=> (b[1].dateStart||'').localeCompare(a[1].dateStart||''));
+  container.innerHTML = `
+    <div class="card">
+      <div class="flex-header" style="margin-bottom:10px;">
+        <h3 style="margin:0;">Congés & Absences</h3>
+        ${canEdit ? `<button class="btn btn-primary" style="padding:6px 12px;font-size:12px;" onclick="showAddLeaveForm()">+ Ajouter</button>` : ''}
+      </div>
+      <div id="leave-form-zone"></div>
+      ${rows.length===0 ? buildEmptyState("Aucun congé enregistré") : rows.map(([id,l]) => `
+        <div class="session-row">
+          <div>
+            <div style="font-weight:700;">${esc((emps[l.empId] && emps[l.empId].nom) || 'Employé supprimé')}</div>
+            <div style="font-size:11.5px;color:var(--ink-soft);">${esc(l.type)} · ${l.dateStart.split('-').reverse().join('/')} → ${l.dateEnd.split('-').reverse().join('/')}</div>
+            ${l.note ? `<div style="font-size:11px;color:var(--ink-faint);margin-top:2px;">${esc(l.note)}</div>` : ''}
+          </div>
+          ${canEdit ? `<button class="btn btn-warning" style="padding:6px 10px;font-size:12px;flex-shrink:0;" onclick="deleteLeave('${id}')">Suppr.</button>` : ''}
+        </div>
+      `).join('')}
+    </div>
+  `;
+
+  window.showAddLeaveForm = () => {
+    const empOptions = Object.entries(emps).sort((a,b)=>(a[1].nom||'').localeCompare(b[1].nom||'')).map(([id,e])=>`<option value="${id}">${esc(e.nom)}</option>`).join('');
+    const zone = document.getElementById('leave-form-zone');
+    zone.innerHTML = `
+      <div class="card" style="background:var(--surface-2);margin-bottom:14px;">
+        <h3 style="margin-top:0;">Nouveau congé / absence</h3>
+        ${Object.keys(emps).length===0 ? `<p style="color:var(--ink-soft);">Ajoutez d'abord un employé dans l'onglet Employés.</p>` : `
+        <div class="field"><label>Employé</label><select id="lf-emp">${empOptions}</select></div>
+        <div class="field"><label>Type</label><select id="lf-type">${LEAVE_TYPES.map(t=>`<option>${t}</option>`).join('')}</select></div>
+        <div style="display:flex;gap:8px;">
+          <div class="field" style="flex:1;"><label>Du</label><input type="date" id="lf-start" value="${getTodayISO()}"></div>
+          <div class="field" style="flex:1;"><label>Au</label><input type="date" id="lf-end" value="${getTodayISO()}"></div>
+        </div>
+        <div class="field"><label>Note (optionnel)</label><input id="lf-note" placeholder="Précisions..."></div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-primary" onclick="saveLeaveForm()">Enregistrer</button>
+          <button class="btn btn-ghost" onclick="document.getElementById('leave-form-zone').innerHTML=''">Annuler</button>
+        </div>
+        `}
+      </div>
+    `;
+  };
+  window.saveLeaveForm = () => {
+    const empId = document.getElementById('lf-emp').value;
+    const type = document.getElementById('lf-type').value;
+    const dateStart = document.getElementById('lf-start').value;
+    const dateEnd = document.getElementById('lf-end').value;
+    const note = document.getElementById('lf-note').value.trim();
+    if(!dateStart || !dateEnd){ showToast('Dates requises'); return; }
+    if(new Date(dateEnd) < new Date(dateStart)){ showToast('La date de fin doit être après la date de début'); return; }
+    const id = 'l'+Date.now()+Math.floor(Math.random()*1000);
+    const list = getLeaves();
+    list[id] = {empId, type, dateStart, dateEnd, note};
+    saveLeaves(list);
+    showToast('Congé enregistré');
+    nav('rh');
+  };
+  window.deleteLeave = (id) => {
+    if(!confirm('Supprimer ce congé ?')) return;
+    const list = getLeaves();
+    delete list[id];
+    saveLeaves(list);
+    nav('rh');
+  };
 }
 
 function renderMessages(container){
