@@ -13,7 +13,7 @@
 <link rel="apple-touch-icon" href="./icon-192.png">
 <title>Rendement Atelier - TEK-TREND</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@500;600;700&family=Caveat:wght@600;700&display=swap" rel="stylesheet">
 <style>
   :root{
     --bg:#F3F5F8; --surface:#FFFFFF; --surface-2:#F6F8FA; --surface-3:#EEF2F6;
@@ -70,21 +70,27 @@
   .login-error{background:var(--bad-bg);color:var(--bad);padding:11px 14px;border-radius:10px;font-size:13.5px;margin-bottom:16px;display:none; text-align:center; font-weight:700;}
   
   /* --- SHELL --- */
-  .topbar{background:#fff; color:var(--ink); padding:10px 14px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:20; border-bottom:1px solid var(--border); box-shadow:var(--shadow-sm); flex-wrap:wrap; row-gap:6px; gap:8px;}
+  .topbar{background:linear-gradient(120deg,#001f3f 0%,#0a2f52 100%); color:#fff; padding:10px 14px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:20; box-shadow:var(--shadow-sm); flex-wrap:wrap; row-gap:6px; gap:8px;}
+  .topbar .logo-text{position:relative;}
+  .topbar .tek{color:#5EB3FF;position:relative;}
+  .topbar .tek::after{content:'';position:absolute;left:1px;bottom:-5px;width:22px;height:8px;border-bottom:3px solid #FFC833;border-radius:50%;transform:rotate(-8deg);}
+  .topbar .trend{color:#fff;}
+  .topbar .logo-sub{color:rgba(255,255,255,.55);}
   .user-chip{display:flex;align-items:center;gap:6px;font-size:12.5px;flex-shrink:0;}
   .sync-wrap{display:flex;flex-direction:column;align-items:flex-end;gap:1px;}
-  .sync-badge{font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;}
+  .sync-badge{font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;white-space:nowrap;display:inline-flex;align-items:center;gap:5px;}
+  .sync-badge svg{width:11px;height:11px;flex-shrink:0;}
   .sync-badge::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor;flex-shrink:0;}
-  .sync-badge.sync-off{background:var(--surface-3);color:var(--ink-faint);}
+  .sync-badge.sync-off{background:rgba(255,255,255,.14);color:rgba(255,255,255,.7);}
   .sync-badge.sync-connecting{background:var(--warn-bg);color:var(--warn);}
   .sync-badge.sync-connecting::before{animation:pulse 1s infinite;}
-  .sync-badge.sync-ok{background:var(--good-bg);color:var(--good);}
+  .sync-badge.sync-ok{background:#0F5C3C;color:#fff;}
   .sync-badge.sync-error{background:var(--bad-bg);color:var(--bad);}
-  .sync-time{font-size:9px;color:var(--ink-faint);font-weight:600;}
+  .sync-time{font-size:9px;color:rgba(255,255,255,.5);font-weight:600;}
   @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.3;}}
-  .user-chip .role{background:var(--surface-2); color:var(--ink-soft); padding:4px 8px; border-radius:20px; font-size:10.5px; font-weight:700;white-space:nowrap;}
-  .user-chip .uname{font-weight:700;font-size:12.5px;white-space:nowrap;}
-  .user-chip button{background:var(--surface-2);border:none;color:var(--ink-soft);cursor:pointer;padding:7px;border-radius:9px;display:flex;transition:background .15s,color .15s;flex-shrink:0;}
+  .user-chip .role{background:rgba(255,255,255,.14); color:#fff; padding:4px 8px; border-radius:20px; font-size:10.5px; font-weight:700;white-space:nowrap;}
+  .user-chip .uname{font-weight:700;font-size:12.5px;white-space:nowrap;color:#fff;}
+  .user-chip button{background:rgba(255,255,255,.14);border:none;color:#fff;cursor:pointer;padding:7px;border-radius:9px;display:flex;transition:background .15s,color .15s;flex-shrink:0;}
   .user-chip button:hover{background:var(--bad-bg);color:var(--bad);}
   .user-chip button svg{width:16px;height:16px;}
   @media (max-width:420px){
@@ -103,7 +109,7 @@
   .sidebar nav button.active{background:var(--accent-bg);color:var(--accent);}
   .sidebar .side-sep{height:1px;background:var(--border);margin:10px 20px;}
 
-  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:10px;overflow-x:auto; box-shadow:var(--shadow-sm); animation:fadein .25s var(--ease);}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px;margin-bottom:14px;overflow-x:auto; box-shadow:var(--shadow-sm); animation:fadein .25s var(--ease);}
   .card h2{font-size:15.5px;margin:0 0 12px;font-weight:800;letter-spacing:-.01em;}
   .card h3{font-weight:700;}
   @keyframes fadein{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}}
@@ -129,31 +135,31 @@
   @keyframes pulseAttn{0%,100%{opacity:1;}50%{opacity:.55;}}
 
   /* --- Carte héro du Tableau de bord --- */
-  .hero-card{position:relative;overflow:hidden;border-radius:14px;background:linear-gradient(135deg,#0F3D66 0%,#123f6d 55%,#1a4d7f 100%);color:#fff;padding:11px 14px 12px;margin-bottom:8px;box-shadow:var(--shadow-md);}
+  .hero-card{position:relative;overflow:hidden;border-radius:18px;background:linear-gradient(135deg,#0F3D66 0%,#123f6d 55%,#1a4d7f 100%);color:#fff;padding:20px 20px 24px;margin-bottom:14px;box-shadow:var(--shadow-md);}
   .hero-illus{position:absolute;right:-30px;top:-10px;height:115%;width:62%;color:rgba(255,255,255,.09);pointer-events:none;}
-  .hero-top{display:flex;justify-content:space-between;align-items:center;gap:8px;position:relative;z-index:1;flex-wrap:wrap;}
+  .page-date-row{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;}
   .hero-date{display:flex;align-items:center;gap:10px;}
-  .hero-date-icon{width:32px;height:32px;border-radius:9px;background:rgba(255,255,255,.14);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .hero-date-icon{width:38px;height:38px;border-radius:10px;background:var(--accent-bg);color:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
   .hero-date-icon svg{width:19px;height:19px;}
-  .hero-date h2{margin:0;font-size:15px;font-weight:800;color:#fff;}
-  .hero-date .hd-sub{font-size:12px;color:rgba(255,255,255,.65);text-transform:capitalize;}
-  .hero-obj-badge{background:rgba(255,255,255,.14);border-radius:10px;padding:6px 11px;display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;flex-shrink:0;}
-  .hero-obj-badge svg{width:16px;height:16px;color:var(--excellent);flex-shrink:0;}
-  .hero-obj-badge .hob-sub{font-weight:500;color:rgba(255,255,255,.6);font-size:10.5px;}
-  .hero-main{display:flex;align-items:center;gap:13px;margin-top:9px;position:relative;z-index:1;flex-wrap:wrap;}
-  .hero-info{display:flex;flex-direction:column;gap:5px;min-width:140px;}
+  .hero-date h2{margin:0;font-size:19px;font-weight:800;color:var(--ink);}
+  .hero-date .hd-sub{font-size:12px;color:var(--ink-soft);text-transform:capitalize;}
+  .hero-obj-badge{background:var(--good-bg);border-radius:12px;padding:8px 13px;display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;flex-shrink:0;color:var(--good);}
+  .hero-obj-badge svg{width:18px;height:18px;color:var(--good);flex-shrink:0;}
+  .hero-obj-badge .hob-sub{font-weight:500;color:var(--good);opacity:.75;font-size:10.5px;}
+  .hero-main{display:flex;align-items:center;gap:22px;margin-top:0;position:relative;z-index:1;flex-wrap:wrap;}
+  .hero-info{display:flex;flex-direction:column;gap:8px;min-width:150px;}
   .hero-info-row{display:flex;align-items:center;gap:9px;}
   .hero-info-icon{width:26px;height:26px;border-radius:7px;background:rgba(255,255,255,.14);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
   .hero-info-icon svg{width:14px;height:14px;}
-  .hero-stat-big{font-size:24px;font-weight:800;line-height:1;}
+  .hero-stat-big{font-size:30px;font-weight:800;line-height:1;}
   .hero-stat-lbl{font-size:11.5px;color:rgba(255,255,255,.65);font-weight:600;}
   .hero-obj-line{font-size:13px;color:rgba(255,255,255,.85);font-weight:600;}
   .hero-ahead-pill{display:inline-flex;align-items:center;gap:6px;background:var(--excellent-bg);color:var(--excellent);border-radius:20px;padding:6px 12px;font-size:12.5px;font-weight:800;margin-top:2px;}
   .hero-ahead-pill.behind{background:rgba(214,69,69,.18);color:#FF9B92;}
-  .hero-tagline{position:relative;z-index:1;text-align:right;font-family:var(--mono);font-style:italic;font-size:10px;color:rgba(255,255,255,.35);margin-top:8px;}
-  .hero-track-wrap{position:relative;z-index:1;margin-top:7px;}
-  .hero-track{position:relative;height:10px;border-radius:20px;background:rgba(255,255,255,.14);overflow:visible;}
-  .hero-track-fill{position:absolute;left:0;top:0;height:100%;width:0%;border-radius:20px;transition:width 1.1s cubic-bezier(.22,1,.36,1);background:linear-gradient(90deg,#C9971C,var(--excellent));}
+  .hero-tagline{position:relative;z-index:1;text-align:right;font-family:'Caveat',cursive;font-weight:700;font-style:italic;font-size:20px;color:rgba(255,255,255,.55);margin-top:14px;transform:rotate(-2deg);}
+  .hero-track-wrap{position:relative;z-index:1;margin-top:18px;}
+  .hero-track{position:relative;height:14px;border-radius:20px;background:rgba(255,255,255,.14);overflow:visible;}
+  .hero-track-fill{position:absolute;left:0;top:0;height:100%;width:0%;border-radius:20px;transition:width 1.1s cubic-bezier(.22,1,.36,1);background:linear-gradient(90deg,#E0A519,#FFC72C);}
   .hero-track-fill.bad{background:linear-gradient(90deg,#c4453f,var(--bad));}
   .hero-track-fill.warn{background:linear-gradient(90deg,#c4881f,var(--warn));}
   .hero-track-fill.good{background:linear-gradient(90deg,#1a7a51,var(--good));}
@@ -161,25 +167,15 @@
   .hero-track-legend b{color:#fff;font-family:var(--mono);}
 
   /* --- Cartes KPI avec badge icône coloré --- */
-  .kpi-ic{display:flex;flex-direction:row;align-items:center;gap:9px;}
-  .kpi-mini-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:8px;}
-  .kpi-mini{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:8px 4px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:2px;}
-  .kpi-mini-icon{width:22px;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center;margin-bottom:2px;}
-  .kpi-mini-icon svg{width:12px;height:12px;}
-  .kpi-mini-val{font-family:var(--mono);font-weight:800;font-size:13.5px;line-height:1;}
-  .kpi-mini-lbl{font-size:8px;color:var(--ink-soft);font-weight:700;line-height:1.15;}
-  .kpi-mini-sub{font-size:7.5px;font-weight:800;padding:1px 5px;border-radius:8px;margin-top:1px;}
-
-  .kpi-ic-body{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;}
-  .kpi-ic-value-row{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;}
-  .kpi-ic-badge{width:26px;height:26px;border-radius:7px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
-  .kpi-ic-badge svg{width:13px;height:13px;}
+  .kpi-ic{display:flex;flex-direction:column;gap:10px;}
+  .kpi-ic-badge{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .kpi-ic-badge svg{width:19px;height:19px;}
   .kpi-ic-badge.blue{background:var(--accent-bg);color:var(--accent);}
   .kpi-ic-badge.green{background:var(--good-bg);color:var(--good);}
   .kpi-ic-badge.red{background:var(--bad-bg);color:var(--bad);}
   .kpi-ic-badge.gold{background:var(--excellent-bg);color:var(--excellent);}
   .kpi-ic-label{font-size:12.5px;font-weight:700;color:var(--ink-soft);}
-  .kpi-ic-value{font-family:var(--mono);font-size:16px;font-weight:800;}
+  .kpi-ic-value{font-family:var(--mono);font-size:22px;font-weight:800;}
   .kpi-ic-value.bad{color:var(--bad);} .kpi-ic-value.warn{color:var(--warn);} .kpi-ic-value.good{color:var(--good);} .kpi-ic-value.excellent{color:var(--excellent);}
   .kpi-ic-mini-bar{height:6px;border-radius:20px;background:var(--surface-3);overflow:hidden;margin-top:2px;}
   .kpi-ic-mini-bar > div{height:100%;border-radius:20px;transition:width .8s var(--ease);}
@@ -187,20 +183,20 @@
   .kpi-ic-sub.green{background:var(--good-bg);color:var(--good);}
 
   /* --- Classement médaillé des opératrices --- */
-  .rank-row{display:flex;align-items:center;gap:6px;padding:4px 3px;border-bottom:1px solid var(--border-soft);cursor:pointer;transition:background .12s;}
+  .rank-row{display:flex;align-items:center;gap:12px;padding:11px 4px;border-bottom:1px solid var(--border-soft);cursor:pointer;transition:background .12s;}
   .rank-row:last-child{border-bottom:none;}
   .rank-row:active{background:var(--surface-2);}
-  .rank-medal{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;flex-shrink:0;}
+  .rank-medal{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;flex-shrink:0;}
   .rank-medal.m1{background:#FCEFC7;color:#A8790A;}
   .rank-medal.m2{background:#E8ECF0;color:#5B6472;}
   .rank-medal.m3{background:#F5DCC3;color:#9A5A22;}
   .rank-medal.m4{background:var(--surface-3);color:var(--ink-faint);}
-  .rank-body{flex:1;min-width:0;display:flex;align-items:center;gap:8px;}
-  .rank-name{font-weight:700;font-size:11.5px;width:58px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .rank-bar{flex:1;height:6px;border-radius:20px;background:var(--surface-3);overflow:hidden;}
+  .rank-body{flex:1;min-width:0;}
+  .rank-name{font-weight:700;font-size:13.5px;margin-bottom:4px;}
+  .rank-bar{height:8px;border-radius:20px;background:var(--surface-3);overflow:hidden;}
   .rank-bar > div{height:100%;border-radius:20px;background:linear-gradient(90deg,var(--accent-2),var(--accent));transition:width .8s var(--ease);}
-  .rank-nums{text-align:right;flex-shrink:0;min-width:56px;}
-  .rank-nums .rn-val{font-family:var(--mono);font-weight:800;font-size:12.5px;}
+  .rank-nums{text-align:right;flex-shrink:0;min-width:64px;}
+  .rank-nums .rn-val{font-family:var(--mono);font-weight:800;font-size:14px;}
   .rank-nums .rn-pct{font-size:10.5px;color:var(--ink-faint);}
   .rank-chevron{color:var(--ink-faint);flex-shrink:0;}
 
@@ -220,8 +216,8 @@
   .bottomnav span{font-size:10px;font-weight:700;}
   
   /* --- KPIS & TABLES --- */
-  .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit, minmax(140px, 1fr));gap:8px;margin-bottom:10px;}
-  .kpi{background:var(--surface);border-radius:var(--radius-sm);padding:8px 10px;border:1px solid var(--border);box-shadow:var(--shadow-sm);}
+  .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit, minmax(140px, 1fr));gap:10px;margin-bottom:14px;}
+  .kpi{background:var(--surface);border-radius:var(--radius-sm);padding:14px 15px;border:1px solid var(--border);box-shadow:var(--shadow-sm);}
   .kpi .label{font-size:11px;color:var(--ink-soft);font-weight:700;margin-bottom:6px;text-transform:uppercase;letter-spacing:.02em;}
   .kpi .value{font-family:var(--mono);font-size:24px;font-weight:800;letter-spacing:-.01em;}
   .kpi .value.good{color:var(--good);} .kpi .value.warn{color:var(--warn);} .kpi .value.bad{color:var(--bad);} .kpi .value.excellent{color:var(--excellent);}
@@ -275,8 +271,8 @@
   .gauge-wrap{display:flex;align-items:center;justify-content:center;gap:22px;flex-wrap:wrap;padding:6px 0;}
   .gauge-ring{position:relative;width:150px;height:150px;flex-shrink:0;}
   .gauge-ring svg{transform:rotate(-90deg);}
-  .gauge-ring .track{fill:none;stroke:var(--surface-3);stroke-width:12;}
-  .gauge-ring .prog{fill:none;stroke-width:12;stroke-linecap:round;transition:stroke-dashoffset .6s var(--ease),stroke .3s;}
+  .gauge-ring .track{fill:none;stroke:var(--surface-3);stroke-width:14;}
+  .gauge-ring .prog{fill:none;stroke-width:14;stroke-linecap:round;transition:stroke-dashoffset .6s var(--ease),stroke .3s;}
   .gauge-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;}
   .gauge-pct{font-family:var(--mono);font-size:26px;font-weight:800;letter-spacing:-.02em;line-height:1;}
   .gauge-lbl{font-size:10px;color:var(--ink-faint);font-weight:700;text-transform:uppercase;letter-spacing:.03em;margin-top:3px;}
@@ -443,14 +439,14 @@ function setSyncBadge(state){
   const timeEl = document.getElementById('sync-time');
   if(!el) return;
   const map = {
-    off:       {cls:'sync-off',   txt:'Mode local'},
-    connecting:{cls:'sync-connecting', txt:'Connexion...'},
-    ok:        {cls:'sync-ok',    txt:'Synchronisé'},
-    error:     {cls:'sync-error', txt:'Erreur de connexion'}
+    off:       {cls:'sync-off',   txt:'Mode local', icon:''},
+    connecting:{cls:'sync-connecting', txt:'Connexion...', icon:''},
+    ok:        {cls:'sync-ok',    txt:'Synchronisé', icon:ICONS.cloud},
+    error:     {cls:'sync-error', txt:'Erreur de connexion', icon:''}
   };
   const m = map[state] || map.off;
   el.className = 'sync-badge ' + m.cls;
-  el.textContent = m.txt;
+  el.innerHTML = (m.icon || '') + '<span>' + m.txt + '</span>';
   if(state === 'ok'){
     lastSyncAt = new Date();
     if(timeEl) timeEl.textContent = 'Maj ' + lastSyncAt.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'});
@@ -1002,32 +998,26 @@ function buildNativeChart(labels, values, colorClass = '') {
 }
 
 // Jauge circulaire de rendement (SVG natif, sans librairie)
-function buildGauge(pct, neutral, onDark, size){
-  size = size || 150;
+function buildGauge(pct, neutral, onDark){
   const r = 54, c = 2 * Math.PI * r;
   const visualPct = Math.max(0, Math.min(100, pct));
   const offset = c * (1 - visualPct / 100);
   const cls = rendClass(pct);
   const palette = onDark
-    ? {bad:'#FF8177', warn:'#FFC067', good:'#5FE0A6', excellent:'#F0C555'}
+    ? {bad:'#FF8177', warn:'#FFC067', good:'#5FE0A6', excellent:'#FFC72C'}
     : {bad:'var(--bad)', warn:'var(--warn)', good:'var(--good)', excellent:'var(--excellent)'};
   const colorVar = neutral ? (onDark ? 'rgba(255,255,255,.55)' : 'var(--ink-faint)') : palette[cls];
   const trackColor = onDark ? 'rgba(255,255,255,.16)' : null;
   const lblColor = onDark ? 'rgba(255,255,255,.6)' : null;
-  const pctStr = (pct.toFixed ? pct.toFixed(1) : pct) + '%';
-  let pctFontSize;
-  if(size >= 140) pctFontSize = '26px';
-  else if(size >= 115) pctFontSize = pctStr.length >= 6 ? '18px' : '21px';
-  else pctFontSize = pctStr.length >= 6 ? '14px' : '17px';
   return `
-    <div class="gauge-ring" style="width:${size}px;height:${size}px;">
-      <svg width="${size}" height="${size}" viewBox="0 0 150 150">
+    <div class="gauge-ring">
+      <svg width="150" height="150" viewBox="0 0 150 150">
         <circle class="track" cx="75" cy="75" r="${r}" ${trackColor?`style="stroke:${trackColor};"`:''}/>
         <circle class="prog" cx="75" cy="75" r="${r}" stroke="${colorVar}" stroke-dasharray="${c}" stroke-dashoffset="${offset}"/>
       </svg>
       <div class="gauge-center">
-        <div class="gauge-pct" style="color:${colorVar};font-size:${pctFontSize};">${pctStr}</div>
-        <div class="gauge-lbl" ${lblColor?`style="color:${lblColor};font-size:${size<115?'8px':'10px'};"`:(size<115?'style="font-size:8px;"':'')}>Rendement</div>
+        <div class="gauge-pct" style="color:${colorVar};">${pct.toFixed ? pct.toFixed(1) : pct}%</div>
+        <div class="gauge-lbl" ${lblColor?`style="color:${lblColor};"`:''}>Rendement</div>
       </div>
     </div>`;
 }
@@ -1197,17 +1187,17 @@ function renderDashboard(container){
   const medalClass = i => i===0?'m1':(i===1?'m2':(i===2?'m3':'m4'));
 
   container.innerHTML = `
+    <div class="page-date-row">
+      <div class="hero-date">
+        <div class="hero-date-icon">${ICONS.calendarCheck}</div>
+        <div><h2>Aujourd'hui</h2><div class="hd-sub">${dayLabel}</div></div>
+      </div>
+      ${!isEmpty ? `<div class="hero-obj-badge">${ICONS.target}<div>${rendLabel(rendement)}<div class="hob-sub">${rendement>=100?'Bravo à l\'équipe !':'Statut du jour'}</div></div></div>` : ''}
+    </div>
     <div class="hero-card">
       ${heroIllustrationSVG()}
-      <div class="hero-top">
-        <div class="hero-date">
-          <div class="hero-date-icon">${ICONS.calendarCheck}</div>
-          <div><h2>Aujourd'hui</h2><div class="hd-sub">${dayLabel}</div></div>
-        </div>
-        ${!isEmpty ? `<div class="hero-obj-badge">${ICONS.target}<div>${rendLabel(rendement)}<div class="hob-sub">${rendement>=100?'Bravo à l\'équipe !':'Statut du jour'}</div></div></div>` : ''}
-      </div>
       <div class="hero-main">
-        ${buildGauge(rendement, isEmpty, true, 92)}
+        ${buildGauge(rendement, isEmpty, true)}
         <div class="hero-info">
           <div class="hero-info-row"><div class="hero-info-icon">${ICONS.box}</div><div><div class="hero-stat-big">${totals.totalGeneral}</div><div class="hero-stat-lbl">Pièces produites</div></div></div>
           <div class="hero-obj-line"><span style="display:inline-flex;width:15px;height:15px;vertical-align:-3px;">${ICONS.target}</span> Objectif : <b>${obj}</b></div>
@@ -1219,41 +1209,44 @@ function renderDashboard(container){
         <div class="hero-track"><div class="hero-track-fill ${cls}" id="pace-fill-el"></div></div>
         <div class="hero-track-legend"><span>0</span><span>${obj} <b>|</b> <b>${totals.totalGeneral}</b></span></div>
       </div>` : ''}
-      ${paceRend !== null ? `<div style="position:relative;z-index:1;margin-top:10px;font-size:11.5px;color:rgba(255,255,255,.75);font-weight:600;">Rythme à cette heure : <b style="color:${paceCls==='bad'?'#FF8177':(paceCls==='warn'?'#FFC067':(paceCls==='excellent'?'#F0C555':'#5FE0A6'))};">${Math.round(paceRend)}% · ${paceLabel(paceRend)}</b></div>` : ''}
       <div class="hero-tagline">Ensemble pour la performance</div>
     </div>
 
     ${alertHtml}
     ${isEmpty ? buildEmptyState("Aucune production enregistrée aujourd'hui", "La saisie du jour n'a pas encore commencé.") : ''}
 
-    <div class="kpi-mini-grid">
-      <div class="kpi-mini">
-        <div class="kpi-mini-icon" style="background:var(--accent-bg);color:var(--accent);">${ICONS.box}</div>
-        <div class="kpi-mini-val">${totals.totalGeneral} <span style="font-size:9px;color:var(--ink-faint);">PC</span></div>
-        <div class="kpi-mini-lbl">Production</div>
-        ${!isEmpty ? `<div class="kpi-mini-sub" style="background:var(--good-bg);color:var(--good);">${ecart>=0?'+'+ecart:ecart}</div>` : ''}
+    ${paceRend !== null ? `<div class="card" style="padding:12px 16px;display:flex;align-items:center;justify-content:space-between;">
+      <span style="font-size:12.5px;font-weight:700;color:var(--ink-soft);">Rythme à cette heure</span>
+      <span class="hour-rend ${paceCls} ${paceCls==='bad'?'pulse-attn':''}" style="font-size:13px;">${Math.round(paceRend)}% · ${paceLabel(paceRend)}</span>
+    </div>` : ''}
+
+    <div class="kpi-grid">
+      <div class="kpi kpi-ic">
+        <div class="kpi-ic-badge blue">${ICONS.box}</div>
+        <div><div class="kpi-ic-label">Production totale</div><div class="kpi-ic-value">${totals.totalGeneral} <span style="font-size:12px;color:var(--ink-faint);">PC</span></div></div>
+        ${!isEmpty ? `<div class="kpi-ic-sub green">${ICONS.trend} ${ecart>=0?'+'+ecart:ecart} vs objectif</div>` : ''}
       </div>
-      <div class="kpi-mini">
-        <div class="kpi-mini-icon" style="background:var(--good-bg);color:var(--good);">${ICONS.team}</div>
-        <div class="kpi-mini-val">${activeOpCount}/${OP_KEYS.length}</div>
-        <div class="kpi-mini-lbl">Opératrices</div>
+      <div class="kpi kpi-ic">
+        <div class="kpi-ic-badge green">${ICONS.team}</div>
+        <div><div class="kpi-ic-label">Opératrices actives</div><div class="kpi-ic-value">${activeOpCount}/${OP_KEYS.length}</div></div>
+        <div class="kpi-ic-mini-bar"><div style="width:${OP_KEYS.length?Math.round(activeOpCount/OP_KEYS.length*100):0}%;background:var(--good);"></div></div>
       </div>
-      <div class="kpi-mini">
-        <div class="kpi-mini-icon" style="background:var(--bad-bg);color:var(--bad);">${ICONS.pause}</div>
-        <div class="kpi-mini-val">${totals.arrets}</div>
-        <div class="kpi-mini-lbl">Arrêts</div>
+      <div class="kpi kpi-ic">
+        <div class="kpi-ic-badge red">${ICONS.pause}</div>
+        <div><div class="kpi-ic-label">Pertes / Arrêts</div><div class="kpi-ic-value">${totals.arrets}</div></div>
+        <div class="kpi-ic-sub ${totals.arrets===0?'green':''}" style="${totals.arrets>0?'background:var(--warn-bg);color:var(--warn);':''}">${totals.arrets===0?ICONS.check+' Aucun arrêt':totals.arrets+' arrêt(s)'}</div>
       </div>
-      <div class="kpi-mini">
-        <div class="kpi-mini-icon" style="background:var(--excellent-bg);color:var(--excellent);">${ICONS.crown}</div>
-        <div class="kpi-mini-val" style="font-size:${bestNames.length>1?'10px':'13.5px'};">${bestNames.length ? bestNames.join(' & ') : '—'}</div>
-        <div class="kpi-mini-lbl">Meilleure perf.</div>
+      <div class="kpi kpi-ic">
+        <div class="kpi-ic-badge gold">${ICONS.crown}</div>
+        <div><div class="kpi-ic-label">Meilleure perf.</div><div class="kpi-ic-value" style="font-size:${bestNames.length>1?'13px':'16px'};">${bestNames.length ? bestNames.join(' & ') : '—'}</div></div>
+        ${bestNames.length && maxVal>0 ? `<div class="kpi-ic-sub" style="background:var(--excellent-bg);color:var(--excellent);">${maxVal} PC</div>` : ''}
       </div>
     </div>
 
     <div class="card">
       <div class="flex-header" style="margin-bottom:6px;">
         <h2 style="margin:0;display:flex;align-items:center;gap:8px;"><span style="display:inline-flex;width:19px;height:19px;color:var(--accent);">${ICONS.team}</span> Production par opératrice</h2>
-        ${grandTotalOps>0 ? `<div style="font-size:10px;background:var(--accent-bg);color:var(--accent);padding:4px 9px;border-radius:9px;font-weight:700;white-space:nowrap;">Moy. ${Math.round(grandTotalOps/OP_KEYS.length)} PC</div>` : ''}
+        ${grandTotalOps>0 ? `<div style="font-size:10.5px;background:var(--accent-bg);color:var(--accent);padding:6px 10px;border-radius:10px;font-weight:700;text-align:right;">Moyenne<br>${Math.round(grandTotalOps/OP_KEYS.length)} PC / opératrice</div>` : ''}
       </div>
       ${grandTotalOps===0 ? buildEmptyState('Aucune donnée à afficher') : rankingOps.map((r,i) => `
         <div class="rank-row" onclick="openOperatriceDetail('${r.key}')">
@@ -1268,9 +1261,17 @@ function renderDashboard(container){
       `).join('')}
     </div>
 
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 4px 4px;">
-      <div style="display:flex;align-items:center;gap:7px;font-size:10.5px;color:var(--ink-faint);">${ICONS.factory}<span>Une équipe engagée pour vos objectifs</span></div>
-      <div style="font-size:10.5px;color:var(--ink-faint);font-family:var(--mono);">${new Date().toLocaleDateString('fr-FR')} ${new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</div>
+    <div class="card">
+      <div class="summary-strip">
+        <div class="summary-item"><div class="si-icon" style="background:var(--accent-bg);color:var(--accent);">${ICONS.target}</div><div class="si-lbl">Objectif du jour</div><div class="si-val">${obj} PC</div></div>
+        <div class="summary-item"><div class="si-icon" style="background:var(--good-bg);color:var(--good);">${ICONS.check}</div><div class="si-lbl">Réalisé</div><div class="si-val">${totals.totalGeneral} PC</div></div>
+        <div class="summary-item"><div class="si-icon" style="background:${ecart>=0?'var(--good-bg)':'var(--bad-bg)'};color:${ecart>=0?'var(--good)':'var(--bad)'};">${ICONS.trend}</div><div class="si-lbl">Écart</div><div class="si-val" style="color:${ecart>=0?'var(--good)':'var(--bad)'};">${ecart>=0?'+':''}${ecart} PC</div></div>
+        <div class="summary-item"><div class="si-icon" style="background:var(--excellent-bg);color:var(--excellent);">${ICONS.crown}</div><div class="si-lbl">Meilleure perf.</div><div class="si-val" style="font-size:11px;">${bestNames.length?bestNames[0]:'—'}</div></div>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:16px;padding-top:14px;border-top:1px solid var(--border-soft);">
+        <div style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--ink-faint);">${ICONS.factory}<span>Une équipe engagée pour vos objectifs</span></div>
+        <div style="font-size:11px;color:var(--ink-faint);font-family:var(--mono);">${new Date().toLocaleDateString('fr-FR')} ${new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</div>
+      </div>
     </div>
 
     <div id="operatrice-modal-zone"></div>
