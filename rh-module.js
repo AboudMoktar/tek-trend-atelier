@@ -518,19 +518,11 @@ function rhSituationRow(x){
 function renderRHPersonnel(container, canEdit){
   if(!window.rhPersonnelFilter) window.rhPersonnelFilter = {q:'', statut:'actif'};
   const f = window.rhPersonnelFilter;
-  const emps = getEmployees();
-  let rows = Object.entries(emps);
-  if(f.statut !== 'tous') rows = rows.filter(([id,e]) => (e.statut||'actif') === f.statut);
-  if(f.q.trim()){
-    const q = f.q.trim().toLowerCase();
-    rows = rows.filter(([id,e]) => (e.nom||'').toLowerCase().includes(q) || (e.matricule||'').toLowerCase().includes(q) || (e.poste||'').toLowerCase().includes(q));
-  }
-  rows.sort((a,b)=> (a[1].nom||'').localeCompare(b[1].nom||''));
 
   container.innerHTML = `
     <div class="card" style="padding:10px 12px;">
       <div style="display:flex;gap:8px;margin-bottom:8px;">
-        <input id="rh-p-search" placeholder="Rechercher (nom, matricule, poste)…" value="${esc(f.q)}" style="flex:1;padding:9px 11px;border:1.5px solid var(--border);border-radius:8px;background:var(--surface-2);font-size:14px;" oninput="rhPersonnelFilter.q=this.value; renderRHPersonnel(document.getElementById('rh-body'), ${canEdit})">
+        <input id="rh-p-search" placeholder="Rechercher (nom, matricule, poste)…" value="${esc(f.q)}" style="flex:1;padding:9px 11px;border:1.5px solid var(--border);border-radius:8px;background:var(--surface-2);font-size:14px;" oninput="rhPersonnelFilter.q=this.value; rhRefreshPersonnelResults(${canEdit})">
         ${canEdit ? `<button class="btn btn-primary" style="padding:8px 12px;font-size:12px;flex-shrink:0;" onclick="showAddEmployeeForm()">+ Ajouter</button>` : ''}
       </div>
       ${canEdit ? `<button class="btn btn-ghost" style="width:100%;padding:7px;font-size:12px;margin-bottom:8px;" onclick="showImportForm()">${ICONS.idBadge} Importer une liste (matricule + nom)</button>` : ''}
@@ -540,6 +532,21 @@ function renderRHPersonnel(container, canEdit){
       </div>
     </div>
     <div id="emp-form-zone"></div>
+    <div id="rh-p-results"></div>
+  `;
+  window.rhRefreshPersonnelResults = (canEdit) => {
+    const resZone = document.getElementById('rh-p-results');
+    if(!resZone) return;
+    const f = window.rhPersonnelFilter;
+    const emps = getEmployees();
+    let rows = Object.entries(emps);
+    if(f.statut !== 'tous') rows = rows.filter(([id,e]) => (e.statut||'actif') === f.statut);
+    if(f.q.trim()){
+      const q = f.q.trim().toLowerCase();
+      rows = rows.filter(([id,e]) => (e.nom||'').toLowerCase().includes(q) || (e.matricule||'').toLowerCase().includes(q) || (e.poste||'').toLowerCase().includes(q));
+    }
+    rows.sort((a,b)=> (a[1].nom||'').localeCompare(b[1].nom||''));
+    resZone.innerHTML = `
     <div class="card">
       <div style="font-size:11px;color:var(--ink-faint);font-weight:700;margin-bottom:6px;">${rows.length} personne${rows.length>1?'s':''} affichée${rows.length>1?'s':''}</div>
       ${rows.length===0 ? buildEmptyState("Aucun employé trouvé", canEdit ? "Ajoutez un membre du personnel ou modifiez la recherche." : "") : rows.map(([id,e]) => `
@@ -555,7 +562,9 @@ function renderRHPersonnel(container, canEdit){
         </div>
       `).join('')}
     </div>
-  `;
+    `;
+  };
+  rhRefreshPersonnelResults(canEdit);
 
   window.showAddEmployeeForm = () => renderEmployeeForm('add', null);
   window.showImportForm = () => {
@@ -708,17 +717,38 @@ function renderRHPointage(container, canEdit){
     </div>
 
     <div class="card" style="padding:10px 12px;">
-      <input id="rh-poi-search" placeholder="Rechercher un salarié…" value="${esc(f.q)}" style="width:100%;padding:9px 11px;border:1.5px solid var(--border);border-radius:8px;background:var(--surface-2);font-size:14px;margin-bottom:8px;" oninput="rhPointageFilter.q=this.value; nav('rh-pointage')">
+      <input id="rh-poi-search" placeholder="Rechercher un salarié…" value="${esc(f.q)}" style="width:100%;padding:9px 11px;border:1.5px solid var(--border);border-radius:8px;background:var(--surface-2);font-size:14px;margin-bottom:8px;" oninput="rhPointageFilter.q=this.value; rhRefreshPointageResults(${canEdit})">
       <div style="display:flex;gap:5px;overflow-x:auto;padding-bottom:2px;">
         ${chips.map(([k,l,n]) => `<button class="btn ${f.chip===k?'btn-primary':'btn-ghost'}" style="padding:6px 10px;font-size:11px;white-space:nowrap;flex-shrink:0;" onclick="rhPointageFilter.chip='${k}'; nav('rh-pointage')">${l} (${n})</button>`).join('')}
       </div>
     </div>
 
-    <div class="card" style="padding:4px 12px;">
-      ${visible.length===0 ? buildEmptyState("Aucun salarié pour ce filtre") : visible.map(x => rhPointageCard(x, canEdit)).join('')}
-    </div>
+    <div id="rh-poi-results"></div>
     <div id="rh-modal-zone"></div>
   `;
+  window.rhRefreshPointageResults = (canEdit) => {
+    const resZone = document.getElementById('rh-poi-results');
+    if(!resZone) return;
+    const f = window.rhPointageFilter;
+    let v = resolved;
+    if(f.chip==='presents') v = present;
+    else if(f.chip==='non_renseignes') v = nonRenseigne;
+    else if(f.chip==='absents') v = absent;
+    else if(f.chip==='retards') v = retard;
+    else if(f.chip==='autorisations') v = autorisation;
+    else if(f.chip==='conges') v = conges;
+    else if(f.chip==='maladies') v = maladies;
+    if(f.q.trim()){
+      const q = f.q.trim().toLowerCase();
+      v = v.filter(x => (x.e.nom||'').toLowerCase().includes(q) || (x.e.poste||'').toLowerCase().includes(q));
+    }
+    resZone.innerHTML = `
+    <div class="card" style="padding:4px 12px;">
+      ${v.length===0 ? buildEmptyState("Aucun salarié pour ce filtre") : v.map(x => rhPointageCard(x, canEdit)).join('')}
+    </div>
+    `;
+  };
+  rhRefreshPointageResults(canEdit);
 
   window.markAllPresent = () => {
     const cible = emps.filter(([id]) => { const r = resolveDayStatus(id, date); return r.source!=='periode'; });
