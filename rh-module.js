@@ -194,12 +194,15 @@ function renderRHPersonnel(container, canEdit){
         <input id="rh-p-search" placeholder="Rechercher (nom, matricule, poste)…" value="${esc(f.q)}" style="flex:1;padding:9px 11px;border:1.5px solid var(--border);border-radius:8px;background:var(--surface-2);font-size:14px;" oninput="rhPersonnelFilter.q=this.value; renderRHPersonnel(document.getElementById('rh-body'), ${canEdit})">
         ${canEdit ? `<button class="btn btn-primary" style="padding:8px 12px;font-size:12px;flex-shrink:0;" onclick="showAddEmployeeForm()">+ Ajouter</button>` : ''}
       </div>
+      ${canEdit ? `<button class="btn btn-ghost" style="width:100%;padding:7px;font-size:12px;margin-bottom:8px;" onclick="showImportForm()">${ICONS.idBadge} Importer une liste (matricule + nom)</button>` : ''}
+      <div id="rh-import-zone"></div>
       <div style="display:flex;gap:6px;">
         ${[['actif','Actifs'],['inactif','Inactifs'],['tous','Tous']].map(([k,l]) => `<button class="btn ${f.statut===k?'btn-primary':'btn-ghost'}" style="flex:1;padding:6px 4px;font-size:11.5px;" onclick="rhPersonnelFilter.statut='${k}'; renderRHPersonnel(document.getElementById('rh-body'), ${canEdit})">${l}</button>`).join('')}
       </div>
     </div>
     <div id="emp-form-zone"></div>
     <div class="card">
+      <div style="font-size:11px;color:var(--ink-faint);font-weight:700;margin-bottom:6px;">${rows.length} personne${rows.length>1?'s':''} affichée${rows.length>1?'s':''}</div>
       ${rows.length===0 ? buildEmptyState("Aucun employé trouvé", canEdit ? "Ajoutez un membre du personnel ou modifiez la recherche." : "") : rows.map(([id,e]) => `
         <div class="session-row" style="cursor:pointer;" onclick="rhFicheEmpId='${id}'; nav('rh-fiche')">
           <div style="min-width:0;">
@@ -216,6 +219,54 @@ function renderRHPersonnel(container, canEdit){
   `;
 
   window.showAddEmployeeForm = () => renderEmployeeForm('add', null);
+  window.showImportForm = () => {
+    const zone = document.getElementById('rh-import-zone');
+    const prefill = [
+      '2 dalel','3 khairedine hayet','4 sahraoui aida','5 younes hela','6 chaabane marwa',
+      '9 manai chedia','14 hallouli hamida','101 LAAJIMI DORSAF','42620 GHRAIRI NEDIA',
+      '65354 SALWA GHRAIRI','65364 MASOUDI FATHIA','65380 BESSMA AISAOUI','65390 SOUMAYA KOKI',
+      '65400 bessma ajbouni','65408 Hadj Mansour Naima','65409 Fatima ben nejma','65410 Sahtout Mariem',
+      '65415 ALI SAIDA','65416 Methneni Rahma','65418 Selmi Mounira','65421 KHATTAT NAIMA',
+      '65423 JEMLI MABROUKA','65429 AISSAOUI NOUHA','65431 Aissaoui RANIA','65435 Sghaier Tasnime',
+      '65437 daouthi WAHIDA','65441 Balgouthi Ameni','65442 MANSOURI INES','65443 Ajbouni Sabrine',
+      '65444 Balgouthi zouhour','65445 FOUZIA HADJ MANSOUR','65447 Amene Jendoubi'
+    ].join('\n');
+    zone.innerHTML = `
+      <div class="card" style="background:var(--surface-2);margin-bottom:8px;">
+        <h3 style="margin-top:0;">Importer une liste</h3>
+        <p style="font-size:11.5px;color:var(--ink-soft);">Une ligne par personne : matricule, un espace, puis nom. Votre rapport journalier a été pré-rempli ci-dessous (32 personnes) — vérifiez, corrigez si besoin, puis validez. Les matricules déjà présents dans le Personnel seront ignorés (pas de doublon).</p>
+        <textarea id="rh-import-text" rows="10" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;background:var(--surface);font-family:var(--mono);font-size:12px;">${esc(prefill)}</textarea>
+        <div style="display:flex;gap:8px;margin-top:10px;">
+          <button class="btn btn-primary" onclick="runImport()">Importer</button>
+          <button class="btn btn-ghost" onclick="document.getElementById('rh-import-zone').innerHTML=''">Annuler</button>
+        </div>
+      </div>
+    `;
+  };
+  window.runImport = () => {
+    const text = document.getElementById('rh-import-text').value;
+    const lines = text.split('\n').map(l=>l.trim()).filter(Boolean);
+    const list = getEmployees();
+    const existingMatricules = new Set(Object.values(list).map(e=>e.matricule).filter(Boolean));
+    let added = 0, skipped = 0, invalid = 0;
+    lines.forEach((line, i) => {
+      const m = line.match(/^(\S+)\s+(.+)$/);
+      if(!m){ invalid++; return; }
+      const matricule = m[1];
+      const nom = m[2].trim().toLowerCase().split(/\s+/).map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(' ');
+      if(existingMatricules.has(matricule)){ skipped++; return; }
+      const id = 'e'+Date.now()+Math.floor(Math.random()*100000)+'_'+i;
+      list[id] = {matricule, nom, poste:'', dateEmbauche:'', statut:'actif'};
+      existingMatricules.add(matricule);
+      added++;
+    });
+    saveEmployees(list);
+    let msg = added+' employé(s) ajouté(s)';
+    if(skipped) msg += ', '+skipped+' déjà existant(s) ignoré(s)';
+    if(invalid) msg += ', '+invalid+' ligne(s) invalide(s)';
+    showToast(msg);
+    nav('rh-personnel');
+  };
   window.showEditEmployeeForm = (id) => { event.stopPropagation(); renderEmployeeForm('edit', id); };
 
   function renderEmployeeForm(mode, id){
