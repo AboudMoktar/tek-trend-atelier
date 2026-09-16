@@ -210,23 +210,28 @@ function rhModal(title, bodyHtml){
 window.rhCloseModal = () => { const z = document.getElementById('rh-modal-zone'); if(z) z.innerHTML=''; };
 
 // --- Formulaire "Nouvelle absence" (période) ---
-function rhAbsenceForm(prefEmpId){
+function rhAbsenceForm(prefEmpId, editId){
   const emps = activeEmployees();
-  const empOptions = emps.map(([id,e]) => `<option value="${id}" ${id===prefEmpId?'selected':''}>${esc(e.nom)}</option>`).join('');
+  const p = editId ? getAbsencePeriods()[editId] : null;
+  const empOptions = emps.map(([id,e]) => `<option value="${id}" ${id===(p?p.empId:prefEmpId)?'selected':''}>${esc(e.nom)}</option>`).join('');
   return `
-    <div class="field"><label>Salarié</label><select id="ab-emp">${empOptions}</select></div>
-    <div class="field"><label>Type</label><select id="ab-type">${Object.entries(ABSENCE_TYPES).map(([k,v])=>`<option value="${k}">${v.label}</option>`).join('')}</select></div>
+    <div class="field"><label>Salarié</label><select id="ab-emp" ${editId?'disabled':''}>${empOptions}</select></div>
+    <div class="field"><label>Type</label><select id="ab-type">${Object.entries(ABSENCE_TYPES).map(([k,v])=>`<option value="${k}" ${p&&p.type===k?'selected':''}>${v.label}</option>`).join('')}</select></div>
     <div style="display:flex;gap:8px;">
-      <div class="field" style="flex:1;"><label>Date début</label><input type="date" id="ab-start" value="${getTodayISO()}"></div>
-      <div class="field" style="flex:1;"><label>Date fin</label><input type="date" id="ab-end" value="${getTodayISO()}"></div>
+      <div class="field" style="flex:1;"><label>Date début</label><input type="date" id="ab-start" value="${p?p.dateStart:getTodayISO()}"></div>
+      <div class="field" style="flex:1;"><label>Date fin</label><input type="date" id="ab-end" value="${p?p.dateEnd:getTodayISO()}"></div>
     </div>
-    <div class="field"><label>Motif (optionnel)</label><input id="ab-motif" placeholder="Précisions..."></div>
-    <button class="btn btn-primary" style="width:100%;" onclick="saveAbsenceForm()">Enregistrer l'absence</button>
-    <p style="font-size:10.5px;color:var(--ink-faint);margin-top:8px;">Une seule saisie couvre toute la période — inutile de repointer chaque jour.</p>
+    <div class="field"><label>Motif (optionnel)</label><input id="ab-motif" value="${p?esc(p.motif||''):''}" placeholder="Précisions..."></div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-primary" style="flex:1;" onclick="saveAbsenceForm('${editId||''}')">${editId?'Enregistrer les modifications':"Enregistrer l'absence"}</button>
+      ${editId ? `<button class="btn btn-warning" onclick="deleteAbsencePeriod('${editId}')">Supprimer</button>` : ''}
+    </div>
+    ${!editId ? `<p style="font-size:10.5px;color:var(--ink-faint);margin-top:8px;">Une seule saisie couvre toute la période — inutile de repointer chaque jour.</p>` : ''}
   `;
 }
-window.showAbsenceForm = (empId) => { rhModal('Nouvelle absence', rhAbsenceForm(empId||'')); };
-window.saveAbsenceForm = () => {
+window.showAbsenceForm = (empId) => { rhModal('Nouvelle absence', rhAbsenceForm(empId||'', null)); };
+window.showEditAbsenceForm = (periodId) => { rhModal("Modifier l'absence", rhAbsenceForm(null, periodId)); };
+window.saveAbsenceForm = (editId) => {
   const empId = document.getElementById('ab-emp').value;
   const type = document.getElementById('ab-type').value;
   const dateStart = document.getElementById('ab-start').value;
@@ -236,10 +241,10 @@ window.saveAbsenceForm = () => {
   if(!dateStart || !dateEnd){ showToast('Dates requises'); return; }
   if(new Date(dateEnd) < new Date(dateStart)){ showToast('La date de fin doit être après la date de début'); return; }
   const list = getAbsencePeriods();
-  const id = 'ab'+Date.now()+Math.floor(Math.random()*1000);
+  const id = editId || ('ab'+Date.now()+Math.floor(Math.random()*1000));
   list[id] = {empId, type, dateStart, dateEnd, motif};
   saveAbsencePeriods(list);
-  showToast('Absence enregistrée pour toute la période');
+  showToast(editId ? 'Absence modifiée' : 'Absence enregistrée pour toute la période');
   rhCloseModal();
   nav(activeTabIsRH());
 };
@@ -283,7 +288,12 @@ function renderRHDashboard(container){
 
   // ② À TRAITER — anomalies nécessitant une action. "Retard non justifié" n'est pas
   // détectable (aucun champ de justification n'existe) : volontairement laissé de côté.
-  const anomOubli = date <= getTodayISO() ? nonRenseignes : [];
+  const now = new Date();
+  const nowMin = now.getHours()*60+now.getMinutes();
+  // Pour aujourd'hui, on ne signale "oubli de pointage" qu'après l'heure de début réelle
+  // de la journée (ex. 08:00) — avant, la journée n'a simplement pas encore commencé.
+  const journeeCommencee = !isToday || nowMin >= getRefStartMin(date);
+  const anomOubli = (date <= getTodayISO() && journeeCommencee) ? nonRenseignes : [];
   const anomSortiePasse = !isToday ? presents.filter(x => (x.r.autorisations||[]).some(a=>a.sortie && !a.retour)) : [];
   const anomDepassement = [];
   presents.forEach(x => (x.r.autorisations||[]).forEach(a => { if(autorisationDepassee(a)) anomDepassement.push({id:x.id, e:x.e, a}); }));
@@ -292,8 +302,6 @@ function renderRHDashboard(container){
   const nbAnomalies = anomOubli.length + anomSortiePasse.length + anomDepassement.length + anomIncoherent.length;
 
   // ④ Sorties en cours — retour dépassé = comparé à l'heure actuelle, seulement pour aujourd'hui.
-  const now = new Date();
-  const nowMin = now.getHours()*60+now.getMinutes();
   const sortiesEnCours = enSortie.map(x => {
     const au = (x.r.autorisations||[]).find(a=>a.sortie && !a.retour);
     const depasse = isToday && au.prevue && nowMin > hhmmToMin(au.prevue);
@@ -671,7 +679,8 @@ function renderRHPointage(container, canEdit){
   }
 
   const nbRenseignes = emps.length - nonRenseigne.length;
-  const complete = nonRenseigne.length === 0;
+  const journeeCommencee = date !== getTodayISO() || (new Date().getHours()*60+new Date().getMinutes()) >= getRefStartMin(date);
+  const complete = nonRenseigne.length === 0 || !journeeCommencee;
   const dateNav = (delta) => { const d=new Date(date+'T00:00:00'); d.setDate(d.getDate()+delta); return toISODateLocal ? toISODateLocal(d) : d.toISOString().slice(0,10); };
 
   const chips = [
@@ -693,7 +702,7 @@ function renderRHPointage(container, canEdit){
         <button class="btn btn-ghost" style="flex:1;padding:9px 6px;font-size:12px;" onclick="resetDay()">Réinitialiser</button>
       </div>` : ''}
       <div style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:11px;font-weight:700;color:${complete?'var(--good)':'var(--warn)'};">
-        ${complete ? '✓ Journée complète' : '⚠ '+nonRenseigne.length+' salarié(s) non renseigné(s)'}
+        ${!journeeCommencee ? 'La journée n\'a pas encore commencé (début '+minToHHMM(getRefStartMin(date))+')' : (complete ? '✓ Journée complète' : '⚠ '+nonRenseigne.length+' salarié(s) non renseigné(s)')}
         <span style="color:var(--ink-faint);font-weight:600;">· ${nbRenseignes}/${emps.length} renseignés</span>
       </div>
     </div>
@@ -775,7 +784,7 @@ function rhPointageCard(x, canEdit){
         <span class="hour-rend ${t.cls}" style="font-size:11px;">${t.label}</span>
       </div>
       <div style="font-size:10.5px;color:var(--ink-soft);">Du ${r.dateStart.split('-').reverse().join('/')} au ${r.dateEnd.split('-').reverse().join('/')}${r.motif?' · '+esc(r.motif):''}</div>
-      ${canEdit ? `<button class="btn btn-ghost" style="align-self:flex-start;padding:4px 9px;font-size:10.5px;" onclick="deleteAbsencePeriod('${r.periodId}')">Gérer / supprimer l'absence</button>` : ''}
+      ${canEdit ? `<button class="btn btn-ghost" style="align-self:flex-start;padding:4px 9px;font-size:10.5px;" onclick="showEditAbsenceForm('${r.periodId}')">Modifier / supprimer l'absence</button>` : ''}
     </div>`;
   }
   const st = r.source==='pointage' ? r.status : '';
