@@ -48,8 +48,29 @@ const ABSENCE_TYPES = {
   injustifiee: {label:'Absence non justifiée', cls:'bad',       justified:false},
   autre:       {label:'Autre',                 cls:'warn',      justified:true}
 };
-const RH_REF_START_MIN = 8*60; // 08:00 — référence pour le calcul automatique du retard
-const RH_FORFAIT_HOURS = 8;    // heures de présence comptées pour une journée "Présent"
+// --- Horaires RÉELS (Params) vs BASE MENSUELLE (référence 48h/semaine) ---
+// Ces deux notions sont volontairement distinctes et ne doivent jamais être
+// confondues :
+//  - Les horaires journaliers RÉELS (Lun-Ven 08:00-17:00 avec pause, Samedi
+//    08:00-12:00 par défaut, modifiables dans Params) servent au pointage,
+//    au calcul du retard et des heures travaillées. Ils viennent de
+//    getScheduleSettings()/getSlotsForDate(), déjà utilisées par le
+//    Rendement — aucune deuxième logique d'horaires n'est créée ici.
+//  - La BASE MENSUELLE reste un régime de RÉFÉRENCE de 48h/semaine (mensualisé
+//    à 48×52/12 = 208h), totalement indépendant du planning réel. Elle est
+//    toujours saisie manuellement par le Responsable (jamais recalculée
+//    automatiquement) ; seule une suggestion basée sur 48h/semaine est
+//    proposée pour l'aider à la remplir.
+const RH_BASE_REFERENCE_HEBDO = 48;
+const RH_BASE_SUGGESTION = Math.round(RH_BASE_REFERENCE_HEBDO * 52/12); // 208 h
+function getRefStartMin(dateISO){
+  const sch = getScheduleSettings();
+  const dow = new Date(dateISO+'T00:00:00').getDay();
+  return timeToMin(dow===6 ? sch.saturdayStart : sch.weekdayStart);
+}
+function getPlannedHoursForDate(dateISO){
+  return getSlotsForDate(dateISO).reduce((s,sl)=>s+sl.minutes, 0) / 60;
+}
 
 function currentMonthKey(){ return getTodayISO().slice(0,7); }
 function monthLabel(monthKey){
@@ -73,7 +94,8 @@ function fmtH(h){ return h.toFixed(2).replace('.', ',')+' h'; }
 // 2 tranches = 1,00 h.
 function computeRetardHours(a){
   if(!a || !a.in) return 0;
-  const minutesLate = hhmmToMin(a.in) - RH_REF_START_MIN;
+  const refMin = getRefStartMin(a.dateISO || getTodayISO());
+  const minutesLate = hhmmToMin(a.in) - refMin;
   if(minutesLate <= 0) return 0;
   const blocsComplets = Math.floor(minutesLate/30);
   const reste = minutesLate % 30;
@@ -103,14 +125,14 @@ function resolveDayStatus(empId, dateISO){
   const found = findAbsencePeriod(empId, dateISO);
   if(found){
     const [pid,p] = found;
-    return {source:'periode', type:p.type, periodId:pid, dateStart:p.dateStart, dateEnd:p.dateEnd, motif:p.motif||''};
+    return {source:'periode', type:p.type, periodId:pid, dateStart:p.dateStart, dateEnd:p.dateEnd, motif:p.motif||'', dateISO};
   }
   const att = getAttendance(dateISO);
   const a = att[empId];
   if(a && a.status){
-    return {source:'pointage', status:a.status, in:a.in||'', autorisations:a.autorisations||[]};
+    return {source:'pointage', status:a.status, in:a.in||'', autorisations:a.autorisations||[], dateISO};
   }
-  return {source:null};
+  return {source:null, dateISO};
 }
 
 // Calcule les compteurs + heures travaillées d'un employé sur un mois donné.
@@ -130,7 +152,7 @@ function computeMonthlyStats(empId, monthKey){
     if(r.source==='pointage'){
       if(r.status==='present'){
         counts.present++;
-        presenceH += RH_FORFAIT_HOURS;
+        presenceH += getPlannedHoursForDate(dateISO);
         const retard = computeRetardHours(r);
         if(retard>0) joursRetard++;
         retardH += retard;
@@ -398,11 +420,13 @@ function renderRHDashboard(container){
     const cur = getMonthlyBase(mk);
     zone.innerHTML = `
       <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border-soft);">
-        <div class="field" style="margin-bottom:8px;"><label>Base officielle de ${monthLabel(mk)} (heures)</label><input type="number" id="rh-base-input" value="${cur!=null?cur:''}" placeholder="Ex : 208" min="0" step="0.5"></div>
+        <div class="field" style="margin-bottom:6px;"><label>Base officielle de ${monthLabel(mk)} (heures)</label><input type="number" id="rh-base-input" value="${cur!=null?cur:''}" placeholder="Ex : 208" min="0" step="0.5"></div>
+        <button type="button" class="btn btn-ghost" style="padding:5px 10px;font-size:10.5px;margin-bottom:8px;" onclick="document.getElementById('rh-base-input').value=${RH_BASE_SUGGESTION}">Suggestion régime ${RH_BASE_REFERENCE_HEBDO}h/semaine : ${RH_BASE_SUGGESTION} h</button>
         <div style="display:flex;gap:8px;">
           <button class="btn btn-primary" onclick="saveMonthlyBaseForm('${mk}')">Enregistrer</button>
           <button class="btn btn-ghost" onclick="document.getElementById('rh-base-form').innerHTML=''">Annuler</button>
         </div>
+        <p style="font-size:10px;color:var(--ink-faint);margin-top:8px;">La base reste indépendante des horaires réels planifiés (46h30/semaine) : elle se réfère toujours au régime officiel de ${RH_BASE_REFERENCE_HEBDO}h/semaine, à confirmer ou ajuster vous-même.</p>
       </div>
     `;
   };
@@ -428,7 +452,8 @@ function renderRHDashboard(container){
 
   window.rhShowRetards = () => rhModal(`Retards (${retards.length})`, retards.length===0 ? buildEmptyState('Aucun retard') : retards.map(x => {
     const retard = computeRetardHours(x.r);
-    return `<div class="session-row"><div><b>${esc(x.e.nom)}</b><div style="font-size:11px;color:var(--ink-soft);">Prévue 08:00 · Réelle ${x.r.in}</div></div><span class="hour-rend warn" style="font-size:12px;">${fmtH(retard)}</span></div>`;
+    const refLabel = minToHHMM(getRefStartMin(x.r.dateISO||date));
+    return `<div class="session-row"><div><b>${esc(x.e.nom)}</b><div style="font-size:11px;color:var(--ink-soft);">Prévue ${refLabel} · Réelle ${x.r.in}</div></div><span class="hour-rend warn" style="font-size:12px;">${fmtH(retard)}</span></div>`;
   }).join(''));
 
   window.rhShowAbsents = () => rhModal(`Absents (${totalAbsents})`, `
