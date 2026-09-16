@@ -62,10 +62,23 @@ function daysInMonth(monthKey){
 }
 function hhmmToMin(hhmm){ const [h,m] = hhmm.split(':').map(Number); return h*60+m; }
 function minToHHMM(mins){ const h=Math.floor(mins/60), m=Math.round(mins%60); return String(h).padStart(2,'0')+'h'+String(m).padStart(2,'0'); }
+// Affichage en heures décimales avec virgule (convention française), ex: 0,50 h
+function fmtH(h){ return h.toFixed(2).replace('.', ',')+' h'; }
 
+// Règle métier du retard : le temps de retard est découpé en tranches de
+// 30 min à partir de 08h00. Chaque tranche entamée n'est comptée que si on
+// dépasse 5 min dedans (tolérance). Exemples : 3 min de retard -> 0 (dans la
+// tolérance) ; 7 min -> 1 tranche = 0,50 h ; 35 min -> 1 tranche = 0,50 h
+// (5 min dans la 2e tranche, pas encore au-delà de la tolérance) ; 36 min ->
+// 2 tranches = 1,00 h.
 function computeRetardHours(a){
   if(!a || !a.in) return 0;
-  return Math.max(0, (hhmmToMin(a.in) - RH_REF_START_MIN)/60);
+  const minutesLate = hhmmToMin(a.in) - RH_REF_START_MIN;
+  if(minutesLate <= 0) return 0;
+  const blocsComplets = Math.floor(minutesLate/30);
+  const reste = minutesLate % 30;
+  const blocs = blocsComplets + (reste > 5 ? 1 : 0);
+  return blocs * 0.5;
 }
 function autorisationDureeH(auth){
   if(!auth || !auth.sortie || !auth.retour) return 0;
@@ -237,6 +250,7 @@ function renderRHDashboard(container){
   const nonRenseignes = resolved.filter(x => x.r.source===null);
   const retards = presents.filter(x => computeRetardHours(x.r) > 0);
   const enSortie = presents.filter(x => (x.r.autorisations||[]).some(a=>a.sortie && !a.retour));
+  const maladies = absentsPeriode.filter(x => x.r.type==='maladie');
 
   // Absences justifiées / non justifiées (période + pointage direct "absent")
   const justifiees = absentsPeriode.filter(x => ABSENCE_TYPES[x.r.type].justified);
@@ -273,16 +287,17 @@ function renderRHDashboard(container){
       </div>
     </div>
 
-    <div class="kpi-mini-grid" style="grid-template-columns:repeat(2,1fr);">
+    <div class="kpi-mini-grid" style="grid-template-columns:repeat(3,1fr);">
       <div class="kpi-mini tint-blue" style="cursor:pointer;" onclick="rhShowEffectif()"><div class="kpi-mini-icon" style="background:linear-gradient(145deg,#4A9EFF,#0F62D6);">${ICONS.idBadge}</div><div class="kpi-mini-val">${effectif}</div><div class="kpi-mini-lbl">Effectif</div></div>
       <div class="kpi-mini tint-green" style="cursor:pointer;" onclick="rhShowPresents()"><div class="kpi-mini-icon" style="background:linear-gradient(145deg,#34D18C,#0E8F52);">${ICONS.check}</div><div class="kpi-mini-val">${presents.length}</div><div class="kpi-mini-lbl">Présents</div></div>
-    </div>
-    <div class="kpi-mini-grid" style="grid-template-columns:repeat(2,1fr);">
       <div class="kpi-mini" style="cursor:pointer;" onclick="rhShowRetards()"><div class="kpi-mini-icon" style="background:linear-gradient(145deg,#FFC067,#D9822B);">${ICONS.clock}</div><div class="kpi-mini-val">${retards.length}</div><div class="kpi-mini-lbl">Retards</div></div>
-      <div class="kpi-mini tint-red" style="cursor:pointer;" onclick="rhShowAbsents()"><div class="kpi-mini-icon" style="background:linear-gradient(145deg,#FF6B6B,#DC2E2E);">${ICONS.pause}</div><div class="kpi-mini-val">${totalAbsents}</div><div class="kpi-mini-lbl">Absents</div></div>
     </div>
-    <div class="kpi-mini-grid" style="grid-template-columns:repeat(2,1fr);">
+    <div class="kpi-mini-grid" style="grid-template-columns:repeat(3,1fr);">
+      <div class="kpi-mini tint-red" style="cursor:pointer;" onclick="rhShowAbsents()"><div class="kpi-mini-icon" style="background:linear-gradient(145deg,#FF6B6B,#DC2E2E);">${ICONS.pause}</div><div class="kpi-mini-val">${totalAbsents}</div><div class="kpi-mini-lbl">Absents</div></div>
+      <div class="kpi-mini tint-red" style="cursor:pointer;" onclick="rhShowMaladies()"><div class="kpi-mini-icon" style="background:linear-gradient(145deg,#FF6B6B,#DC2E2E);">+</div><div class="kpi-mini-val">${maladies.length}</div><div class="kpi-mini-lbl">Maladie</div></div>
       <div class="kpi-mini" style="cursor:pointer;" onclick="rhShowSorties()"><div class="kpi-mini-icon" style="background:linear-gradient(145deg,#B08CFF,#6C3FD4);">${ICONS.clock}</div><div class="kpi-mini-val">${enSortie.length}</div><div class="kpi-mini-lbl">En sortie</div></div>
+    </div>
+    <div class="kpi-mini-grid" style="grid-template-columns:repeat(1,1fr);">
       <div class="kpi-mini ${nbAnomalies>0?'tint-red':''}" style="cursor:pointer;" onclick="rhShowAnomalies()"><div class="kpi-mini-icon" style="background:linear-gradient(145deg,#FF8177,#D64545);">!</div><div class="kpi-mini-val">${nbAnomalies}</div><div class="kpi-mini-lbl">Anomalies</div></div>
     </div>
     <p style="font-size:11px;color:var(--ink-faint);text-align:center;margin:2px 0 12px;">Taux de présence : <b>${tauxPresence}%</b> · ${date.split('-').reverse().join('/')}</p>
@@ -342,14 +357,14 @@ function renderRHDashboard(container){
   window.rhShowPresents = () => rhModal(`Présents (${presents.length})`, presents.length===0 ? buildEmptyState('Personne') : presents.map(x => {
     const retard = computeRetardHours(x.r);
     return `<div class="session-row" style="flex-direction:column;align-items:stretch;gap:2px;">
-      <div style="display:flex;justify-content:space-between;"><b>${esc(x.e.nom)}</b>${retard>0?`<span class="hour-rend warn" style="font-size:10.5px;">Retard ${Math.round(retard*60)} min</span>`:''}</div>
+      <div style="display:flex;justify-content:space-between;"><b>${esc(x.e.nom)}</b>${retard>0?`<span class="hour-rend warn" style="font-size:10.5px;">Retard ${fmtH(retard)}</span>`:''}</div>
       <div style="font-size:11.5px;color:var(--ink-soft);">Arrivée ${x.r.in||'—'}</div>
     </div>`;
   }).join(''));
 
   window.rhShowRetards = () => rhModal(`Retards (${retards.length})`, retards.length===0 ? buildEmptyState('Aucun retard') : retards.map(x => {
     const retard = computeRetardHours(x.r);
-    return `<div class="session-row"><div><b>${esc(x.e.nom)}</b><div style="font-size:11px;color:var(--ink-soft);">Prévue 08:00 · Réelle ${x.r.in}</div></div><span class="hour-rend warn" style="font-size:12px;">${Math.round(retard*60)} min</span></div>`;
+    return `<div class="session-row"><div><b>${esc(x.e.nom)}</b><div style="font-size:11px;color:var(--ink-soft);">Prévue 08:00 · Réelle ${x.r.in}</div></div><span class="hour-rend warn" style="font-size:12px;">${fmtH(retard)}</span></div>`;
   }).join(''));
 
   window.rhShowAbsents = () => rhModal(`Absents (${totalAbsents})`, `
@@ -359,9 +374,13 @@ function renderRHDashboard(container){
     ${nonJustifiees.length===0?'<p style="font-size:11.5px;color:var(--ink-faint);">Aucune</p>':nonJustifiees.map(x=>`<div class="session-row"><div><b>${esc(x.e.nom)}</b></div><span class="hour-rend bad" style="font-size:11px;">${x.r.source==='periode'?ABSENCE_TYPES[x.r.type].label:'Absent (non pointé justifié)'}</span></div>`).join('')}
   `);
 
+  window.rhShowMaladies = () => rhModal(`Maladie (${maladies.length})`, maladies.length===0?buildEmptyState('Personne en maladie'):maladies.map(x => `
+    <div class="session-row"><div><b>${esc(x.e.nom)}</b>${x.r.motif?`<div style="font-size:11px;color:var(--ink-soft);">${esc(x.r.motif)}</div>`:''}</div><span class="hour-rend bad" style="font-size:11px;">Jusqu'au ${x.r.dateEnd.split('-').reverse().join('/')}</span></div>
+  `).join(''));
+
   window.rhShowSorties = () => rhModal(`En sortie (${enSortie.length})`, enSortie.length===0?buildEmptyState('Personne en sortie'):enSortie.map(x => {
     const au = (x.r.autorisations||[]).find(a=>a.sortie && !a.retour);
-    return `<div class="session-row"><div><b>${esc(x.e.nom)}</b><div style="font-size:11px;color:var(--ink-soft);">Sorti(e) à ${au.sortie}${au.prevue?' · Retour prévu '+au.prevue:''}</div></div></div>`;
+    return `<div class="session-row"><div><b>${esc(x.e.nom)}</b><div style="font-size:11px;color:var(--ink-soft);">Sorti(e) à ${au.sortie}${au.prevue?' · Retour prévu '+au.prevue:''}</div></div><button class="btn btn-ghost" style="padding:5px 10px;font-size:11px;" onclick="rhCloseModal(); rhFicheEmpId='${x.id}'; nav('rh-pointage')">Ajuster</button></div>`;
   }).join(''));
 
   window.rhShowAnomalies = () => rhModal(`Anomalies (${nbAnomalies})`, `
@@ -384,7 +403,7 @@ function rhSituationRow(x){
   else if(r.source==='pointage' && r.status==='present'){
     const retard = computeRetardHours(r);
     const enSortieNow = (r.autorisations||[]).some(a=>a.sortie && !a.retour);
-    info = retard>0 ? `Retard ${Math.round(retard*60)} min` : (enSortieNow ? 'En sortie' : (r.in?'Arrivée '+r.in:'—'));
+    info = retard>0 ? `Retard ${fmtH(retard)}` : (enSortieNow ? 'En sortie' : (r.in?'Arrivée '+r.in:'—'));
   }
   return `
     <div class="session-row" style="cursor:pointer;" onclick="rhFicheEmpId='${x.id}'; nav('rh-fiche')">
@@ -685,7 +704,7 @@ function rhPointageCard(x, canEdit){
       ${st==='present' ? (canEdit ? `
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
         <div class="field" style="margin:0;"><label style="font-size:10px;">Heure d'arrivée</label><input type="time" value="${r.in||''}" onchange="setAttendanceField('${id}','in',this.value)"></div>
-        ${retard>0 ? `<div style="font-size:11px;color:var(--warn);font-weight:700;">Retard ${Math.round(retard*60)} min</div>` : ''}
+        ${retard>0 ? `<div style="font-size:11px;color:var(--warn);font-weight:700;">Retard ${fmtH(retard)}</div>` : ''}
       </div>
       <div>
         ${auths.map((au,i) => `
@@ -693,7 +712,7 @@ function rhPointageCard(x, canEdit){
             <div class="field" style="margin:0;"><label style="font-size:9px;">Sortie</label><input type="time" value="${au.sortie||''}" onchange="setAutorisationField('${id}',${i},'sortie',this.value)"></div>
             <div class="field" style="margin:0;"><label style="font-size:9px;">Retour</label><input type="time" value="${au.retour||''}" onchange="setAutorisationField('${id}',${i},'retour',this.value)"></div>
             <div class="field" style="margin:0;"><label style="font-size:9px;">Retour prévu</label><input type="time" value="${au.prevue||''}" onchange="setAutorisationField('${id}',${i},'prevue',this.value)"></div>
-            ${autorisationDureeH(au)>0 ? `<span style="font-size:10px;color:var(--warn);font-weight:700;">−${Math.round(autorisationDureeH(au)*60)}min</span>` : ''}
+            ${autorisationDureeH(au)>0 ? `<span style="font-size:10px;color:var(--warn);font-weight:700;">−${fmtH(autorisationDureeH(au))}</span>` : ''}
             ${autorisationDepassee(au) ? `<span class="hour-rend bad" style="font-size:9.5px;">Dépassée</span>` : ''}
             <button class="icon-btn" onclick="removeAutorisation('${id}',${i})" title="Retirer">✕</button>
           </div>
@@ -701,8 +720,8 @@ function rhPointageCard(x, canEdit){
         <button class="btn btn-ghost" style="padding:5px 10px;font-size:11px;" onclick="addAutorisation('${id}')">+ Autorisation (sortie/retour)</button>
       </div>
       ` : `
-      ${r.in ? `<div style="font-size:11px;color:var(--ink-soft);">Arrivée ${r.in}${retard>0?' · Retard '+Math.round(retard*60)+' min':''}</div>` : ''}
-      ${auths.filter(au=>au.sortie&&au.retour).map(au => `<div style="font-size:11px;color:var(--ink-soft);">Autorisation ${au.sortie}→${au.retour} (${Math.round(autorisationDureeH(au)*60)} min)</div>`).join('')}
+      ${r.in ? `<div style="font-size:11px;color:var(--ink-soft);">Arrivée ${r.in}${retard>0?' · Retard '+fmtH(retard):''}</div>` : ''}
+      ${auths.filter(au=>au.sortie&&au.retour).map(au => `<div style="font-size:11px;color:var(--ink-soft);">Autorisation ${au.sortie}→${au.retour} (${fmtH(autorisationDureeH(au))})</div>`).join('')}
       `) : ''}
     </div>
   `;
@@ -775,7 +794,7 @@ function renderRHFiche(container, canEdit, empId){
             </div>
             ${d.status==='present' && (d.in || d.retard>0 || d.autorisationTotal>0) ? `
             <div style="font-size:10.5px;color:var(--ink-soft);">
-              ${d.in?'Arrivée '+d.in:''}${d.retard>0?' · Retard '+Math.round(d.retard*60)+' min':''}${d.autorisationTotal>0?' · Autorisation(s) −'+Math.round(d.autorisationTotal*60)+' min':''}
+              ${d.in?'Arrivée '+d.in:''}${d.retard>0?' · Retard '+fmtH(d.retard):''}${d.autorisationTotal>0?' · Autorisation(s) −'+fmtH(d.autorisationTotal):''}
             </div>` : ''}
           </div>
         `).join('')}
@@ -833,6 +852,7 @@ function renderRHSynthese(container){
         <input type="month" value="${monthKey}" style="max-width:140px;" onchange="rhMonthKey=this.value; nav('rh-synthese')">
       </div>
       <p style="font-size:11px;color:var(--ink-faint);">${emps.length} salarié(s) actif(s)</p>
+      ${currentUser.role==='admin' ? `<button class="btn btn-primary" style="width:100%;margin-top:6px;" onclick="exportRHReport('${monthKey}')">${ICONS.idBadge} Télécharger le rapport (Excel)</button>` : ''}
     </div>
     <div class="card">
       ${emps.length===0 ? buildEmptyState("Aucun employé actif") : emps.map(([id,e]) => {
@@ -849,3 +869,50 @@ function renderRHSynthese(container){
     </div>
   `;
 }
+
+// --- Rapport Excel mensuel (téléchargement) ---
+window.exportRHReport = async (monthKey) => {
+  if(typeof ExcelJS === 'undefined'){
+    showToast("Bibliothèque Excel indisponible — vérifiez votre connexion internet et réessayez.");
+    return;
+  }
+  showToast('Génération du rapport…');
+  const emps = activeEmployees();
+  const base = getMonthlyBase(monthKey);
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'TEK-TREND';
+  workbook.created = new Date();
+  const sheet = workbook.addWorksheet('Rapport RH');
+  const headerFill = {type:'pattern', pattern:'solid', fgColor:{argb:'FF0F3D66'}};
+  const headerFont = {bold:true, color:{argb:'FFFFFFFF'}};
+
+  sheet.mergeCells('A1:L1');
+  sheet.getCell('A1').value = 'TEK-TREND — Rapport RH — ' + monthLabel(monthKey).replace(/^\w/, c=>c.toUpperCase());
+  sheet.getCell('A1').font = {bold:true, size:14, color:{argb:'FF0F3D66'}};
+  sheet.getCell('A2').value = 'Base mensuelle officielle : ' + (base!=null ? base+' h' : 'non définie');
+  sheet.getCell('A2').font = {italic:true, size:10, color:{argb:'FF667085'}};
+
+  const headers = ['Matricule','Nom','Poste','Présences','Abs. justifiées','Abs. non justifiées','Retards (j)','Heures retard','Autorisations (n)','Heures autorisation','Heures travaillées','Écart vs base'];
+  const headerRow = sheet.getRow(4);
+  headers.forEach((h,i) => { const c = headerRow.getCell(i+1); c.value = h; c.fill = headerFill; c.font = headerFont; c.alignment = {horizontal:'center', vertical:'middle', wrapText:true}; });
+  headerRow.height = 32;
+
+  let r = 5;
+  emps.forEach(([id,e]) => {
+    const s = computeMonthlyStats(id, monthKey);
+    const row = sheet.getRow(r);
+    const vals = [e.matricule||'', e.nom, e.poste||'', s.counts.present||0, s.absencesJustifiees, s.absencesNonJustifiees, s.joursRetard, Number(s.retardH.toFixed(2)), s.nbAutorisations, Number(s.autorisationH.toFixed(2)), Number(s.heuresTravaillees.toFixed(2)), s.ecart!=null?Number(s.ecart.toFixed(2)):'—'];
+    vals.forEach((v,i) => { row.getCell(i+1).value = v; });
+    if(r%2===0) row.eachCell(c => { c.fill = {type:'pattern', pattern:'solid', fgColor:{argb:'FFF3F5F8'}}; });
+    r++;
+  });
+  sheet.columns = [{width:12},{width:22},{width:20},{width:11},{width:14},{width:16},{width:11},{width:13},{width:13},{width:15},{width:15},{width:13}];
+
+  const buf = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `TEK-TREND_RH_${monthKey}.xlsx`; a.click();
+  URL.revokeObjectURL(url);
+  showToast('Rapport téléchargé');
+};
