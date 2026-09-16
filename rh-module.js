@@ -10,6 +10,15 @@
 // Registre RH indépendant de la liste des 4 opératrices utilisée pour la
 // production (celle-ci reste inchangée). Le registre RH couvre TOUT le
 // personnel (opératrices, responsable, chef de chaîne, autres postes).
+//
+// --- PHILOSOPHIE DU POINTAGE (modèle appliqué ici) ---
+// 4 statuts journaliers : Présent / Absent / Congé / Maladie.
+// Un Présent porte une heure d'arrivée -> le retard est calculé
+// automatiquement (écart avec la référence 08:00), jamais saisi à la main.
+// Une Autorisation est un objet à part (heure de sortie + heure de retour)
+// rattaché à une journée présente ; sa durée est calculée automatiquement
+// (retour − sortie), jamais saisie à la main. Un jour peut avoir plusieurs
+// autorisations. Heures travaillées = présence − retards − autorisations.
 
 function rhSectionContainer(container, title){
   container.innerHTML = `<div class="flex-header"><h2>${ICONS.idBadge} ${title}</h2></div><div id="rh-body"></div>`;
@@ -24,16 +33,17 @@ function saveAttendance(dateISO, data){ setJSON('attendance_'+dateISO, data); }
 function getMonthlyBase(monthKey){ return getJSON('rh_base_'+monthKey, null); }
 function setMonthlyBase(monthKey, hours){ setJSON('rh_base_'+monthKey, hours); }
 
+// 4 statuts journaliers seulement. Retard et Autorisation ne sont PAS des
+// statuts : ce sont des durées calculées automatiquement, rattachées à un
+// jour "Présent".
 const ATT_STATUS = {
-  present:       {label:'Présent',      cls:'good',      short:'P'},
-  retard:        {label:'Retard',       cls:'warn',      short:'R'},
-  autorisation:  {label:'Autorisation', cls:'warn',      short:'A'},
-  conge:         {label:'Congé',        cls:'excellent', short:'C'},
-  maladie:       {label:'Maladie',      cls:'bad',       short:'M'},
-  absent:        {label:'Absent',       cls:'bad',       short:'—'}
+  present: {label:'Présent', cls:'good',      icon:'✓'},
+  absent:  {label:'Absent',  cls:'bad',       icon:'✕'},
+  conge:   {label:'Congé',   cls:'excellent', icon:'✈'},
+  maladie: {label:'Maladie', cls:'bad',       icon:'+'}
 };
 const RH_REF_START_MIN = 8*60; // 08:00 — référence pour le calcul automatique du retard
-const RH_FORFAIT_HOURS = 8;    // heures comptées pour une journée présente sans heure d'arrivée/départ saisie
+const RH_FORFAIT_HOURS = 8;    // heures de présence comptées pour une journée "Présent"
 
 function currentMonthKey(){ return getTodayISO().slice(0,7); } // "YYYY-MM"
 function monthLabel(monthKey){
@@ -44,26 +54,29 @@ function daysInMonth(monthKey){
   const [y,m] = monthKey.split('-').map(Number);
   return new Date(y, m, 0).getDate();
 }
-function dayHoursFromInOut(a){
-  if(a.in && a.out){
-    const [h1,m1] = a.in.split(':').map(Number);
-    const [h2,m2] = a.out.split(':').map(Number);
-    const mins = Math.max(0, (h2*60+m2) - (h1*60+m1));
-    return mins/60;
-  }
-  return RH_FORFAIT_HOURS;
-}
+function hhmmToMin(hhmm){ const [h,m] = hhmm.split(':').map(Number); return h*60+m; }
+
+// Retard = écart automatique entre l'heure d'arrivée et la référence 08:00.
 function computeRetardHours(a){
-  if(!a.in) return 0;
-  const [h,m] = a.in.split(':').map(Number);
-  return Math.max(0, ((h*60+m) - RH_REF_START_MIN)/60);
+  if(!a || !a.in) return 0;
+  return Math.max(0, (hhmmToMin(a.in) - RH_REF_START_MIN)/60);
+}
+// Durée d'une autorisation = retour − sortie (jamais saisie à la main).
+function autorisationDureeH(auth){
+  if(!auth || !auth.sortie || !auth.retour) return 0;
+  return Math.max(0, (hhmmToMin(auth.retour) - hhmmToMin(auth.sortie))/60);
+}
+// Total des autorisations d'une journée (un jour peut en avoir plusieurs).
+function computeAutorisationsHours(a){
+  if(!a || !Array.isArray(a.autorisations)) return 0;
+  return a.autorisations.reduce((s,auth) => s + autorisationDureeH(auth), 0);
 }
 
 // Calcule les compteurs + heures travaillées d'un employé sur un mois donné.
 function computeMonthlyStats(empId, monthKey){
   const nbDays = daysInMonth(monthKey);
-  const counts = {present:0, retard:0, autorisation:0, conge:0, maladie:0, absent:0, nonRenseigne:0};
-  let presenceH = 0, retardH = 0, autorisationH = 0;
+  const counts = {present:0, absent:0, conge:0, maladie:0, nonRenseigne:0};
+  let presenceH = 0, retardH = 0, autorisationH = 0, joursRetard = 0, nbAutorisations = 0;
   const days = [];
   for(let d=1; d<=nbDays; d++){
     const dateISO = monthKey+'-'+String(d).padStart(2,'0');
@@ -71,15 +84,22 @@ function computeMonthlyStats(empId, monthKey){
     const a = att[empId];
     if(!a || !a.status){ counts.nonRenseigne++; days.push({dateISO, status:null}); continue; }
     counts[a.status] = (counts[a.status]||0) + 1;
-    if(a.status==='present'){ presenceH += dayHoursFromInOut(a); }
-    else if(a.status==='retard'){ presenceH += dayHoursFromInOut(a); retardH += computeRetardHours(a); }
-    else if(a.status==='autorisation'){ presenceH += dayHoursFromInOut(a); autorisationH += (parseFloat(a.autorisationHeures)||0); }
-    days.push({dateISO, status:a.status, in:a.in, out:a.out});
+    let retard = 0, auth = 0;
+    if(a.status==='present'){
+      presenceH += RH_FORFAIT_HOURS;
+      retard = computeRetardHours(a);
+      if(retard>0) joursRetard++;
+      retardH += retard;
+      auth = computeAutorisationsHours(a);
+      if(a.autorisations) nbAutorisations += a.autorisations.filter(x=>x.sortie && x.retour).length;
+      autorisationH += auth;
+    }
+    days.push({dateISO, status:a.status, in:a.in, retard, autorisations:a.autorisations||[], autorisationTotal:auth});
   }
   const heuresTravaillees = Math.max(0, presenceH - retardH - autorisationH);
   const base = getMonthlyBase(monthKey);
   const ecart = (base!=null) ? (heuresTravaillees - base) : null;
-  return {counts, presenceH, retardH, autorisationH, heuresTravaillees, base, ecart, days};
+  return {counts, presenceH, retardH, autorisationH, joursRetard, nbAutorisations, heuresTravaillees, base, ecart, days};
 }
 
 function rhStatusSelect(id, current, onchangeFn){
@@ -98,18 +118,21 @@ function renderRHDashboard(container){
   const actifs = empList.filter(([id,e]) => e.statut !== 'inactif');
   const today = getTodayISO();
   const att = getAttendance(today);
-  let present=0, absent=0, retard=0, conge=0, autorisation=0, maladie=0;
+  let present=0, absent=0, conge=0, maladie=0, retardsAuj=0, autorisationsAuj=0;
   actifs.forEach(([id]) => {
-    const st = att[id] && att[id].status;
-    if(st==='present') present++;
+    const a = att[id];
+    const st = a && a.status;
+    if(st==='present'){
+      present++;
+      if(computeRetardHours(a)>0) retardsAuj++;
+      autorisationsAuj += (a.autorisations||[]).filter(x=>x.sortie && x.retour).length;
+    }
     else if(st==='absent') absent++;
-    else if(st==='retard') retard++;
     else if(st==='conge') conge++;
-    else if(st==='autorisation') autorisation++;
     else if(st==='maladie') maladie++;
   });
   const effectif = actifs.length;
-  const tauxPresence = effectif>0 ? Math.round(((present+retard+autorisation)/effectif)*100) : 0;
+  const tauxPresence = effectif>0 ? Math.round((present/effectif)*100) : 0;
 
   const monthKey = rhMonthKey || currentMonthKey();
   rhMonthKey = monthKey;
@@ -124,9 +147,13 @@ function renderRHDashboard(container){
       <div class="kpi-mini tint-red"><div class="kpi-mini-icon" style="background:linear-gradient(145deg,#FF6B6B,#DC2E2E);">${ICONS.pause}</div><div class="kpi-mini-val">${absent}</div><div class="kpi-mini-lbl">Absents</div></div>
     </div>
     <div class="kpi-mini-grid" style="grid-template-columns:repeat(3,1fr);">
-      <div class="kpi-mini"><div class="kpi-mini-icon" style="background:linear-gradient(145deg,#FFC067,#D9822B);">${ICONS.clock}</div><div class="kpi-mini-val">${retard}</div><div class="kpi-mini-lbl">Retards</div></div>
       <div class="kpi-mini"><div class="kpi-mini-icon" style="background:linear-gradient(145deg,#FFCB4D,#D9930C);">${ICONS.plane}</div><div class="kpi-mini-val">${conge}</div><div class="kpi-mini-lbl">Congés</div></div>
+      <div class="kpi-mini tint-red"><div class="kpi-mini-icon" style="background:linear-gradient(145deg,#FF6B6B,#DC2E2E);">+</div><div class="kpi-mini-val">${maladie}</div><div class="kpi-mini-lbl">Maladie</div></div>
       <div class="kpi-mini tint-gold"><div class="kpi-mini-icon" style="background:linear-gradient(145deg,#FFCB4D,#D9930C);">${ICONS.target}</div><div class="kpi-mini-val">${tauxPresence}%</div><div class="kpi-mini-lbl">Taux présence</div></div>
+    </div>
+    <div class="kpi-mini-grid" style="grid-template-columns:repeat(2,1fr);">
+      <div class="kpi-mini"><div class="kpi-mini-icon" style="background:linear-gradient(145deg,#FFC067,#D9822B);">${ICONS.clock}</div><div class="kpi-mini-val">${retardsAuj}</div><div class="kpi-mini-lbl">Retards (auj.)</div></div>
+      <div class="kpi-mini"><div class="kpi-mini-icon" style="background:linear-gradient(145deg,#FFC067,#D9822B);">${ICONS.clock}</div><div class="kpi-mini-val">${autorisationsAuj}</div><div class="kpi-mini-lbl">Autorisations (auj.)</div></div>
     </div>
     <p style="font-size:11px;color:var(--ink-faint);text-align:center;margin:2px 0 12px;">Instantané du ${today.split('-').reverse().join('/')}</p>
 
@@ -166,7 +193,7 @@ function renderRHDashboard(container){
   };
   window.saveMonthlyBaseForm = (mk) => {
     const val = parseFloat(document.getElementById('rh-base-input').value);
-    if(isNaN(val) || val<0){ showToast('Merci de saisir un nombre d\'heures valide'); return; }
+    if(isNaN(val) || val<0){ showToast("Merci de saisir un nombre d'heures valide"); return; }
     setMonthlyBase(mk, val);
     showToast('Base mensuelle enregistrée');
     nav('rh-dashboard');
@@ -234,14 +261,14 @@ function renderRHPersonnel(container, canEdit){
     zone.innerHTML = `
       <div class="card" style="background:var(--surface-2);margin-bottom:8px;">
         <h3 style="margin-top:0;">Importer une liste</h3>
-        <p style="font-size:11.5px;color:var(--ink-soft);">Une ligne par personne : matricule, un espace, puis nom. Votre rapport journalier a été pré-rempli ci-dessous (32 personnes) — vérifiez, corrigez si besoin, puis validez. Les matricules déjà présents dans le Personnel seront ignorés (pas de doublon).</p>
-        <textarea id="rh-import-text" rows="10" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;background:var(--surface);font-family:var(--mono);font-size:12px;">${esc(prefill)}</textarea>
+        <p style="font-size:11.5px;color:var(--ink-soft);">Une ligne par personne : matricule, un espace, puis nom. Les matricules déjà présents seront ignorés (pas de doublon).</p>
+        <textarea id="rh-import-text" rows="10" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;background:var(--surface);font-family:var(--mono);font-size:12px;">PREFILL_PLACEHOLDER</textarea>
         <div style="display:flex;gap:8px;margin-top:10px;">
           <button class="btn btn-primary" onclick="runImport()">Importer</button>
           <button class="btn btn-ghost" onclick="document.getElementById('rh-import-zone').innerHTML=''">Annuler</button>
         </div>
       </div>
-    `;
+    `.replace('PREFILL_PLACEHOLDER', esc(prefill));
   };
   window.runImport = () => {
     const text = document.getElementById('rh-import-text').value;
@@ -262,12 +289,11 @@ function renderRHPersonnel(container, canEdit){
     });
     saveEmployees(list);
     let msg = added+' employé(s) ajouté(s)';
-    if(skipped) msg += ', '+skipped+' déjà existant(s) ignoré(s)';
+    if(skipped) msg += ', '+skipped+" déjà existant(s) ignoré(s)";
     if(invalid) msg += ', '+invalid+' ligne(s) invalide(s)';
     showToast(msg);
     nav('rh-personnel');
   };
-  window.showEditEmployeeForm = (id) => { event.stopPropagation(); renderEmployeeForm('edit', id); };
 
   function renderEmployeeForm(mode, id){
     const e = mode==='edit' ? emps[id] : {matricule:'', nom:'', poste:'', dateEmbauche:getTodayISO(), statut:'actif'};
@@ -329,7 +355,8 @@ function renderRHPointage(container, canEdit){
       ${empRows.length===0 ? buildEmptyState("Aucun employé actif", "Ajoutez du personnel dans l'onglet Personnel.") : empRows.map(([id,e]) => {
         const a = att[id] || {};
         const st = a.status;
-        const retard = st==='retard' ? computeRetardHours(a) : 0;
+        const retard = st==='present' ? computeRetardHours(a) : 0;
+        const auths = (a.autorisations||[]);
         return `
         <div class="session-row" style="flex-direction:column;align-items:stretch;gap:6px;padding:9px 0;">
           <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
@@ -340,13 +367,28 @@ function renderRHPointage(container, canEdit){
               ? `<div style="flex-shrink:0;">${rhStatusSelect('att-status-'+id, st, `setAttendanceStatus('${id}', this.value)`)}</div>`
               : `<div class="hour-rend ${st?ATT_STATUS[st].cls:''}" style="font-size:11px;flex-shrink:0;">${st?ATT_STATUS[st].label:'—'}</div>`}
           </div>
-          ${canEdit && st==='retard' ? `
-          <div style="display:flex;gap:8px;align-items:center;">
+          ${st==='present' ? `
+          ${canEdit ? `
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
             <div class="field" style="margin:0;"><label style="font-size:10px;">Heure d'arrivée</label><input type="time" value="${a.in||''}" onchange="setAttendanceField('${id}','in',this.value)"></div>
-            <div style="font-size:11px;color:var(--warn);font-weight:700;">Retard : ${retard.toFixed(2)} h</div>
-          </div>` : ''}
-          ${canEdit && st==='autorisation' ? `<div class="field" style="margin:0;max-width:180px;"><label style="font-size:10px;">Durée autorisation (h)</label><input type="number" min="0" step="0.5" value="${a.autorisationHeures||''}" placeholder="Ex : 2" onchange="setAttendanceField('${id}','autorisationHeures',this.value)"></div>` : ''}
-          ${!canEdit && (a.in || a.out) ? `<div style="font-size:11px;color:var(--ink-soft);">${a.in||'—'} → ${a.out||'—'}</div>` : ''}
+            ${retard>0 ? `<div style="font-size:11px;color:var(--warn);font-weight:700;">Retard auto : ${retard.toFixed(2)} h</div>` : ''}
+          </div>
+          <div style="margin-top:2px;">
+            ${auths.map((au,i) => `
+              <div style="display:flex;gap:8px;align-items:center;margin-bottom:5px;background:var(--surface-2);padding:6px 8px;border-radius:8px;">
+                <div class="field" style="margin:0;flex:1;"><label style="font-size:9.5px;">Sortie</label><input type="time" value="${au.sortie||''}" onchange="setAutorisationField('${id}',${i},'sortie',this.value)"></div>
+                <div class="field" style="margin:0;flex:1;"><label style="font-size:9.5px;">Retour</label><input type="time" value="${au.retour||''}" onchange="setAutorisationField('${id}',${i},'retour',this.value)"></div>
+                ${autorisationDureeH(au)>0 ? `<span style="font-size:10.5px;color:var(--warn);font-weight:700;white-space:nowrap;">−${autorisationDureeH(au).toFixed(2)}h</span>` : ''}
+                <button class="icon-btn" style="flex-shrink:0;" onclick="removeAutorisation('${id}',${i})" title="Retirer">✕</button>
+              </div>
+            `).join('')}
+            <button class="btn btn-ghost" style="padding:5px 10px;font-size:11px;" onclick="addAutorisation('${id}')">+ Autorisation (sortie/retour)</button>
+          </div>
+          ` : `
+          ${a.in ? `<div style="font-size:11px;color:var(--ink-soft);">Arrivée ${a.in}${retard>0?' · Retard '+retard.toFixed(2)+'h':''}</div>` : ''}
+          ${auths.filter(au=>au.sortie&&au.retour).map(au => `<div style="font-size:11px;color:var(--ink-soft);">Autorisation ${au.sortie}→${au.retour} (${autorisationDureeH(au).toFixed(2)}h)</div>`).join('')}
+          `}
+          ` : ''}
         </div>
       `;}).join('')}
     </div>
@@ -362,8 +404,8 @@ function renderRHPointage(container, canEdit){
   };
   window.setAttendanceStatus = (empId, status) => {
     const a = getAttendance(rhAttDate);
-    a[empId] = status ? {...(a[empId]||{}), status} : undefined;
-    if(!status) delete a[empId];
+    if(!status){ delete a[empId]; }
+    else { a[empId] = {status}; } // changer de statut repart d'une base propre (pas d'arrivée/autorisation d'un ancien statut)
     saveAttendance(rhAttDate, a);
     nav('rh-pointage');
   };
@@ -371,7 +413,31 @@ function renderRHPointage(container, canEdit){
     const a = getAttendance(rhAttDate);
     a[empId] = {...(a[empId]||{}), [field]:value};
     saveAttendance(rhAttDate, a);
-    if(field==='in') nav('rh-pointage'); // rafraîchit le calcul de retard affiché
+    nav('rh-pointage'); // rafraîchit le calcul de retard affiché
+  };
+  window.addAutorisation = (empId) => {
+    const a = getAttendance(rhAttDate);
+    const cur = a[empId] || {status:'present'};
+    cur.autorisations = [...(cur.autorisations||[]), {sortie:'', retour:''}];
+    a[empId] = cur;
+    saveAttendance(rhAttDate, a);
+    nav('rh-pointage');
+  };
+  window.removeAutorisation = (empId, idx) => {
+    const a = getAttendance(rhAttDate);
+    const cur = a[empId] || {};
+    cur.autorisations = (cur.autorisations||[]).filter((_,i)=>i!==idx);
+    a[empId] = cur;
+    saveAttendance(rhAttDate, a);
+    nav('rh-pointage');
+  };
+  window.setAutorisationField = (empId, idx, field, value) => {
+    const a = getAttendance(rhAttDate);
+    const cur = a[empId] || {};
+    cur.autorisations = (cur.autorisations||[]).map((au,i) => i===idx ? {...au, [field]:value} : au);
+    a[empId] = cur;
+    saveAttendance(rhAttDate, a);
+    nav('rh-pointage');
   };
 }
 
@@ -414,11 +480,11 @@ function renderRHFiche(container, canEdit, empId){
       </div>
       <div class="kpi-mini-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:8px;">
         <div class="kpi-mini tint-green"><div class="kpi-mini-val">${c.present||0}</div><div class="kpi-mini-lbl">Présences</div></div>
-        <div class="kpi-mini"><div class="kpi-mini-val">${c.retard||0}</div><div class="kpi-mini-lbl">Retards</div></div>
         <div class="kpi-mini tint-red"><div class="kpi-mini-val">${c.absent||0}</div><div class="kpi-mini-lbl">Absences</div></div>
         <div class="kpi-mini tint-gold"><div class="kpi-mini-val">${c.conge||0}</div><div class="kpi-mini-lbl">Congés</div></div>
-        <div class="kpi-mini"><div class="kpi-mini-val">${c.autorisation||0}</div><div class="kpi-mini-lbl">Autorisations</div></div>
         <div class="kpi-mini tint-red"><div class="kpi-mini-val">${c.maladie||0}</div><div class="kpi-mini-lbl">Maladie</div></div>
+        <div class="kpi-mini"><div class="kpi-mini-val">${stats.joursRetard}</div><div class="kpi-mini-lbl">Jours en retard</div></div>
+        <div class="kpi-mini"><div class="kpi-mini-val">${stats.nbAutorisations}</div><div class="kpi-mini-lbl">Autorisations</div></div>
       </div>
       <div class="kpi-grid">
         <div class="kpi"><div class="label">Heures travaillées</div><div class="value">${stats.heuresTravaillees.toFixed(1)} h</div></div>
@@ -431,9 +497,15 @@ function renderRHFiche(container, canEdit, empId){
       <h3 style="margin-top:0;">Historique du mois</h3>
       <div style="max-height:320px;overflow-y:auto;">
         ${stats.days.filter(d=>d.status).length===0 ? buildEmptyState("Aucune saisie ce mois-ci") : stats.days.filter(d=>d.status).reverse().map(d => `
-          <div class="session-row" style="padding:7px 0;">
-            <div style="font-size:12.5px;">${d.dateISO.split('-').reverse().join('/')}</div>
-            <div class="hour-rend ${ATT_STATUS[d.status].cls}" style="font-size:11px;">${ATT_STATUS[d.status].label}${d.in?' · '+d.in+(d.out?'→'+d.out:''):''}</div>
+          <div class="session-row" style="padding:7px 0;flex-direction:column;align-items:stretch;gap:3px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <div style="font-size:12.5px;">${d.dateISO.split('-').reverse().join('/')}</div>
+              <div class="hour-rend ${ATT_STATUS[d.status].cls}" style="font-size:11px;">${ATT_STATUS[d.status].label}</div>
+            </div>
+            ${d.status==='present' && (d.in || d.retard>0 || d.autorisationTotal>0) ? `
+            <div style="font-size:10.5px;color:var(--ink-soft);">
+              ${d.in?'Arrivée '+d.in:''}${d.retard>0?' · Retard '+d.retard.toFixed(2)+'h':''}${d.autorisationTotal>0?' · Autorisation(s) −'+d.autorisationTotal.toFixed(2)+'h':''}
+            </div>` : ''}
           </div>
         `).join('')}
       </div>
