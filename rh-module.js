@@ -315,41 +315,51 @@ function renderRHPointage(container, canEdit){
   const emps = getEmployees();
   const empRows = Object.entries(emps).filter(([id,e])=>e.statut!=='inactif').sort((a,b)=> (a[1].nom||'').localeCompare(b[1].nom||''));
   const att = getAttendance(rhAttDate);
+  const nbRenseignes = empRows.filter(([id]) => att[id] && att[id].status).length;
 
   container.innerHTML = `
-    <div class="card">
-      <div class="field" style="margin:0;"><label>Date</label><input type="date" value="${rhAttDate}" max="${getTodayISO()}" onchange="rhAttDate=this.value; nav('rh-pointage')"></div>
+    <div class="card" style="padding:10px 12px;">
+      <div style="display:flex;gap:8px;align-items:flex-end;">
+        <div class="field" style="margin:0;flex:1;"><label>Date</label><input type="date" value="${rhAttDate}" max="${getTodayISO()}" onchange="rhAttDate=this.value; nav('rh-pointage')"></div>
+        ${canEdit ? `<button class="btn btn-primary" style="padding:11px 12px;font-size:12px;flex-shrink:0;" onclick="markAllPresent()">Tout marquer Présent</button>` : ''}
+      </div>
+      <div style="font-size:11px;color:var(--ink-faint);margin-top:8px;">${nbRenseignes}/${empRows.length} renseigné(s) pour cette date</div>
     </div>
-    <div class="card">
+    <div class="card" style="padding:4px 12px;">
       ${empRows.length===0 ? buildEmptyState("Aucun employé actif", "Ajoutez du personnel dans l'onglet Personnel.") : empRows.map(([id,e]) => {
         const a = att[id] || {};
         const st = a.status;
         const retard = st==='retard' ? computeRetardHours(a) : 0;
         return `
-        <div class="session-row" style="flex-direction:column;align-items:stretch;gap:7px;">
-          <div style="display:flex;justify-content:space-between;align-items:center;">
-            <div style="font-weight:700;">${esc(e.nom)}</div>
-            <div style="font-size:11px;color:var(--ink-soft);">${esc(e.poste||'')}</div>
+        <div class="session-row" style="flex-direction:column;align-items:stretch;gap:6px;padding:9px 0;">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+            <div style="min-width:0;flex-shrink:1;">
+              <div style="font-weight:700;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(e.nom)}</div>
+            </div>
+            ${canEdit
+              ? `<div style="flex-shrink:0;">${rhStatusSelect('att-status-'+id, st, `setAttendanceStatus('${id}', this.value)`)}</div>`
+              : `<div class="hour-rend ${st?ATT_STATUS[st].cls:''}" style="font-size:11px;flex-shrink:0;">${st?ATT_STATUS[st].label:'—'}</div>`}
           </div>
-          ${canEdit ? `
-          ${rhStatusSelect('att-status-'+id, st, `setAttendanceStatus('${id}', this.value)`)}
-          ${(st==='present' || st==='retard') ? `
-          <div style="display:flex;gap:8px;">
-            <div class="field" style="margin:0;flex:1;"><label style="font-size:10px;">Arrivée</label><input type="time" value="${a.in||''}" onchange="setAttendanceField('${id}','in',this.value)"></div>
-            <div class="field" style="margin:0;flex:1;"><label style="font-size:10px;">Départ</label><input type="time" value="${a.out||''}" onchange="setAttendanceField('${id}','out',this.value)"></div>
-          </div>
-          ${st==='retard' ? `<div style="font-size:11px;color:var(--warn);font-weight:700;">Retard calculé : ${retard.toFixed(2)} h (réf. 08:00)</div>` : ''}
-          ` : ''}
-          ${st==='autorisation' ? `<div class="field" style="margin:0;"><label style="font-size:10px;">Durée de l'autorisation (heures)</label><input type="number" min="0" step="0.5" value="${a.autorisationHeures||''}" placeholder="Ex : 2" onchange="setAttendanceField('${id}','autorisationHeures',this.value)"></div>` : ''}
-          ` : `
-          <div class="hour-rend ${st?ATT_STATUS[st].cls:''}" style="font-size:12px;width:fit-content;">${st?ATT_STATUS[st].label:'Non renseigné'}</div>
-          ${a.in || a.out ? `<div style="font-size:11px;color:var(--ink-soft);">${a.in||'—'} → ${a.out||'—'}</div>` : ''}
-          `}
+          ${canEdit && st==='retard' ? `
+          <div style="display:flex;gap:8px;align-items:center;">
+            <div class="field" style="margin:0;"><label style="font-size:10px;">Heure d'arrivée</label><input type="time" value="${a.in||''}" onchange="setAttendanceField('${id}','in',this.value)"></div>
+            <div style="font-size:11px;color:var(--warn);font-weight:700;">Retard : ${retard.toFixed(2)} h</div>
+          </div>` : ''}
+          ${canEdit && st==='autorisation' ? `<div class="field" style="margin:0;max-width:180px;"><label style="font-size:10px;">Durée autorisation (h)</label><input type="number" min="0" step="0.5" value="${a.autorisationHeures||''}" placeholder="Ex : 2" onchange="setAttendanceField('${id}','autorisationHeures',this.value)"></div>` : ''}
+          ${!canEdit && (a.in || a.out) ? `<div style="font-size:11px;color:var(--ink-soft);">${a.in||'—'} → ${a.out||'—'}</div>` : ''}
         </div>
       `;}).join('')}
     </div>
   `;
 
+  window.markAllPresent = () => {
+    if(!confirm(`Marquer les ${empRows.length} employé(s) actif(s) comme Présent pour le ${rhAttDate.split('-').reverse().join('/')} ?\n\nLes statuts déjà saisis seront remplacés.`)) return;
+    const a = getAttendance(rhAttDate);
+    empRows.forEach(([id]) => { a[id] = {status:'present'}; });
+    saveAttendance(rhAttDate, a);
+    showToast('Tous marqués Présent — ajustez les exceptions ci-dessous');
+    nav('rh-pointage');
+  };
   window.setAttendanceStatus = (empId, status) => {
     const a = getAttendance(rhAttDate);
     a[empId] = status ? {...(a[empId]||{}), status} : undefined;
