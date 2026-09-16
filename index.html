@@ -1064,6 +1064,7 @@ function nav(tab){
   else if(tab === 'rh-personnel'){ renderRHPersonnel(rhSectionContainer(main,'Personnel'), currentUser.role==='admin'); }
   else if(tab === 'rh-pointage'){ renderRHPointage(rhSectionContainer(main,'Pointage'), currentUser.role==='admin'); }
   else if(tab === 'rh-fiche'){ renderRHFiche(rhSectionContainer(main,'Fiche salarié'), currentUser.role==='admin', rhFicheEmpId); }
+  else if(tab === 'rh-synthese'){ renderRHSynthese(rhSectionContainer(main,'Synthèse mensuelle')); }
   updateNavBadges();
 }
 
