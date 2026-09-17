@@ -34,6 +34,11 @@ function getMonthlyBase(monthKey){ return getJSON('rh_base_'+monthKey, null); }
 function setMonthlyBase(monthKey, hours){ setJSON('rh_base_'+monthKey, hours); }
 function getAbsencePeriods(){ return getJSON('absence_periods', {}); }
 function saveAbsencePeriods(list){ setJSON('absence_periods', list); }
+function getDepartements(){ return getJSON('rh_departements', ['Administration','Marketing','Opérations','Ressources Humaines']); }
+function saveDepartements(list){ setJSON('rh_departements', list); }
+function departementsDatalist(){
+  return `<datalist id="rh-dep-list">${getDepartements().map(d=>`<option value="${esc(d)}">`).join('')}</datalist>`;
+}
 
 // Pointage journalier : seulement 2 choix (le reste passe par les périodes).
 const ATT_STATUS = {
@@ -286,6 +291,9 @@ function computeMonthlyStats(empId, monthKey){
   const base = getMonthlyBase(monthKey);
   stats.base = base;
   stats.ecart = (base!=null) ? (stats.heuresTravaillees - base) : null;
+  // Heures supplémentaires = la part de l'écart qui dépasse la base (convention standard :
+  // heures travaillées - heures prévues, uniquement si positif). Pas calculable sans base.
+  stats.heuresSupp = (stats.ecart!=null) ? Math.max(0, stats.ecart) : null;
   return stats;
 }
 
@@ -422,8 +430,8 @@ function renderRHDashboard(container){
   const monthKey = rhMonthKey || currentMonthKey();
   rhMonthKey = monthKey;
   const base = getMonthlyBase(monthKey);
-  let totalHeuresMois = 0;
-  emps.forEach(([id]) => { totalHeuresMois += computeMonthlyStats(id, monthKey).heuresTravaillees; });
+  let totalHeuresMois = 0, totalHeuresSupp = 0;
+  emps.forEach(([id]) => { const st = computeMonthlyStats(id, monthKey); totalHeuresMois += st.heuresTravaillees; if(st.heuresSupp!=null) totalHeuresSupp += st.heuresSupp; });
 
   const dateNav = (delta) => { const d=new Date(date+'T00:00:00'); d.setDate(d.getDate()+delta); return toISODateLocal ? toISODateLocal(d) : d.toISOString().slice(0,10); };
   const jourNom = new Date(date+'T00:00:00').toLocaleDateString('fr-FR', {weekday:'long'});
@@ -513,6 +521,7 @@ function renderRHDashboard(container){
           ${currentUser.role==='admin' ? `<button class="btn btn-ghost" style="margin-top:6px;padding:5px 10px;font-size:11px;" onclick="showSetBaseForm('${monthKey}')">${base!=null?'Modifier':'Définir'} la base</button>` : ''}
         </div>
         <div class="kpi"><div class="label">Heures travaillées</div><div class="value">${totalHeuresMois.toFixed(1)} h</div></div>
+        <div class="kpi"><div class="label">Heures supp.</div><div class="value" style="color:${totalHeuresSupp>0?'var(--warn)':'inherit'};">${base!=null ? totalHeuresSupp.toFixed(1)+' h' : '—'}</div></div>
       </div>
       <div id="rh-base-form"></div>
       <button class="btn btn-ghost" style="width:100%;margin-top:10px;" onclick="nav('rh-synthese')">Voir les statistiques complètes →</button>
@@ -665,7 +674,7 @@ function renderRHPersonnel(container, canEdit){
               ${esc(e.nom)}
               ${(e.statut==='inactif') ? `<span class="badge red" style="font-size:9px;">Inactif</span>` : ''}
             </div>
-            <div style="font-size:11.5px;color:var(--ink-soft);">${esc(e.poste||'—')} ${e.matricule ? '· Matricule '+esc(e.matricule) : ''}</div>
+            <div style="font-size:11.5px;color:var(--ink-soft);">${esc(e.poste||'—')}${e.departement?' · '+esc(e.departement):''} ${e.matricule ? '· Matricule '+esc(e.matricule) : ''}</div>
           </div>
           <div class="rank-chevron" style="flex-shrink:0;">${ICONS.chevronRight}</div>
         </div>
@@ -751,6 +760,7 @@ function renderRHPersonnel(container, canEdit){
         <div class="field"><label>Matricule</label><input id="ef-matricule" value="${esc(e.matricule||'')}" placeholder="Ex : EMP-014"></div>
         <div class="field"><label>Nom complet</label><input id="ef-nom" value="${esc(e.nom)}" placeholder="Ex : Salma Ben Ali"></div>
         <div class="field"><label>Poste / Fonction</label><input id="ef-poste" value="${esc(e.poste||'')}" placeholder="Ex : Opératrice couture, Responsable magasin..."></div>
+        <div class="field"><label>Département</label><input id="ef-departement" list="rh-dep-list" value="${esc(e.departement||'')}" placeholder="Ex : Opérations">${departementsDatalist()}</div>
         <div class="field"><label>Date d'embauche</label><input type="date" id="ef-embauche" value="${e.dateEmbauche||''}"></div>
         ${mode==='edit' ? `<div class="field"><label>Statut</label><select id="ef-statut"><option value="actif" ${e.statut!=='inactif'?'selected':''}>Actif</option><option value="inactif" ${e.statut==='inactif'?'selected':''}>Inactif</option></select></div>` : ''}
         <div style="display:flex;gap:8px;">
@@ -764,15 +774,20 @@ function renderRHPersonnel(container, canEdit){
     const nom = document.getElementById('ef-nom').value.trim();
     const matricule = document.getElementById('ef-matricule').value.trim();
     const poste = document.getElementById('ef-poste').value.trim();
+    const departement = document.getElementById('ef-departement').value.trim();
     const dateEmbauche = document.getElementById('ef-embauche').value;
     if(!nom){ showToast('Le nom est obligatoire'); return; }
+    if(departement){
+      const deps = getDepartements();
+      if(!deps.includes(departement)){ deps.push(departement); saveDepartements(deps); }
+    }
     const list = getEmployees();
     if(mode==='add'){
       const newId = 'e'+Date.now()+Math.floor(Math.random()*1000);
-      list[newId] = {matricule, nom, poste, dateEmbauche, statut:'actif'};
+      list[newId] = {matricule, nom, poste, departement, dateEmbauche, statut:'actif'};
     } else {
       const statut = document.getElementById('ef-statut').value;
-      list[id] = {...list[id], matricule, nom, poste, dateEmbauche, statut};
+      list[id] = {...list[id], matricule, nom, poste, departement, dateEmbauche, statut};
     }
     saveEmployees(list);
     showToast('Employé enregistré');
@@ -1008,7 +1023,7 @@ function renderRHFiche(container, canEdit, empId){
       <div class="flex-header" style="margin-bottom:2px;">
         <div>
           <h3 style="margin:0;display:flex;align-items:center;gap:8px;">${esc(e.nom)} ${e.statut==='inactif'?'<span class="badge red" style="font-size:9px;">Inactif</span>':''}</h3>
-          <div style="font-size:12px;color:var(--ink-soft);margin-top:2px;">${esc(e.poste||'—')}${e.matricule?' · Matricule '+esc(e.matricule):''}</div>
+          <div style="font-size:12px;color:var(--ink-soft);margin-top:2px;">${esc(e.poste||'—')}${e.departement?' · '+esc(e.departement):''}${e.matricule?' · Matricule '+esc(e.matricule):''}</div>
         </div>
         ${canEdit ? `<button class="btn btn-ghost" style="padding:6px 10px;font-size:12px;" onclick="rhEditFromFiche('${empId}')">Modifier</button>` : ''}
       </div>
@@ -1034,6 +1049,9 @@ function renderRHFiche(container, canEdit, empId){
       <div class="kpi-grid">
         <div class="kpi"><div class="label">Heures travaillées</div><div class="value">${stats.heuresTravaillees.toFixed(1)} h</div></div>
         <div class="kpi"><div class="label">Écart vs base</div><div class="value" style="color:${stats.ecart==null?'inherit':(stats.ecart>=0?'var(--good)':'var(--bad)')};">${stats.ecart==null?'— (base non définie)':(stats.ecart>=0?'+':'')+stats.ecart.toFixed(1)+' h'}</div></div>
+      </div>
+      <div class="kpi-grid" style="margin-top:8px;">
+        <div class="kpi"><div class="label">Heures supplémentaires</div><div class="value" style="color:${stats.heuresSupp>0?'var(--warn)':'inherit'};">${stats.heuresSupp==null?'—':stats.heuresSupp.toFixed(1)+' h'}</div></div>
       </div>
       <p style="font-size:10.5px;color:var(--ink-faint);margin-top:8px;">Présence : ${stats.presenceH.toFixed(1)} h · Retards déduits : −${stats.retardH.toFixed(1)} h · Autorisations déduites : −${stats.autorisationH.toFixed(1)} h</p>
     </div>
@@ -1066,6 +1084,7 @@ function renderRHFiche(container, canEdit, empId){
         <div class="field"><label>Matricule</label><input id="ef-matricule" value="${esc(e.matricule||'')}"></div>
         <div class="field"><label>Nom complet</label><input id="ef-nom" value="${esc(e.nom)}"></div>
         <div class="field"><label>Poste / Fonction</label><input id="ef-poste" value="${esc(e.poste||'')}"></div>
+        <div class="field"><label>Département</label><input id="ef-departement" list="rh-dep-list" value="${esc(e.departement||'')}" placeholder="Ex : Opérations">${departementsDatalist()}</div>
         <div class="field"><label>Date d'embauche</label><input type="date" id="ef-embauche" value="${e.dateEmbauche||''}"></div>
         <div class="field"><label>Statut</label><select id="ef-statut"><option value="actif" ${e.statut!=='inactif'?'selected':''}>Actif</option><option value="inactif" ${e.statut==='inactif'?'selected':''}>Inactif</option></select></div>
         <div style="display:flex;gap:8px;">
@@ -1079,12 +1098,18 @@ function renderRHFiche(container, canEdit, empId){
     window.saveEmployeeForm = (mode, id) => {
       const nom = document.getElementById('ef-nom').value.trim();
       if(!nom){ showToast('Le nom est obligatoire'); return; }
+      const departement = document.getElementById('ef-departement').value.trim();
+      if(departement){
+        const deps = getDepartements();
+        if(!deps.includes(departement)){ deps.push(departement); saveDepartements(deps); }
+      }
       const list = getEmployees();
       list[id] = {
         ...list[id],
         matricule: document.getElementById('ef-matricule').value.trim(),
         nom,
         poste: document.getElementById('ef-poste').value.trim(),
+        departement,
         dateEmbauche: document.getElementById('ef-embauche').value,
         statut: document.getElementById('ef-statut').value
       };
@@ -1165,6 +1190,11 @@ function rhStatsGlobalHTML(emps, start, end){
     auth: acc.auth + r.s.nbAutorisations,
     heures: acc.heures + r.s.heuresTravaillees
   }), {present:0, justif:0, nonJustif:0, retard:0, auth:0, heures:0});
+  const monthBase = (rhStatsPeriod==='mois') ? getMonthlyBase(rhMonthKey||currentMonthKey()) : null;
+  let totSupp = 0;
+  if(monthBase!=null) rows.forEach(r => { totSupp += Math.max(0, r.s.heuresTravaillees - monthBase); });
+  const nbJoursPeriode = Math.max(1, rows[0]?rows[0].s.days.length:1);
+  const tauxPresenceMoy = emps.length>0 ? Math.round(tot.present/(emps.length*nbJoursPeriode)*100) : 0;
   return `
     <div class="kpi-mini-grid" style="grid-template-columns:repeat(3,1fr);">
       <div class="kpi-mini tint-green"><div class="kpi-mini-val">${tot.present}</div><div class="kpi-mini-lbl">Présences (total)</div></div>
@@ -1174,16 +1204,39 @@ function rhStatsGlobalHTML(emps, start, end){
     <div class="kpi-mini-grid" style="grid-template-columns:repeat(3,1fr);">
       <div class="kpi-mini"><div class="kpi-mini-val">${tot.auth}</div><div class="kpi-mini-lbl">Autorisations</div></div>
       <div class="kpi-mini tint-gold"><div class="kpi-mini-val">${tot.heures.toFixed(1)}h</div><div class="kpi-mini-lbl">Heures travaillées</div></div>
-      <div class="kpi-mini"><div class="kpi-mini-val">${emps.length>0?Math.round(tot.present/(emps.length*Math.max(1,rows[0]?rows[0].s.days.length:1))*100):0}%</div><div class="kpi-mini-lbl">Taux présence moy.</div></div>
+      <div class="kpi-mini"><div class="kpi-mini-val">${tauxPresenceMoy}%</div><div class="kpi-mini-lbl">Taux présence moy.</div></div>
     </div>
+    ${monthBase!=null ? `<div class="kpi-mini-grid" style="grid-template-columns:1fr;">
+      <div class="kpi-mini" style="cursor:default;"><div class="kpi-mini-val" style="color:${totSupp>0?'var(--warn)':'inherit'};">${totSupp.toFixed(1)}h</div><div class="kpi-mini-lbl">Heures supplémentaires (total, mois)</div></div>
+    </div>` : ''}
+
+    <div class="card">
+      <h3 style="margin-top:0;font-size:13px;">Taux de présence par employé</h3>
+      <div style="display:flex;gap:10px;overflow-x:auto;padding:6px 2px 4px;align-items:flex-end;">
+        ${rows.sort((a,b)=>(a.e.nom||'').localeCompare(b.e.nom||'')).map(r => {
+          const pct = nbJoursPeriode>0 ? Math.min(100, Math.round((r.s.counts.present||0)/nbJoursPeriode*100)) : 0;
+          const col = pct>=90 ? 'var(--good)' : (pct>=70 ? 'var(--warn)' : 'var(--bad)');
+          return `
+          <div style="display:flex;flex-direction:column;align-items:center;flex-shrink:0;width:52px;cursor:pointer;" onclick="rhFicheEmpId='${r.id}'; nav('rh-fiche')">
+            <div style="font-size:10px;font-weight:800;color:var(--ink-soft);margin-bottom:3px;">${pct}%</div>
+            <div style="width:22px;height:90px;background:var(--surface-2);border-radius:6px;display:flex;align-items:flex-end;overflow:hidden;">
+              <div style="width:100%;height:${pct}%;background:${col};border-radius:6px 6px 0 0;"></div>
+            </div>
+            <div style="font-size:9.5px;color:var(--ink-faint);margin-top:4px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:52px;">${esc((r.e.nom||'').split(' ')[0])}</div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>
+
     <div class="card">
       <h3 style="margin-top:0;font-size:13px;">Détail par employé</h3>
-      ${rows.sort((a,b)=>(a.e.nom||'').localeCompare(b.e.nom||'')).map(r => `
+      ${rows.map(r => `
         <div class="session-row" style="cursor:pointer;flex-direction:column;align-items:stretch;gap:4px;" onclick="rhFicheEmpId='${r.id}'; nav('rh-fiche')">
           <div style="display:flex;justify-content:space-between;align-items:center;">
             <b style="font-size:13px;">${esc(r.e.nom)}</b>
             <span style="font-family:var(--mono);font-weight:800;font-size:13px;">${r.s.heuresTravaillees.toFixed(1)}h</span>
           </div>
+          ${r.e.departement ? `<div style="font-size:10px;color:var(--ink-faint);">${esc(r.e.departement)}</div>` : ''}
           <div style="font-size:10.5px;color:var(--ink-soft);">Présences ${r.s.counts.present||0} · Retards ${r.s.joursRetard} · Autorisations ${r.s.nbAutorisations} · Abs. justif. ${r.s.absencesJustifiees} · Abs. non justif. ${r.s.absencesNonJustifiees}</div>
         </div>
       `).join('')}
@@ -1198,6 +1251,9 @@ function rhStatsEmployeeHTML(empId, start, end){
   if(!e) return `<div class="card">${buildEmptyState("Employé introuvable")}</div>`;
   const s = computeStatsForRange(empId, start, end);
   const c = s.counts;
+  const monthBase = (rhStatsPeriod==='mois') ? getMonthlyBase(rhMonthKey||currentMonthKey()) : null;
+  const ecart = monthBase!=null ? (s.heuresTravaillees - monthBase) : null;
+  const heuresSupp = ecart!=null ? Math.max(0, ecart) : null;
   return `
     <div class="card">
       <div class="flex-header" style="margin-bottom:6px;"><h3 style="margin:0;">${esc(e.nom)}</h3><button class="btn btn-ghost" style="padding:5px 10px;font-size:11.5px;" onclick="rhFicheEmpId='${empId}'; nav('rh-fiche')">Fiche complète</button></div>
@@ -1213,6 +1269,10 @@ function rhStatsEmployeeHTML(empId, start, end){
         <div class="kpi"><div class="label">Heures travaillées</div><div class="value">${s.heuresTravaillees.toFixed(1)} h</div></div>
         <div class="kpi"><div class="label">Retards / autorisations déduits</div><div class="value">−${(s.retardH+s.autorisationH).toFixed(1)} h</div></div>
       </div>
+      ${monthBase!=null ? `<div class="kpi-grid" style="margin-top:8px;">
+        <div class="kpi"><div class="label">Écart vs base (mois)</div><div class="value" style="color:${ecart>=0?'var(--good)':'var(--bad)'};">${ecart>=0?'+':''}${ecart.toFixed(1)} h</div></div>
+        <div class="kpi"><div class="label">Heures supp.</div><div class="value" style="color:${heuresSupp>0?'var(--warn)':'inherit'};">${heuresSupp.toFixed(1)} h</div></div>
+      </div>` : ''}
     </div>
     <div class="card">
       <h3 style="margin-top:0;font-size:13px;">Historique de la période</h3>
@@ -1282,3 +1342,98 @@ window.exportRHReport = async (monthKey) => {
   URL.revokeObjectURL(url);
   showToast('Rapport téléchargé');
 };
+
+// ============================================================
+// PARAMÈTRES RH (admin uniquement)
+// ============================================================
+function renderRHParametres(container){
+  if(currentUser.role !== 'admin'){
+    container.innerHTML = buildEmptyState("Accès réservé au Responsable", "Cette page n'est pas accessible avec votre rôle.");
+    return;
+  }
+  const deps = getDepartements();
+  const sch = getScheduleSettings();
+  container.innerHTML = `
+    <div class="card">
+      <h3 style="margin-top:0;">Départements</h3>
+      <p style="font-size:11.5px;color:var(--ink-soft);">Utilisés comme suggestions dans la fiche employé. Un département est ajouté automatiquement dès qu'il est saisi sur un employé — vous pouvez aussi le préparer ici à l'avance.</p>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin:10px 0;">
+        ${deps.length===0 ? '<span style="font-size:11.5px;color:var(--ink-faint);">Aucun département enregistré</span>' : deps.map((d,i) => `
+          <span class="badge" style="display:inline-flex;align-items:center;gap:6px;background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:5px 6px 5px 12px;font-size:12px;">
+            ${esc(d)}
+            <button class="icon-btn" style="width:18px;height:18px;padding:0;" onclick="rhDeleteDepartement(${i})" title="Retirer">✕</button>
+          </span>
+        `).join('')}
+      </div>
+      <div style="display:flex;gap:8px;">
+        <input id="rh-new-dep" placeholder="Nouveau département…" style="flex:1;padding:9px 11px;border:1.5px solid var(--border);border-radius:8px;background:var(--surface-2);font-size:14px;">
+        <button class="btn btn-primary" style="padding:8px 14px;font-size:12.5px;flex-shrink:0;" onclick="rhAddDepartement()">Ajouter</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0;">Horaires de référence</h3>
+      <p style="font-size:11.5px;color:var(--ink-soft);margin-bottom:10px;">Le pointage RH (retard, heures travaillées) suit automatiquement les horaires réels déjà configurés pour la production — il n'y a qu'un seul réglage, pour éviter toute incohérence entre les deux modules.</p>
+      <div class="kpi-grid">
+        <div class="kpi"><div class="label">Semaine (Lun-Ven)</div><div class="value" style="font-size:15px;">${sch.weekdayStart} - ${sch.weekdayEnd}</div></div>
+        <div class="kpi"><div class="label">Samedi</div><div class="value" style="font-size:15px;">${sch.saturdayEnabled ? sch.saturdayStart+' - '+sch.saturdayEnd : 'Non travaillé'}</div></div>
+      </div>
+      <button class="btn btn-ghost" style="width:100%;margin-top:10px;" onclick="switchModule()">Modifier dans Gestion Rendement → Params</button>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0;">Régime de référence (base mensuelle)</h3>
+      <p style="font-size:11.5px;color:var(--ink-soft);">La base mensuelle de chaque mois se règle directement depuis le Tableau de bord RH (bouton "Définir la base"). Régime officiel de référence : <b>${RH_BASE_REFERENCE_HEBDO}h/semaine</b> (soit ${RH_BASE_SUGGESTION}h/mois, suggestion proposée automatiquement).</p>
+    </div>
+  `;
+  window.rhAddDepartement = () => {
+    const val = document.getElementById('rh-new-dep').value.trim();
+    if(!val){ showToast('Saisissez un nom de département'); return; }
+    const list = getDepartements();
+    if(list.includes(val)){ showToast('Ce département existe déjà'); return; }
+    list.push(val);
+    saveDepartements(list);
+    showToast('Département ajouté');
+    nav('rh-parametres');
+  };
+  window.rhDeleteDepartement = (idx) => {
+    const list = getDepartements();
+    list.splice(idx,1);
+    saveDepartements(list);
+    nav('rh-parametres');
+  };
+}
+
+// ============================================================
+// INSTRUCTIONS
+// ============================================================
+function renderRHInstructions(container){
+  container.innerHTML = `
+    <div class="card">
+      <h3 style="margin-top:0;">👋 Bienvenue dans le module RH</h3>
+      <p style="font-size:12.5px;color:var(--ink-soft);line-height:1.6;">Ce module suit la présence, les retards, les autorisations et les absences de tout le personnel, indépendamment du suivi de production (Rendement).</p>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0;">📋 Employés</h3>
+      <p style="font-size:12.5px;color:var(--ink-soft);line-height:1.6;">Ajoutez chaque salarié une fois (nom, poste, département, matricule). Un employé n'est jamais supprimé définitivement : on le passe en <b>Inactif</b> pour garder tout son historique sans qu'il apparaisse dans le pointage du jour.</p>
+      <p style="font-size:12.5px;color:var(--ink-soft);line-height:1.6;">Vous pouvez importer une liste entière d'un coup (matricule + nom, une ligne par personne) depuis le bouton dédié.</p>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0;">⏱️ Pointage</h3>
+      <p style="font-size:12.5px;color:var(--ink-soft);line-height:1.6;">Chaque jour, marquez <b>Présent</b> ou <b>Absent</b>. Pour un présent, l'heure d'arrivée suffit — le retard se calcule tout seul (tolérance de 5 min par tranche de 30 min). Une sortie autorisée se saisit en heure de sortie / heure de retour, la durée se calcule aussi automatiquement.</p>
+      <p style="font-size:12.5px;color:var(--ink-soft);line-height:1.6;">Pour une absence qui dure plusieurs jours (maladie, congé...), <b>une seule saisie suffit</b> : indiquez la date de début et de fin, le système considère la personne absente tous les jours concernés sans rien repointer.</p>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0;">📊 Dashboard &amp; Synthèse</h3>
+      <p style="font-size:12.5px;color:var(--ink-soft);line-height:1.6;">Le Dashboard donne la situation du jour (avec navigation vers n'importe quelle date) et les anomalies à traiter. La Synthèse permet de choisir n'importe quelle période (jour, semaine, mois, dates libres) et de voir soit tous les employés, soit le détail d'une seule personne.</p>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0;">💰 Heures &amp; base mensuelle</h3>
+      <p style="font-size:12.5px;color:var(--ink-soft);line-height:1.6;">La <b>base mensuelle</b> (référence officielle du mois, ex. 208h) se saisit une fois par mois par le Responsable — elle n'est jamais calculée automatiquement. Les <b>heures travaillées</b>, elles, se calculent automatiquement (présence réelle − retards − autorisations). L'écart entre les deux donne les <b>heures supplémentaires</b> (si positif) ou le déficit (si négatif).</p>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0;">🔒 Accès</h3>
+      <p style="font-size:12.5px;color:var(--ink-soft);line-height:1.6;">Le <b>Responsable</b> peut tout modifier. La <b>Direction</b> peut tout consulter mais rien changer. Le module RH n'est pas accessible au Chef de chaîne.</p>
+    </div>
+  `;
+}
