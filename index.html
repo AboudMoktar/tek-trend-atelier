@@ -767,9 +767,26 @@ function getActiveOpCount(h, dayData){
   }).length;
 }
 function getHourTarget(h, dayData) {
-  const activeCount = getActiveOpCount(h, dayData);
   const dateISO = dayData && dayData.date ? dayData.date : getTodayISO();
-  return Math.round(getObjHoraireOp() * activeCount * (getHourDurationForDate(dateISO, h) / 60));
+  const duration = getHourDurationForDate(dateISO, h);
+  if(!dayData || !dayData.hours || !dayData.hours[h]){
+    return Math.round(getObjHoraireOp() * OP_KEYS.length * (duration/60));
+  }
+  let slotInfo;
+  let sumFraction = 0;
+  OP_KEYS.forEach((k, idx) => {
+    const val = dayData.hours[h][k];
+    if(isAbsentMark(val)){ return; } // saisie manuelle explicite (ABS...) = toujours prioritaire, fraction 0
+    if(val!==undefined && val!==null && String(val).trim()!==''){ sumFraction += 1; return; } // chiffre saisi = pleinement comptée
+    // case vide -> fraction proportionnelle d'après le statut RH du jour (1 si aucune donnée RH)
+    if(typeof rhSlotFraction === 'function'){
+      if(slotInfo === undefined) slotInfo = getSlotsForDate(dateISO).find(s=>s.label===h) || null;
+      sumFraction += slotInfo ? rhSlotFraction(getOps()[idx], dateISO, slotInfo.start, slotInfo.end) : 1;
+    } else {
+      sumFraction += 1;
+    }
+  });
+  return Math.round(getObjHoraireOp() * sumFraction * (duration/60));
 }
 function getObjForDay(dayData){
   const dateISO = dayData && dayData.date ? dayData.date : getTodayISO();

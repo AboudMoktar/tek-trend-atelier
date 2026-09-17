@@ -106,6 +106,44 @@ function rhSlotExcluded(opName, dateISO, slotStartMin, slotEndMin){
   }
   return false;
 }
+// Version PROPORTIONNELLE (0 à 1) utilisée pour le calcul de l'objectif :
+// un retard ou une autorisation ne réduit pas tout le créneau à zéro, mais
+// seulement la part de temps réellement perdue sur ce créneau précis.
+// Exemple : cadence 20 pièces/h, retard jusqu'à 08:15 sur un créneau
+// 08:00-09:00 -> 15 min perdues sur 60 -> fraction 0,75 -> objectif 15 pièces.
+function rhSlotFraction(opName, dateISO, slotStartMin, slotEndMin){
+  const emps = getEmployees();
+  const entry = Object.entries(emps).find(([id,e]) => (e.nom||'').trim().toLowerCase() === (opName||'').trim().toLowerCase());
+  if(!entry) return 1; // pas de correspondance RH -> comportement inchangé
+  const [empId] = entry;
+  const r = resolveDayStatus(empId, dateISO);
+  const slotDur = slotEndMin - slotStartMin;
+  if(slotDur<=0) return 1;
+  if(r.source==='periode') return 0; // absence totale sur toute la journée
+  if(r.source==='pointage'){
+    if(r.status==='absent') return 0;
+    if(r.status==='present'){
+      let lost = 0;
+      if(r.in){
+        const refMin = getRefStartMin(dateISO);
+        const arriveeMin = hhmmToMin(r.in);
+        if(arriveeMin > refMin){
+          const oStart = Math.max(slotStartMin, refMin), oEnd = Math.min(slotEndMin, arriveeMin);
+          if(oEnd > oStart) lost += (oEnd - oStart);
+        }
+      }
+      (r.autorisations||[]).forEach(au => {
+        if(au.sortie && au.retour){
+          const s = hhmmToMin(au.sortie), e = hhmmToMin(au.retour);
+          const oStart = Math.max(slotStartMin, s), oEnd = Math.min(slotEndMin, e);
+          if(oEnd > oStart) lost += (oEnd - oStart);
+        }
+      });
+      return Math.max(0, Math.min(1, 1 - lost/slotDur));
+    }
+  }
+  return 1;
+}
 // Résumé RH du jour pour affichage en haut de Saisie — uniquement les
 // opératrices ayant un statut RH particulier notable ce jour (rien si tout
 // est normal/non renseigné, pour ne pas surcharger l'écran).
