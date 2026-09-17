@@ -1342,7 +1342,7 @@ function renderDashboard(container){
     <div class="card">
       <div style="display:flex;gap:8px;margin-bottom:6px;align-items:center;justify-content:space-between;flex-wrap:nowrap;">
         <h2 style="margin:0;display:flex;align-items:center;gap:6px;font-size:15px;white-space:nowrap;"><span style="display:inline-flex;width:16px;height:16px;color:var(--accent);flex-shrink:0;">${ICONS.team}</span> Production par opératrice</h2>
-        ${grandTotalOps>0 ? `<div style="font-size:9.5px;background:var(--accent-bg);color:var(--accent);padding:5px 8px;border-radius:9px;font-weight:700;white-space:nowrap;flex-shrink:0;">Moy. ${Math.round(grandTotalOps/OP_KEYS.length)} PC</div>` : ''}
+        ${grandTotalOps>0 ? `<div style="font-size:9.5px;background:var(--accent-bg);color:var(--accent);padding:5px 8px;border-radius:9px;font-weight:700;white-space:nowrap;flex-shrink:0;">Moy. ${Math.round(grandTotalOps/Math.max(1,activeOpCount))} PC</div>` : ''}
       </div>
       ${grandTotalOps===0 ? buildEmptyState('Aucune donnée à afficher') : rankingOps.map((r,i) => `
         <div class="rank-row" onclick="openOperatriceDetail('${r.key}')">
