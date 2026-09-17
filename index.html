@@ -2007,13 +2007,14 @@ function renderSessions(container){
             <div style="font-size:11.5px;color:var(--ink-soft);">Identifiant : ${u.username}</div>
           </div>
           <div style="display:flex;gap:6px;">
-            ${fbMode ? `<button class="btn btn-ghost" style="padding:6px 10px;font-size:12px;" onclick="showEditRoleForm('${key}')">Modifier le rôle</button>`
+            ${fbMode ? `<button class="btn btn-ghost" style="padding:6px 10px;font-size:12px;" onclick="showEditRoleForm('${key}')">Modifier le rôle</button>
+                        ${(userRows.length > 1 && key !== currentUser.uid) ? `<button class="btn btn-warning" style="padding:6px 10px;font-size:12px;" onclick="deleteUserProfile('${key}','${esc(u.nom)}')">Suppr.</button>` : ''}`
                      : `<button class="btn btn-ghost" style="padding:6px 10px;font-size:12px;" onclick="showEditUserForm(${key})">Modifier</button>
                         ${userRows.length > 1 ? `<button class="btn btn-warning" style="padding:6px 10px;font-size:12px;" onclick="deleteUserAccount(${key})">Suppr.</button>` : ''}`}
           </div>
         </div>
       `).join('')}
-      ${fbMode ? `<p style="font-size:11px;color:var(--ink-faint);margin-top:12px;">Pour changer le mot de passe d'un autre compte ou le supprimer : Console Firebase → Authentication → Users (nécessite un accès à votre projet Firebase).</p>` : ''}
+      ${fbMode ? `<p style="font-size:11px;color:var(--ink-faint);margin-top:12px;">"Suppr." retire la personne de l'application (elle ne pourra plus se connecter). Pour changer le mot de passe d'un autre compte, ou pour un nettoyage complet côté Firebase (identifiant), passez par Console Firebase → Authentication → Users.</p>` : ''}
     </div>` : ''}
   `;
 
@@ -2119,6 +2120,14 @@ function renderSessions(container){
       await fbRootRef.child('users_v2/'+uid).update({ nom, role });
       if(currentUser.uid === uid){ currentUser.nom = nom; currentUser.role = role; try{ window.sessionStorage.setItem(CACHE_PREFIX+'user', JSON.stringify(currentUser)); }catch(e){} }
       showToast('Compte mis à jour');
+      nav('sessions');
+    }catch(err){ console.error(err); showToast("Erreur : vérifiez vos droits d'accès."); }
+  };
+  window.deleteUserProfile = async (uid, nom) => {
+    if(!confirm(`Retirer ${nom} de l'application ?\n\nCette personne ne pourra plus se connecter à TEK-TREND. Son identifiant/mot de passe reste toutefois dans Firebase Authentication tant que vous ne le supprimez pas aussi là-bas (Console Firebase → Authentication → Users) — ce n'est pas obligatoire, mais recommandé pour un nettoyage complet.`)) return;
+    try{
+      await fbRootRef.child('users_v2/'+uid).remove();
+      showToast('Profil supprimé de l\'application');
       nav('sessions');
     }catch(err){ console.error(err); showToast("Erreur : vérifiez vos droits d'accès."); }
   };
