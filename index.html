@@ -754,7 +754,17 @@ function isAbsentMark(v){
 }
 function getActiveOpCount(h, dayData){
   if(!dayData || !dayData.hours || !dayData.hours[h]) return OP_KEYS.length;
-  return OP_KEYS.filter(k => !isAbsentMark(dayData.hours[h][k])).length;
+  const dateISO = dayData.date || getTodayISO();
+  let slotInfo; // calculé seulement si nécessaire
+  return OP_KEYS.filter((k, idx) => {
+    const val = dayData.hours[h][k];
+    if(isAbsentMark(val)) return false; // saisie manuelle explicite (ABS...) = toujours prioritaire
+    if((val===undefined || val===null || String(val).trim()==='') && typeof rhSlotExcluded === 'function'){
+      if(slotInfo === undefined) slotInfo = getSlotsForDate(dateISO).find(s=>s.label===h) || null;
+      if(slotInfo && rhSlotExcluded(getOps()[idx], dateISO, slotInfo.start, slotInfo.end)) return false;
+    }
+    return true;
+  }).length;
 }
 function getHourTarget(h, dayData) {
   const activeCount = getActiveOpCount(h, dayData);
@@ -1064,7 +1074,7 @@ function nav(tab){
   else if(tab === 'rh-personnel'){ renderRHPersonnel(rhSectionContainer(main,'Personnel'), currentUser.role==='admin'); }
   else if(tab === 'rh-pointage'){ renderRHPointage(rhSectionContainer(main,'Pointage'), currentUser.role==='admin'); }
   else if(tab === 'rh-fiche'){ renderRHFiche(rhSectionContainer(main,'Fiche salarié'), currentUser.role==='admin', rhFicheEmpId); }
-  else if(tab === 'rh-synthese'){ renderRHSynthese(rhSectionContainer(main,'Synthèse mensuelle')); }
+  else if(tab === 'rh-synthese'){ renderRHSynthese(rhSectionContainer(main,'Statistiques RH')); }
   updateNavBadges();
 }
 
@@ -1440,6 +1450,8 @@ function renderSaisie(container, date){
   const data = getDay(date); const totals = computeTotals(data);
   const ops = getOps(); const obj = getObjForDay(data);
   const dayHours = getHoursForDate(date);
+  const dayHoursSlots = getSlotsForDate(date);
+  const rhSummary = typeof rhDaySummaryForOps === 'function' ? rhDaySummaryForOps(ops, date) : [];
   const isAdmin = canSaisie(currentUser.role);
   const isDraft = data.status === 'draft';
   const disabled = (isAdmin && isDraft) ? '' : 'disabled';
@@ -1514,7 +1526,15 @@ function renderSaisie(container, date){
     let hPct = hTarget > 0 ? Math.round(rTot / hTarget * 100) : 0;
     rows += `<tr>
       <td style="font-size:11px; font-weight:600; color:var(--ink-soft);">${h.replace(' - ','<br>')}</td>
-      ${OP_KEYS.map(k => `<td class="input-cell"><input type="text" value="${data.hours[h][k]}" oninput="handleInput('${h}', '${k}', this.value)" ${disabled} placeholder="-"></td>`).join('')}
+      ${OP_KEYS.map((k, idx) => {
+        const val = data.hours[h][k];
+        let ph = '-';
+        if((val===undefined||val===null||String(val).trim()==='') && typeof rhSlotExcluded==='function'){
+          const slotInfo = dayHoursSlots.find(s=>s.label===h);
+          if(slotInfo && rhSlotExcluded(ops[idx], date, slotInfo.start, slotInfo.end)) ph = 'RH';
+        }
+        return `<td class="input-cell"><input type="text" value="${val}" oninput="handleInput('${h}', '${k}', this.value)" ${disabled} placeholder="${ph}"></td>`;
+      }).join('')}
       <td class="total-col" id="tot_${hId}">${rTot}<div class="hour-rend ${rendClass(hPct)}">${hPct}%</div></td>
       <td class="cumul-col" id="cumul_${hId}">${cumulGeneral}</td>
       <td class="input-cell obs-cell"><input type="text" value="${data.hours[h].obs}" onchange="handleObs('${h}', this.value)" placeholder="Cause, ABS..." ${disabled}></td>
@@ -1536,7 +1556,13 @@ function renderSaisie(container, date){
           ${actionBtns}
         </div>
       </div>
-      
+
+      ${rhSummary.length>0 ? `
+      <div class="no-print" style="background:var(--warn-bg,#FFF4E0);border:1px solid var(--warn);border-radius:10px;padding:8px 10px;margin:0 0 10px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
+        <span style="font-size:11px;font-weight:700;color:var(--ink-soft);">Statut RH aujourd'hui :</span>
+        ${rhSummary.map(s => `<span class="hour-rend ${s.cls}" style="font-size:11px;">${s.opName} · ${s.label}</span>`).join('')}
+      </div>` : ''}
+
       <div style="overflow-x:auto;">
         <table>
           <thead>

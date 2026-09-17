@@ -72,6 +72,65 @@ function getPlannedHoursForDate(dateISO){
   return getSlotsForDate(dateISO).reduce((s,sl)=>s+sl.minutes, 0) / 60;
 }
 
+// --- PONT avec le module Rendement (Saisie) ---
+// Détermine si un créneau horaire d'une opératrice doit être automatiquement
+// exclu de l'objectif ce jour-là, d'après son statut RH — sans jamais rien
+// écrire dans les données de Saisie. Une saisie manuelle (ex: "ABS" tapé à la
+// main) garde toujours la priorité, ce pont ne s'applique qu'aux cases vides.
+// Correspondance entre les deux modules : par NOM exact (insensible à la
+// casse/aux espaces) entre la liste des opératrices (Rendement) et la liste
+// des employés (RH) — s'il n'y a pas de correspondance ou pas de donnée RH
+// ce jour-là, rien ne change (comportement Saisie inchangé).
+function rhSlotExcluded(opName, dateISO, slotStartMin, slotEndMin){
+  const emps = getEmployees();
+  const entry = Object.entries(emps).find(([id,e]) => (e.nom||'').trim().toLowerCase() === (opName||'').trim().toLowerCase());
+  if(!entry) return false;
+  const [empId] = entry;
+  const r = resolveDayStatus(empId, dateISO);
+  if(r.source==='periode') return true; // maladie / congé / autorisée / injustifiée -> journée entière
+  if(r.source==='pointage'){
+    if(r.status==='absent') return true;
+    if(r.status==='present'){
+      if(r.in){
+        const refMin = getRefStartMin(dateISO);
+        const arriveeMin = hhmmToMin(r.in);
+        if(arriveeMin > refMin && slotStartMin < arriveeMin && slotEndMin > refMin) return true; // retard chevauche ce créneau
+      }
+      for(const au of (r.autorisations||[])){
+        if(au.sortie && au.retour){
+          const s = hhmmToMin(au.sortie), e = hhmmToMin(au.retour);
+          if(slotStartMin < e && slotEndMin > s) return true; // autorisation chevauche ce créneau
+        }
+      }
+    }
+  }
+  return false;
+}
+// Résumé RH du jour pour affichage en haut de Saisie — uniquement les
+// opératrices ayant un statut RH particulier notable ce jour (rien si tout
+// est normal/non renseigné, pour ne pas surcharger l'écran).
+function rhDaySummaryForOps(opNames, dateISO){
+  const emps = getEmployees();
+  const out = [];
+  opNames.forEach(opName => {
+    const entry = Object.entries(emps).find(([id,e]) => (e.nom||'').trim().toLowerCase() === (opName||'').trim().toLowerCase());
+    if(!entry) return;
+    const [empId] = entry;
+    const r = resolveDayStatus(empId, dateISO);
+    if(r.source==='periode'){
+      out.push({opName, label: ABSENCE_TYPES[r.type].label, cls: ABSENCE_TYPES[r.type].cls});
+    } else if(r.source==='pointage'){
+      if(r.status==='absent') out.push({opName, label:'Absent (RH)', cls:'bad'});
+      else if(r.status==='present'){
+        const retard = computeRetardHours(r);
+        if(retard>0) out.push({opName, label:'Retard '+fmtH(retard), cls:'warn'});
+        (r.autorisations||[]).forEach(au => { if(au.sortie && !au.retour) out.push({opName, label:'En sortie depuis '+au.sortie, cls:'warn'}); });
+      }
+    }
+  });
+  return out;
+}
+
 function currentMonthKey(){ return getTodayISO().slice(0,7); }
 function monthLabel(monthKey){
   const [y,m] = monthKey.split('-').map(Number);
@@ -136,20 +195,25 @@ function resolveDayStatus(empId, dateISO){
 }
 
 // Calcule les compteurs + heures travaillées d'un employé sur un mois donné.
-function computeMonthlyStats(empId, monthKey){
-  const nbDays = daysInMonth(monthKey);
+// Calcule les compteurs + heures travaillées d'un employé sur une plage de
+// dates QUELCONQUE (un seul jour, une semaine, une période personnalisée...).
+// C'est la fonction générique ; computeMonthlyStats() n'est qu'un raccourci
+// pratique pour un mois calendaire complet (avec en plus la base mensuelle).
+function computeStatsForRange(empId, dateStart, dateEnd){
   const counts = {present:0, absent:0, maladie:0, conge:0, autorisee:0, injustifiee:0, autre:0, nonRenseigne:0};
   let presenceH=0, retardH=0, autorisationH=0, joursRetard=0, nbAutorisations=0;
   const days = [];
-  for(let d=1; d<=nbDays; d++){
-    const dateISO = monthKey+'-'+String(d).padStart(2,'0');
+  let cur = new Date(dateStart+'T00:00:00');
+  const end = new Date(dateEnd+'T00:00:00');
+  let guard = 0;
+  while(cur <= end && guard < 400){
+    guard++;
+    const dateISO = toISODateLocal(cur);
     const r = resolveDayStatus(empId, dateISO);
     if(r.source==='periode'){
       counts[r.type] = (counts[r.type]||0)+1;
       days.push({dateISO, source:'periode', type:r.type});
-      continue;
-    }
-    if(r.source==='pointage'){
+    } else if(r.source==='pointage'){
       if(r.status==='present'){
         counts.present++;
         presenceH += getPlannedHoursForDate(dateISO);
@@ -164,21 +228,27 @@ function computeMonthlyStats(empId, monthKey){
         counts.absent++;
         days.push({dateISO, source:'pointage', status:'absent'});
       } else {
-        // compatibilité avec d'anciennes saisies directes conge/maladie
         counts[r.status] = (counts[r.status]||0)+1;
         days.push({dateISO, source:'pointage', status:r.status});
       }
-      continue;
+    } else {
+      counts.nonRenseigne++;
+      days.push({dateISO, source:null});
     }
-    counts.nonRenseigne++;
-    days.push({dateISO, source:null});
+    cur.setDate(cur.getDate()+1);
   }
   const heuresTravaillees = Math.max(0, presenceH - retardH - autorisationH);
-  const base = getMonthlyBase(monthKey);
-  const ecart = (base!=null) ? (heuresTravaillees - base) : null;
   const absencesJustifiees = (counts.maladie||0)+(counts.conge||0)+(counts.autorisee||0)+(counts.autre||0);
-  const absencesNonJustifiees = counts.absent||0+ (counts.injustifiee||0);
-  return {counts, presenceH, retardH, autorisationH, joursRetard, nbAutorisations, heuresTravaillees, base, ecart, days, absencesJustifiees, absencesNonJustifiees};
+  const absencesNonJustifiees = (counts.absent||0) + (counts.injustifiee||0);
+  return {counts, presenceH, retardH, autorisationH, joursRetard, nbAutorisations, heuresTravaillees, days, absencesJustifiees, absencesNonJustifiees};
+}
+function computeMonthlyStats(empId, monthKey){
+  const nbDays = daysInMonth(monthKey);
+  const stats = computeStatsForRange(empId, monthKey+'-01', monthKey+'-'+String(nbDays).padStart(2,'0'));
+  const base = getMonthlyBase(monthKey);
+  stats.base = base;
+  stats.ecart = (base!=null) ? (stats.heuresTravaillees - base) : null;
+  return stats;
 }
 
 function rhStatusSelect(id, current, onchangeFn){
@@ -407,7 +477,7 @@ function renderRHDashboard(container){
         <div class="kpi"><div class="label">Heures travaillées</div><div class="value">${totalHeuresMois.toFixed(1)} h</div></div>
       </div>
       <div id="rh-base-form"></div>
-      <button class="btn btn-ghost" style="width:100%;margin-top:10px;" onclick="nav('rh-synthese')">Voir la synthèse mensuelle complète →</button>
+      <button class="btn btn-ghost" style="width:100%;margin-top:10px;" onclick="nav('rh-synthese')">Voir les statistiques complètes →</button>
       ${currentUser.role==='admin' ? `<button class="btn btn-primary" style="width:100%;margin-top:6px;" onclick="exportRHReport('${monthKey}')">${ICONS.idBadge} Télécharger le rapport (Excel)</button>` : ''}
     </div>
 
@@ -990,31 +1060,140 @@ function renderRHFiche(container, canEdit, empId){
 // ============================================================
 // SYNTHÈSE MENSUELLE (tous les salariés actifs, vue d'ensemble)
 // ============================================================
+let rhStatsPeriod = 'mois'; // 'jour' | 'semaine' | 'mois' | 'perso'
+let rhStatsDate = null;     // date de référence pour la vue "Jour"
+let rhStatsStart = null;    // bornes pour la vue "Personnalisé"
+let rhStatsEnd = null;
+let rhStatsEmpId = null;    // null = "Tous les employés", sinon un id précis
+
+function rhStatsRange(){
+  const today = getTodayISO();
+  if(rhStatsPeriod==='jour') return {start: rhStatsDate||today, end: rhStatsDate||today};
+  if(rhStatsPeriod==='semaine'){
+    const d = new Date(today+'T00:00:00'); d.setDate(d.getDate()-6);
+    return {start: toISODateLocal(d), end: today};
+  }
+  if(rhStatsPeriod==='mois'){
+    const mk = rhMonthKey || currentMonthKey();
+    return {start: mk+'-01', end: mk+'-'+String(daysInMonth(mk)).padStart(2,'0')};
+  }
+  return {start: rhStatsStart||today, end: rhStatsEnd||today};
+}
+function rhStatsPeriodLabel(){
+  const {start, end} = rhStatsRange();
+  if(start===end) return start.split('-').reverse().join('/');
+  return start.split('-').reverse().join('/')+' → '+end.split('-').reverse().join('/');
+}
+
 function renderRHSynthese(container){
-  const monthKey = rhMonthKey || currentMonthKey();
-  rhMonthKey = monthKey;
+  if(!window.rhStatsPeriod) window.rhStatsPeriod = 'mois';
+  const {start, end} = rhStatsRange();
   const emps = activeEmployees();
+
   container.innerHTML = `
-    <div class="card">
-      <div class="flex-header" style="margin-bottom:4px;">
-        <h3 style="margin:0;text-transform:capitalize;">${monthLabel(monthKey)}</h3>
-        <input type="month" value="${monthKey}" style="max-width:140px;" onchange="rhMonthKey=this.value; nav('rh-synthese')">
+    <div class="card" style="padding:10px 12px;">
+      <div style="display:flex;gap:6px;margin-bottom:8px;">
+        ${[['jour','Jour'],['semaine','7 jours'],['mois','Ce mois'],['perso','Personnalisé']].map(([k,l]) =>
+          `<button class="btn ${rhStatsPeriod===k?'btn-primary':'btn-ghost'}" style="flex:1;padding:7px 4px;font-size:11.5px;" onclick="rhStatsPeriod='${k}'; nav('rh-synthese')">${l}</button>`
+        ).join('')}
       </div>
-      <p style="font-size:11px;color:var(--ink-faint);">${emps.length} salarié(s) actif(s)</p>
-      ${currentUser.role==='admin' ? `<button class="btn btn-primary" style="width:100%;margin-top:6px;" onclick="exportRHReport('${monthKey}')">${ICONS.idBadge} Télécharger le rapport (Excel)</button>` : ''}
+      ${rhStatsPeriod==='jour' ? `<input type="date" value="${rhStatsDate||getTodayISO()}" max="${getTodayISO()}" onchange="rhStatsDate=this.value; nav('rh-synthese')">` : ''}
+      ${rhStatsPeriod==='mois' ? `<input type="month" value="${rhMonthKey||currentMonthKey()}" onchange="rhMonthKey=this.value; nav('rh-synthese')">` : ''}
+      ${rhStatsPeriod==='perso' ? `<div style="display:flex;gap:8px;">
+        <div class="field" style="flex:1;margin:0;"><label style="font-size:10px;">Du</label><input type="date" value="${rhStatsStart||getTodayISO()}" max="${getTodayISO()}" onchange="rhStatsStart=this.value; nav('rh-synthese')"></div>
+        <div class="field" style="flex:1;margin:0;"><label style="font-size:10px;">Au</label><input type="date" value="${rhStatsEnd||getTodayISO()}" max="${getTodayISO()}" onchange="rhStatsEnd=this.value; nav('rh-synthese')"></div>
+      </div>` : ''}
+      <div style="margin-top:8px;"><select onchange="rhStatsEmpId=this.value||null; nav('rh-synthese')">
+        <option value="">Tous les employés</option>
+        ${emps.map(([id,e]) => `<option value="${id}" ${rhStatsEmpId===id?'selected':''}>${esc(e.nom)}</option>`).join('')}
+      </select></div>
+      <p style="font-size:10.5px;color:var(--ink-faint);margin:8px 0 0;">Période : ${rhStatsPeriodLabel()}</p>
+      ${(currentUser.role==='admin' && rhStatsPeriod==='mois') ? `<button class="btn btn-primary" style="width:100%;margin-top:8px;" onclick="exportRHReport('${rhMonthKey||currentMonthKey()}')">${ICONS.idBadge} Télécharger le rapport (Excel, mois en cours)</button>` : ''}
+    </div>
+
+    ${!rhStatsEmpId ? rhStatsGlobalHTML(emps, start, end) : rhStatsEmployeeHTML(rhStatsEmpId, start, end)}
+  `;
+}
+
+// --- Vue "Tous les employés" : totaux d'ensemble + tableau compact un par un ---
+function rhStatsGlobalHTML(emps, start, end){
+  if(emps.length===0) return `<div class="card">${buildEmptyState("Aucun employé actif")}</div>`;
+  const rows = emps.map(([id,e]) => ({id, e, s: computeStatsForRange(id, start, end)}));
+  const tot = rows.reduce((acc,r) => ({
+    present: acc.present + (r.s.counts.present||0),
+    justif: acc.justif + r.s.absencesJustifiees,
+    nonJustif: acc.nonJustif + r.s.absencesNonJustifiees,
+    retard: acc.retard + r.s.joursRetard,
+    auth: acc.auth + r.s.nbAutorisations,
+    heures: acc.heures + r.s.heuresTravaillees
+  }), {present:0, justif:0, nonJustif:0, retard:0, auth:0, heures:0});
+  return `
+    <div class="kpi-mini-grid" style="grid-template-columns:repeat(3,1fr);">
+      <div class="kpi-mini tint-green"><div class="kpi-mini-val">${tot.present}</div><div class="kpi-mini-lbl">Présences (total)</div></div>
+      <div class="kpi-mini"><div class="kpi-mini-val">${tot.retard}</div><div class="kpi-mini-lbl">Jours en retard</div></div>
+      <div class="kpi-mini tint-red"><div class="kpi-mini-val">${tot.justif+tot.nonJustif}</div><div class="kpi-mini-lbl">Absences (total)</div></div>
+    </div>
+    <div class="kpi-mini-grid" style="grid-template-columns:repeat(3,1fr);">
+      <div class="kpi-mini"><div class="kpi-mini-val">${tot.auth}</div><div class="kpi-mini-lbl">Autorisations</div></div>
+      <div class="kpi-mini tint-gold"><div class="kpi-mini-val">${tot.heures.toFixed(1)}h</div><div class="kpi-mini-lbl">Heures travaillées</div></div>
+      <div class="kpi-mini"><div class="kpi-mini-val">${emps.length>0?Math.round(tot.present/(emps.length*Math.max(1,rows[0]?rows[0].s.days.length:1))*100):0}%</div><div class="kpi-mini-lbl">Taux présence moy.</div></div>
     </div>
     <div class="card">
-      ${emps.length===0 ? buildEmptyState("Aucun employé actif") : emps.map(([id,e]) => {
-        const s = computeMonthlyStats(id, monthKey);
-        return `
-        <div class="session-row" style="cursor:pointer;flex-direction:column;align-items:stretch;gap:4px;" onclick="rhFicheEmpId='${id}'; nav('rh-fiche')">
+      <h3 style="margin-top:0;font-size:13px;">Détail par employé</h3>
+      ${rows.sort((a,b)=>(a.e.nom||'').localeCompare(b.e.nom||'')).map(r => `
+        <div class="session-row" style="cursor:pointer;flex-direction:column;align-items:stretch;gap:4px;" onclick="rhFicheEmpId='${r.id}'; nav('rh-fiche')">
           <div style="display:flex;justify-content:space-between;align-items:center;">
-            <b style="font-size:13px;">${esc(e.nom)}</b>
-            <span style="font-family:var(--mono);font-weight:800;font-size:13px;color:${s.ecart==null?'inherit':(s.ecart>=0?'var(--good)':'var(--bad)')};">${s.heuresTravaillees.toFixed(1)}h${s.ecart!=null?` (${s.ecart>=0?'+':''}${s.ecart.toFixed(1)})`:''}</span>
+            <b style="font-size:13px;">${esc(r.e.nom)}</b>
+            <span style="font-family:var(--mono);font-weight:800;font-size:13px;">${r.s.heuresTravaillees.toFixed(1)}h</span>
           </div>
-          <div style="font-size:10.5px;color:var(--ink-soft);">Présences ${s.counts.present||0} · Retards ${s.joursRetard} · Autorisations ${s.nbAutorisations} · Abs. justif. ${s.absencesJustifiees} · Abs. non justif. ${s.absencesNonJustifiees}</div>
+          <div style="font-size:10.5px;color:var(--ink-soft);">Présences ${r.s.counts.present||0} · Retards ${r.s.joursRetard} · Autorisations ${r.s.nbAutorisations} · Abs. justif. ${r.s.absencesJustifiees} · Abs. non justif. ${r.s.absencesNonJustifiees}</div>
         </div>
-      `;}).join('')}
+      `).join('')}
+    </div>
+  `;
+}
+
+// --- Vue "un employé précis" : ses stats détaillées sur la période choisie ---
+function rhStatsEmployeeHTML(empId, start, end){
+  const emps = getEmployees();
+  const e = emps[empId];
+  if(!e) return `<div class="card">${buildEmptyState("Employé introuvable")}</div>`;
+  const s = computeStatsForRange(empId, start, end);
+  const c = s.counts;
+  return `
+    <div class="card">
+      <div class="flex-header" style="margin-bottom:6px;"><h3 style="margin:0;">${esc(e.nom)}</h3><button class="btn btn-ghost" style="padding:5px 10px;font-size:11.5px;" onclick="rhFicheEmpId='${empId}'; nav('rh-fiche')">Fiche complète</button></div>
+      <div class="kpi-mini-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:8px;">
+        <div class="kpi-mini tint-green"><div class="kpi-mini-val">${c.present||0}</div><div class="kpi-mini-lbl">Présences</div></div>
+        <div class="kpi-mini tint-red"><div class="kpi-mini-val">${s.absencesJustifiees}</div><div class="kpi-mini-lbl">Abs. justifiées</div></div>
+        <div class="kpi-mini tint-red"><div class="kpi-mini-val">${s.absencesNonJustifiees}</div><div class="kpi-mini-lbl">Abs. non justif.</div></div>
+        <div class="kpi-mini"><div class="kpi-mini-val">${s.joursRetard}</div><div class="kpi-mini-lbl">Jours en retard</div></div>
+        <div class="kpi-mini"><div class="kpi-mini-val">${s.nbAutorisations}</div><div class="kpi-mini-lbl">Autorisations</div></div>
+        <div class="kpi-mini tint-gold"><div class="kpi-mini-val">${c.conge||0}</div><div class="kpi-mini-lbl">Congés</div></div>
+      </div>
+      <div class="kpi-grid">
+        <div class="kpi"><div class="label">Heures travaillées</div><div class="value">${s.heuresTravaillees.toFixed(1)} h</div></div>
+        <div class="kpi"><div class="label">Retards / autorisations déduits</div><div class="value">−${(s.retardH+s.autorisationH).toFixed(1)} h</div></div>
+      </div>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0;font-size:13px;">Historique de la période</h3>
+      <div style="max-height:340px;overflow-y:auto;">
+        ${s.days.filter(d=>d.source).length===0 ? buildEmptyState("Aucune saisie sur cette période") : s.days.filter(d=>d.source).reverse().map(d => `
+          <div class="session-row" style="padding:7px 0;flex-direction:column;align-items:stretch;gap:3px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <div style="font-size:12.5px;">${d.dateISO.split('-').reverse().join('/')}</div>
+              ${d.source==='periode'
+                ? `<span class="hour-rend ${ABSENCE_TYPES[d.type].cls}" style="font-size:11px;">${ABSENCE_TYPES[d.type].label}</span>`
+                : `<span class="hour-rend ${ATT_STATUS[d.status]?ATT_STATUS[d.status].cls:''}" style="font-size:11px;">${ATT_STATUS[d.status]?ATT_STATUS[d.status].label:d.status}</span>`}
+            </div>
+            ${d.status==='present' && (d.in || d.retard>0 || d.autorisationTotal>0) ? `
+            <div style="font-size:10.5px;color:var(--ink-soft);">
+              ${d.in?'Arrivée '+d.in:''}${d.retard>0?' · Retard '+fmtH(d.retard):''}${d.autorisationTotal>0?' · Autorisation(s) −'+fmtH(d.autorisationTotal):''}
+            </div>` : ''}
+          </div>
+        `).join('')}
+      </div>
     </div>
   `;
 }
