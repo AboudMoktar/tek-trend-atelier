@@ -697,7 +697,41 @@ let mySessionId = null;
 let heartbeatTimer = null;
 
 // Variables Globales
-function getOps() { return getJSON('ops', ["Hela", "Marwa", "Mabrouka", "Wahida"]); }
+// --- Historique des postes opératrices (op1..op4) ---
+// Chaque poste conserve la liste chronologique de qui l'a occupé, avec la date
+// à partir de laquelle. Une donnée déjà enregistrée pour une date passée
+// n'est JAMAIS réécrite : on consulte l'historique pour savoir qui occupait
+// le poste ce jour-là, au lieu d'utiliser un nom "actuel" unique.
+// Format : { op1: [{nom, dateDebut, actif}, ...], op2: [...], ... }
+function getOpsHistoryRaw(){ return getJSON('ops_history', null); }
+function saveOpsHistory(hist){ setJSON('ops_history', hist); }
+function getOpsHistory(){
+  const raw = getOpsHistoryRaw();
+  if(raw) return raw;
+  // Migration automatique et unique : les 4 noms déjà configurés deviennent le
+  // premier (et seul) épisode de chaque poste, valide depuis toujours — aucune
+  // donnée existante n'est donc modifiée par l'arrivée de cette fonctionnalité.
+  const legacy = getJSON('ops', ["Hela", "Marwa", "Mabrouka", "Wahida"]);
+  const migrated = {};
+  OP_KEYS.forEach((k,i) => { migrated[k] = [{nom: legacy[i], dateDebut: '2000-01-01', actif: true}]; });
+  saveOpsHistory(migrated);
+  return migrated;
+}
+// Nom du poste opIdx (0-3) à la date donnée, ou null si poste inactif/vacant ce jour-là.
+function getOpNameForDate(opIdx, dateISO){
+  const hist = getOpsHistory();
+  const episodes = (hist[OP_KEYS[opIdx]]||[]).filter(e => e.dateDebut <= dateISO);
+  if(episodes.length===0) return null;
+  const latest = episodes.reduce((a,b) => a.dateDebut > b.dateDebut ? a : b);
+  return latest.actif ? latest.nom : null;
+}
+// Les 4 noms à une date donnée (placeholder si poste vacant ce jour-là).
+function getOpsForDate(dateISO){
+  return OP_KEYS.map((k,i) => getOpNameForDate(i, dateISO) || '(poste vacant)');
+}
+// Le poste opIdx est-il actif (occupé) à cette date ?
+function isOpActiveOnDate(opIdx, dateISO){ return getOpNameForDate(opIdx, dateISO) !== null; }
+function getOps() { return getOpsForDate(getTodayISO()); }
 function getObjHoraireOp() { return getJSON('obj_horaire_op', 20); } // pièces/heure/opératrice (réf: 3 min/pièce)
 
 // Le module RH (Personnel, Présence, Base mensuelle...) est chargé séparément
@@ -760,9 +794,11 @@ function getActiveOpCount(h, dayData){
   return OP_KEYS.filter((k, idx) => {
     const val = dayData.hours[h][k];
     if(isAbsentMark(val)) return false; // saisie manuelle explicite (ABS...) = toujours prioritaire
-    if((val===undefined || val===null || String(val).trim()==='') && typeof rhSlotExcluded === 'function'){
+    if(val!==undefined && val!==null && String(val).trim()!=='') return true; // chiffre saisi = pleinement comptée
+    if(!isOpActiveOnDate(idx, dateISO)) return false; // poste inactif/vacant à cette date
+    if(typeof rhSlotExcluded === 'function'){
       if(slotInfo === undefined) slotInfo = getSlotsForDate(dateISO).find(s=>s.label===h) || null;
-      if(slotInfo && rhSlotExcluded(getOps()[idx], dateISO, slotInfo.start, slotInfo.end)) return false;
+      if(slotInfo && rhSlotExcluded(getOpNameForDate(idx, dateISO), dateISO, slotInfo.start, slotInfo.end)) return false;
     }
     return true;
   }).length;
@@ -779,10 +815,11 @@ function getHourTarget(h, dayData) {
     const val = dayData.hours[h][k];
     if(isAbsentMark(val)){ return; } // saisie manuelle explicite (ABS...) = toujours prioritaire, fraction 0
     if(val!==undefined && val!==null && String(val).trim()!==''){ sumFraction += 1; return; } // chiffre saisi = pleinement comptée
+    if(!isOpActiveOnDate(idx, dateISO)) return; // poste inactif/vacant à cette date -> fraction 0
     // case vide -> fraction proportionnelle d'après le statut RH du jour (1 si aucune donnée RH)
     if(typeof rhSlotFraction === 'function'){
       if(slotInfo === undefined) slotInfo = getSlotsForDate(dateISO).find(s=>s.label===h) || null;
-      sumFraction += slotInfo ? rhSlotFraction(getOps()[idx], dateISO, slotInfo.start, slotInfo.end) : 1;
+      sumFraction += slotInfo ? rhSlotFraction(getOpNameForDate(idx, dateISO), dateISO, slotInfo.start, slotInfo.end) : 1;
     } else {
       sumFraction += 1;
     }
@@ -1469,7 +1506,7 @@ window.toggleValidation = (date, status) => {
 
 function renderSaisie(container, date){
   const data = getDay(date); const totals = computeTotals(data);
-  const ops = getOps(); const obj = getObjForDay(data);
+  const ops = getOpsForDate(date); const obj = getObjForDay(data);
   const dayHours = getHoursForDate(date);
   const dayHoursSlots = getSlotsForDate(date);
   const rhSummary = typeof rhDaySummaryForOps === 'function' ? rhDaySummaryForOps(ops, date) : [];
@@ -1612,7 +1649,7 @@ window.editPastDate = (date) => { saisieDate = date; nav('saisie'); };
 window.loadHist = () => { histDate = document.getElementById('hist-date').value; nav('historique'); };
 
 function renderHistorique(container){
-  const data = getDay(histDate); const totals = computeTotals(data); const ops = getOps();
+  const data = getDay(histDate); const totals = computeTotals(data); const ops = getOpsForDate(histDate);
   const dayHours = getHoursForDate(histDate);
   let rows = ''; let cumulGeneral = 0;
   
@@ -1794,10 +1831,21 @@ function renderStats(container){
   const rendLabelsDyn = activeDays.length ? activeDays.map(d=>shortDateFR(d.iso)) : ['-'];
   const rendValsDyn = activeDays.length ? activeDays.map(d=>Math.round(d.rend)) : [0];
 
-  const ops = getOps();
-  const perOpTotals = OP_KEYS.map((k,i) => activeDays.reduce((s,d)=>s+d.perOp[i], 0));
-  const totalAll = perOpTotals.reduce((s,v)=>s+v,0);
-  const ranking = ops.map((name,i)=>({name, total:perOpTotals[i]})).sort((a,b)=>b.total-a.total);
+  // Le classement attribue chaque jour la production au nom qui occupait
+  // réellement le poste CE jour-là (jamais le nom actuel/le plus récent) —
+  // si quelqu'un a remplacé une autre en cours de période, les deux
+  // apparaissent séparément avec leur propre total.
+  const perNameTotals = {};
+  activeDays.forEach(d => {
+    const opsForDay = getOpsForDate(d.iso);
+    OP_KEYS.forEach((k,i) => {
+      const name = opsForDay[i];
+      if(name === '(poste vacant)') return;
+      perNameTotals[name] = (perNameTotals[name]||0) + d.perOp[i];
+    });
+  });
+  const totalAll = Object.values(perNameTotals).reduce((s,v)=>s+v,0);
+  const ranking = Object.entries(perNameTotals).map(([name,total])=>({name,total})).sort((a,b)=>b.total-a.total);
 
   const avgRend = activeDays.length ? activeDays.reduce((s,d)=>s+d.rend,0)/activeDays.length : 0;
   const bestDay = activeDays.length ? activeDays.reduce((a,b)=>b.rend>a.rend?b:a) : null;
@@ -1900,22 +1948,72 @@ function renderParams(container){
       <div style="font-size:11.5px;color:var(--ink-faint);margin-top:8px;">Dimanche : toujours non travaillé.</div>
       
       <hr style="border:0; border-top:1px solid var(--border); margin:24px 0;">
-      
-      <h3>Noms des Opératrices</h3>
-      <p style="font-size:12px; color:var(--ink-soft); margin-bottom:15px;">La modification s'applique instantanément partout, y compris dans l'historique.</p>
-      
-      <div class="kpi-grid">
-        ${OP_KEYS.map((k, i) => `
-          <div class="field">
-            <label>Poste ${i+1}</label>
-            <input type="text" id="setting_op${i}" value="${ops[i]}" style="font-weight:bold;">
+
+      <h3>Postes opératrices</h3>
+      <p style="font-size:12px; color:var(--ink-soft); margin-bottom:15px;">Chaque poste garde son historique : remplacer ou désactiver un poste ne change <b>jamais</b> les données déjà enregistrées pour les jours passés — seuls les jours à partir de la date choisie sont concernés.</p>
+
+      ${OP_KEYS.map((k, i) => {
+        const hist = (getOpsHistory()[k]||[]).slice().sort((a,b)=>b.dateDebut.localeCompare(a.dateDebut));
+        const current = hist[0];
+        return `
+        <div class="card" style="background:var(--surface-2);margin-bottom:10px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <div>
+              <div style="font-size:10.5px;color:var(--ink-faint);font-weight:700;">POSTE ${i+1}</div>
+              <div style="font-weight:800;font-size:15px;">${current && current.actif ? esc(current.nom) : '(poste vacant)'}</div>
+              ${current ? `<div style="font-size:11px;color:var(--ink-soft);">Depuis le ${current.dateDebut.split('-').reverse().join('/')}</div>` : ''}
+            </div>
+            <button class="btn btn-ghost" style="padding:6px 10px;font-size:11.5px;" onclick="toggleOpHistoryPanel(${i})">Historique (${hist.length})</button>
           </div>
-        `).join('')}
-      </div>
-      
+          <div id="op-hist-panel-${i}" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--border-soft);">
+            ${hist.map(e => `<div style="font-size:11.5px;color:var(--ink-soft);padding:3px 0;">${e.dateDebut.split('-').reverse().join('/')} → ${e.actif ? esc(e.nom) : 'poste rendu inactif'}</div>`).join('')}
+          </div>
+          <div style="display:flex;gap:8px;margin-top:10px;">
+            <input id="op-new-name-${i}" placeholder="Nom de la remplaçante" style="flex:1;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;">
+            <input type="date" id="op-new-date-${i}" value="${getTodayISO()}" style="max-width:140px;">
+          </div>
+          <div style="display:flex;gap:8px;margin-top:8px;">
+            <button class="btn btn-primary" style="flex:1;padding:8px;font-size:12px;" onclick="addOpEpisode(${i})">Enregistrer le remplacement</button>
+            <button class="btn btn-warning" style="padding:8px 12px;font-size:12px;" onclick="setOpInactive(${i})">Marquer inactif</button>
+          </div>
+        </div>
+        `;
+      }).join('')}
+
       <button class="btn btn-primary btn-block" style="margin-top:15px;" onclick="saveParams()">Enregistrer les paramètres</button>
     </div>
   `;
+
+  window.toggleOpHistoryPanel = (i) => {
+    const el = document.getElementById('op-hist-panel-'+i);
+    if(el) el.style.display = (el.style.display==='none' || !el.style.display) ? 'block' : 'none';
+  };
+  window.addOpEpisode = (i) => {
+    const name = document.getElementById('op-new-name-'+i).value.trim();
+    const date = document.getElementById('op-new-date-'+i).value;
+    if(!name){ showToast('Indiquez le nom de la remplaçante'); return; }
+    if(!date){ showToast('Indiquez une date'); return; }
+    const hist = getOpsHistory();
+    const k = OP_KEYS[i];
+    const latest = (hist[k]||[]).reduce((a,b)=> (!a || b.dateDebut > a.dateDebut) ? b : a, null);
+    if(latest && date <= latest.dateDebut){ showToast("La date doit être postérieure au "+latest.dateDebut.split('-').reverse().join('/')+" (dernier changement)."); return; }
+    hist[k] = [...(hist[k]||[]), {nom:name, dateDebut:date, actif:true}];
+    saveOpsHistory(hist);
+    showToast('Poste mis à jour à partir du '+date.split('-').reverse().join('/'));
+    nav('params');
+  };
+  window.setOpInactive = (i) => {
+    const date = document.getElementById('op-new-date-'+i).value || getTodayISO();
+    const hist = getOpsHistory();
+    const k = OP_KEYS[i];
+    const latest = (hist[k]||[]).reduce((a,b)=> (!a || b.dateDebut > a.dateDebut) ? b : a, null);
+    if(latest && date <= latest.dateDebut){ showToast("La date doit être postérieure au "+latest.dateDebut.split('-').reverse().join('/')+" (dernier changement)."); return; }
+    if(!confirm(`Marquer le Poste ${i+1} comme inactif à partir du ${date.split('-').reverse().join('/')} ?\n\nLes données déjà saisies pour les jours passés restent inchangées.`)) return;
+    hist[k] = [...(hist[k]||[]), {nom:null, dateDebut:date, actif:false}];
+    saveOpsHistory(hist);
+    showToast('Poste marqué inactif à partir du '+date.split('-').reverse().join('/'));
+    nav('params');
+  };
   
   window.saveParams = () => {
     let v = parseInt(document.getElementById('setting_rate').value);
@@ -1938,14 +2036,7 @@ function renderParams(container){
       weekdayStart: wstart, weekdayEnd: wend, pauseStart: pstart||null, pauseEnd: pend||null,
       saturdayEnabled: satEnabled, saturdayStart: sstart, saturdayEnd: send
     });
-    
-    let newOps = [
-      document.getElementById('setting_op0').value.trim() || "Opératrice 1",
-      document.getElementById('setting_op1').value.trim() || "Opératrice 2",
-      document.getElementById('setting_op2').value.trim() || "Opératrice 3",
-      document.getElementById('setting_op3').value.trim() || "Opératrice 4"
-    ];
-    setJSON('ops', newOps);
+
     showToast("Paramètres appliqués avec succès !");
     nav('params');
   };
@@ -2356,7 +2447,7 @@ window.exportPeriodExcel = async () => {
   }
   if(list.length === 0){ showToast("Aucune donnée sur cette période."); return; }
 
-  const ops = getOps();
+  const ops = getOpsForDate(endISO); // noms à la fin de la période exportée (plus pertinent que "aujourd'hui")
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'TEK-TREND';
   workbook.created = new Date();
@@ -2420,9 +2511,17 @@ window.exportPeriodExcel = async () => {
   const h2 = s2.getRow(DATA_START_ROW);
   h2.values = ['Classement', 'Opératrice', 'Total pièces', 'Part'];
   h2.fill = headerFill; h2.font = headerFont;
-  const perOpTotal = OP_KEYS.map(k => list.reduce((s,d)=>s+d.totals[k],0));
-  const grandTotal = perOpTotal.reduce((s,v)=>s+v,0);
-  const ranking = ops.map((name,i)=>({name, total: perOpTotal[i]})).sort((a,b)=>b.total-a.total);
+  const perNameTotalsExport = {};
+  list.forEach(d => {
+    const opsForDay = getOpsForDate(d.iso);
+    OP_KEYS.forEach((k,i) => {
+      const name = opsForDay[i];
+      if(name === '(poste vacant)') return;
+      perNameTotalsExport[name] = (perNameTotalsExport[name]||0) + (d.totals[k]||0);
+    });
+  });
+  const grandTotal = Object.values(perNameTotalsExport).reduce((s,v)=>s+v,0);
+  const ranking = Object.entries(perNameTotalsExport).map(([name,total])=>({name,total})).sort((a,b)=>b.total-a.total);
   ranking.forEach((r,i) => {
     s2.addRow({ rank:i+1, nom:r.name, total:r.total, part: grandTotal>0 ? Math.round(r.total/grandTotal*100)+'%' : '0%' });
   });
@@ -2465,7 +2564,7 @@ window.exportPeriodExcel = async () => {
 
 // --- EXPORT CSV ---
 window.exportCSV = () => {
-  const data = getDay(histDate); const totals = computeTotals(data); const ops = getOps(); const obj = getObjForDay(data);
+  const data = getDay(histDate); const totals = computeTotals(data); const ops = getOpsForDate(histDate); const obj = getObjForDay(data);
   const dayHours = getHoursForDate(histDate);
   let csv = `Horaires;${ops[0]};${ops[1]};${ops[2]};${ops[3]};Total Heure;Total Cumule;Observations\n`;
   let cumul = 0;
