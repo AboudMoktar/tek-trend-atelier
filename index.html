@@ -531,6 +531,7 @@ function attachFirebaseDataListeners(){
       const composer = document.getElementById('msg-text');
       if(!composer || composer.value.trim() === '') nav('messages');
     }
+    else if(document.activeElement && ['INPUT','SELECT','TEXTAREA'].includes(document.activeElement.tagName)){ /* un champ est en cours d'édition (formulaire RH/GADH/autre ouvert) : ne pas le redessiner sous la personne */ }
     else { nav(activeTab); }
   }, function(err){
     console.error('Erreur Firebase (lecture) :', err);
