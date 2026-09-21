@@ -417,6 +417,7 @@ const ICONS = {
   chevronDown: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>',
   idBadge: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M15 8h3M15 12h3M7 16h10"/></svg>',
   switchModule: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
+  gadh: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 21V8l6-4 6 4v13"/><path d="M6 21h12M10 21v-5h4v5M9 11h.01M15 11h.01M9 15h.01M15 15h.01"/></svg>',
   clock: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
   plane: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.4.7c-.3.5-.1 1.1.4 1.4L9 12l-2 3H4l-1 1.5 3.5 1.5L8 21.5 9.5 20.5v-3l3-2 3.6 5.3c.3.4.9.6 1.4.4l.7-.4c.4-.2.6-.6.5-1.1z"/></svg>',
   export: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
@@ -893,8 +894,10 @@ function startSessionAndRender(){
   enterApp();
 }
 function canAccessRH(){ return currentUser && (currentUser.role === 'admin' || currentUser.role === 'viewer'); }
+function canAccessGADH(){ return currentUser && (currentUser.role === 'admin' || currentUser.role === 'viewer'); }
 function enterApp(){
-  if(!canAccessRH()){ activeModule = 'rendement'; renderShell(); }
+  const hasChoice = canAccessRH() || canAccessGADH();
+  if(!hasChoice){ activeModule = 'rendement'; renderShell(); }
   else if(activeModule){ renderShell(); }
   else { renderModuleSelect(); }
 }
@@ -915,10 +918,14 @@ function renderModuleSelect(){
             <span style="width:24px;height:24px;flex-shrink:0;">${ICONS.dashboard}</span>
             <span><span style="display:block;">Gestion Rendement</span><span style="display:block;font-size:11px;font-weight:500;opacity:.8;">Production, saisie, statistiques</span></span>
           </button>
-          <button class="btn btn-primary" style="padding:16px;font-size:15px;justify-content:flex-start;gap:12px;text-align:left;background:var(--good);" onclick="chooseModule('rh')">
+          ${canAccessRH() ? `<button class="btn btn-primary" style="padding:16px;font-size:15px;justify-content:flex-start;gap:12px;text-align:left;background:var(--good);" onclick="chooseModule('rh')">
             <span style="width:24px;height:24px;flex-shrink:0;">${ICONS.idBadge}</span>
             <span><span style="display:block;">Gestion Ressources Humaines</span><span style="display:block;font-size:11px;font-weight:500;opacity:.8;">Employés, pointage, congés</span></span>
-          </button>
+          </button>` : ''}
+          ${canAccessGADH() ? `<button class="btn btn-primary" style="padding:16px;font-size:15px;justify-content:flex-start;gap:12px;text-align:left;background:#8E2A5B;" onclick="chooseModule('gadh')">
+            <span style="width:24px;height:24px;flex-shrink:0;">${ICONS.gadh}</span>
+            <span><span style="display:block;">GADH Tunisia</span><span style="display:block;font-size:11px;font-weight:500;opacity:.8;">Production, personnel, pointage</span></span>
+          </button>` : ''}
         </div>
         <button class="btn btn-ghost" style="width:100%;margin-top:18px;" onclick="logout()">Déconnexion</button>
       </div>
@@ -1055,6 +1062,17 @@ function navItems(){
     ];
     return items.filter(i=>i.show);
   }
+  if(activeModule === 'gadh'){
+    const items = [
+      {tab:'gadh-dashboard', label:'Dashboard', icon:ICONS.dashboard, show:true},
+      {tab:'gadh-production', label:'Production', icon:ICONS.saisie, show:true},
+      {tab:'gadh-rh', label:'RH', icon:ICONS.idBadge, show:true},
+      {tab:'gadh-historique', label:'Historique', icon:ICONS.historique, show:true},
+      {tab:'gadh-stats', label:'Stats', icon:ICONS.stats, show:true},
+      {tab:'gadh-parametres', label:'Paramètres', icon:ICONS.params, show:currentUser.role==='admin'}
+    ];
+    return items.filter(i=>i.show);
+  }
   const items = [
     {tab:'dashboard', label:'Tableau', icon:ICONS.dashboard, show:true},
     {tab:'saisie', label:'Saisie', icon:ICONS.saisie, show:canSaisie(currentUser.role), onclick:"saisieDate = getTodayISO(); nav('saisie')"},
@@ -1080,7 +1098,7 @@ function renderShell(){
       <nav>${items.map(i=>navBtn(i,'')).join('')}</nav>
       <div class="side-sep"></div>
       <nav>
-        ${canAccessRH() ? `<button onclick="switchModule()">${ICONS.switchModule}<span>Changer de module</span></button>` : ''}
+        ${(canAccessRH()||canAccessGADH()) ? `<button onclick="switchModule()">${ICONS.switchModule}<span>Changer de module</span></button>` : ''}
         <button onclick="logout()" style="color:var(--bad);">${ICONS.logout}<span>Déconnexion</span></button>
       </nav>
     </div>
@@ -1099,7 +1117,7 @@ function renderShell(){
           <span class="uname">${currentUser.nom}</span>
           <span class="user-chevron">${ICONS.chevronDown}</span>
           <span class="role">${roleLabel(currentUser.role)}</span>
-          ${canAccessRH() ? `<button onclick="switchModule()" title="Changer de module">${ICONS.switchModule}</button>` : ''}
+          ${(canAccessRH()||canAccessGADH()) ? `<button onclick="switchModule()" title="Changer de module">${ICONS.switchModule}</button>` : ''}
           <button onclick="logout()" title="Déconnexion">${ICONS.logout}</button>
         </div>
       </div>
@@ -1110,7 +1128,7 @@ function renderShell(){
     </div>
   `;
   setSyncBadge(firebaseConfigured() ? (firebaseReady ? 'ok' : 'connecting') : 'off');
-  nav(activeModule === 'rh' ? 'rh-dashboard' : 'dashboard');
+  nav(activeModule === 'rh' ? 'rh-dashboard' : (activeModule === 'gadh' ? 'gadh-dashboard' : 'dashboard'));
 }
 
 function nav(tab){
@@ -1133,6 +1151,12 @@ function nav(tab){
   else if(tab === 'rh-synthese'){ renderRHSynthese(rhSectionContainer(main,'Synthèse mensuelle')); }
   else if(tab === 'rh-parametres'){ renderRHParametres(rhSectionContainer(main,'Paramètres RH')); }
   else if(tab === 'rh-instructions'){ renderRHInstructions(rhSectionContainer(main,'Instructions')); }
+  else if(tab === 'gadh-dashboard'){ renderGadhDashboard(gadhSectionContainer(main,'Dashboard')); }
+  else if(tab === 'gadh-production'){ renderGadhProduction(gadhSectionContainer(main,'Production')); }
+  else if(tab === 'gadh-rh'){ renderGadhRH(gadhSectionContainer(main,'RH')); }
+  else if(tab === 'gadh-historique'){ renderGadhHistorique(gadhSectionContainer(main,'Historique')); }
+  else if(tab === 'gadh-stats'){ renderGadhStats(gadhSectionContainer(main,'Statistiques')); }
+  else if(tab === 'gadh-parametres'){ renderGadhParametres(gadhSectionContainer(main,'Paramètres')); }
   updateNavBadges();
 }
 
@@ -2585,6 +2609,7 @@ window.exportCSV = () => {
 window.onload = init;
 </script>
 <script src="./rh-module.js"></script>
+<script src="./gadh-module.js"></script>
 <script>
 if('serviceWorker' in navigator){
   window.addEventListener('load', function(){
