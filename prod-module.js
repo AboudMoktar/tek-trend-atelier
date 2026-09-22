@@ -111,7 +111,9 @@ function renderProdChainTek(main){
 
 // --- Commandes (sélection des références, puis quantité par taille) ---
 let prodNewCmdRefs = [];
-let prodNewCmdNumero = '';
+let prodNewCmdNom = '';
+let prodNewCmdRef = '';
+let prodNewCmdAnnee = new Date().getFullYear();
 let prodNewCmdQty = {};
 function renderProdCommandes(container){
   const canEdit = canEditProdTek();
@@ -127,7 +129,7 @@ function renderProdCommandes(container){
         const total = Object.values(c.lignes||{}).reduce((s,l)=>s+prodLigneTotal(l),0);
         return `
         <div class="session-row" style="cursor:pointer;flex-direction:column;align-items:stretch;gap:3px;" onclick="prodSuiviCmdId='${id}'; prodTekSubTab='suivi'; renderProdChainTek(document.getElementById('main'))">
-          <div style="display:flex;justify-content:space-between;"><b style="font-size:13px;">${esc(c.numero)}</b><span style="font-size:11px;color:var(--ink-faint);">${(c.dateCreation||'').split('-').reverse().join('/')}</span></div>
+          <div style="display:flex;justify-content:space-between;"><b style="font-size:13px;">${esc(c.nom)} <span style="font-weight:600;color:var(--ink-soft);">— ${esc(c.ref)}</span></b><span style="font-size:11px;color:var(--ink-faint);">${c.annee}</span></div>
           <div style="font-size:11px;color:var(--ink-soft);">${nbLignes} référence${nbLignes>1?'s':''} · ${total} pièces</div>
         </div>`;
       }).join('')}
@@ -135,7 +137,9 @@ function renderProdCommandes(container){
   `;
   window.showAddProdCommandeForm = () => {
     prodNewCmdRefs = [];
-    prodNewCmdNumero = '';
+    prodNewCmdNom = '';
+    prodNewCmdRef = '';
+    prodNewCmdAnnee = new Date().getFullYear();
     prodNewCmdQty = {};
     renderProdCommandeForm();
   };
@@ -145,7 +149,12 @@ function renderProdCommandes(container){
     zone.innerHTML = `
       <div class="card" style="background:var(--surface-2);">
         <h3 style="margin-top:0;">Nouvelle commande</h3>
-        <div class="field"><label>N° de commande</label><input id="pc-numero" value="${esc(prodNewCmdNumero)}" oninput="prodNewCmdNumero=this.value" placeholder="Ex : PK202609-1"></div>
+        <div class="field"><label>Nom (ex : mois)</label><input id="pc-nom" value="${esc(prodNewCmdNom)}" oninput="prodNewCmdNom=this.value" placeholder="Ex : OCTOBRE"></div>
+        <div style="display:flex;gap:8px;">
+          <div class="field" style="flex:1.4;"><label>Référence / LOT</label><input id="pc-ref" value="${esc(prodNewCmdRef)}" oninput="prodNewCmdRef=this.value" placeholder="Ex : PK202610-1"></div>
+          <div class="field" style="flex:1;"><label>Année</label><input id="pc-annee" type="number" value="${prodNewCmdAnnee}" oninput="prodNewCmdAnnee=this.value" placeholder="2026"></div>
+        </div>
+        <p style="font-size:10.5px;color:var(--ink-faint);margin:0 0 6px;">Plusieurs commandes peuvent partager le même nom (ex. deux commandes "OCTOBRE" pour deux clients différents) — c'est la référence/LOT qui les distingue.</p>
         <div style="font-size:11px;font-weight:700;color:var(--ink-faint);margin:10px 0 6px;">RÉFÉRENCES CONCERNÉES</div>
         <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">
           ${refs.map(([k,r]) => `<button class="btn ${prodNewCmdRefs.includes(k)?'btn-primary':'btn-ghost'}" style="padding:6px 10px;font-size:11px;" onclick="toggleProdNewCmdRef('${k}')">${esc(prodRefLabel(r.famille,r.variante))}</button>`).join('')}
@@ -177,8 +186,11 @@ function renderProdCommandes(container){
     prodNewCmdQty[refKey][taille] = val;
   };
   window.saveProdCommandeForm = () => {
-    const numero = prodNewCmdNumero.trim();
-    if(!numero){ showToast('Le numéro de commande est obligatoire'); return; }
+    const nom = prodNewCmdNom.trim();
+    const ref = prodNewCmdRef.trim();
+    const annee = parseInt(prodNewCmdAnnee) || new Date().getFullYear();
+    if(!nom){ showToast('Le nom de la commande est obligatoire'); return; }
+    if(!ref){ showToast('La référence / LOT est obligatoire'); return; }
     const lignes = {};
     Object.entries(prodNewCmdQty).forEach(([rk, tailles]) => {
       Object.entries(tailles).forEach(([t, v]) => {
@@ -192,7 +204,7 @@ function renderProdCommandes(container){
     if(Object.keys(lignes).length===0){ showToast('Indiquez au moins une quantité'); return; }
     const list = getProdCommandes();
     const id = 'cmd'+Date.now()+Math.floor(Math.random()*1000);
-    list[id] = {numero, dateCreation: getTodayISO(), lignes};
+    list[id] = {nom, ref, annee, dateCreation: getTodayISO(), lignes};
     saveProdCommandes(list);
     showToast('Commande créée');
     nav('prodchain');
@@ -204,7 +216,7 @@ function prodCommandeSelector(selectedId, onchangeFn){
   const commandes = activeProdCommandes();
   return `<select onchange="${onchangeFn}(this.value)" style="width:100%;margin-bottom:10px;">
     <option value="">— Choisir une commande —</option>
-    ${commandes.map(([id,c]) => `<option value="${id}" ${selectedId===id?'selected':''}>${esc(c.numero)}</option>`).join('')}
+    ${commandes.map(([id,c]) => `<option value="${id}" ${selectedId===id?'selected':''}>${esc(c.nom)} — ${esc(c.ref)} (${c.annee})</option>`).join('')}
   </select>`;
 }
 
@@ -222,6 +234,8 @@ function renderProdSuiviScreen(container, isTek){
   if(!prodSuiviCmdId) return;
   const commande = getProdCommandes()[prodSuiviCmdId];
   if(!commande) return;
+  const headerZone = document.getElementById('prod-suivi-lignes');
+  headerZone.insertAdjacentHTML('beforebegin', `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 2px 10px;border-bottom:1px solid var(--border-soft);margin-bottom:10px;"><b style="font-size:13.5px;">${esc(commande.nom)}</b><span style="font-size:11px;color:var(--ink-faint);">LOT ${esc(commande.ref)} · ${commande.annee}</span></div>`);
   const refs = getProdReferences();
   const canEditTek = isTek && canEditProdTek();
   const canEditGadhSide = !isTek && canEditGadh();
