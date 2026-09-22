@@ -199,6 +199,8 @@ let prodNewCmdRef = '';
 let prodNewCmdAnnee = new Date().getFullYear();
 let prodNewCmdClient = 'NEOLYS';
 let prodNewCmdQty = {};
+let prodEditCmdId = null; // null = création ; sinon = édition de cette commande
+let prodShowImportZone = false;
 function renderProdCommandes(container){
   const canEdit = canEditProdTek();
   const commandes = activeProdCommandes();
@@ -214,8 +216,8 @@ function renderProdCommandes(container){
         const statut = prodStatutCommande(id);
         const av = prodCommandeAvancement(id);
         return `
-        <div class="session-row" style="cursor:pointer;flex-direction:column;align-items:stretch;gap:5px;" onclick="prodSuiviCmdId='${id}'; prodTekSubTab='suivi'; renderProdChainTek(document.getElementById('main'))">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+        <div class="session-row" style="flex-direction:column;align-items:stretch;gap:5px;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;cursor:pointer;" onclick="prodSuiviCmdId='${id}'; prodTekSubTab='suivi'; renderProdChainTek(document.getElementById('main'))">
             <div>
               <b style="font-size:13px;">${esc(c.nom)} <span style="font-weight:600;color:var(--ink-soft);">— ${esc(c.ref)}</span></b>
               <div style="font-size:10.5px;color:var(--ink-faint);">${esc(c.client||'—')} · ${c.annee}</div>
@@ -224,25 +226,43 @@ function renderProdCommandes(container){
           </div>
           <div style="font-size:11px;color:var(--ink-soft);">${nbLignes} référence${nbLignes>1?'s':''} · ${av.emballe} / ${total} pièces (${av.pct}%)</div>
           <div style="width:100%;height:5px;background:var(--border-soft);border-radius:4px;overflow:hidden;"><div style="width:${av.pct}%;height:100%;background:${av.pct>=100?'var(--good)':'#3B82F6'};"></div></div>
+          ${canEdit ? `<button class="btn btn-ghost" style="align-self:flex-start;padding:4px 9px;font-size:10.5px;" onclick="showEditProdCommandeForm('${id}')">Modifier cette commande</button>` : ''}
         </div>`;
       }).join('')}
     </div>
   `;
   window.showAddProdCommandeForm = () => {
+    prodEditCmdId = null;
     prodNewCmdRefs = [];
     prodNewCmdNom = '';
     prodNewCmdRef = '';
     prodNewCmdAnnee = new Date().getFullYear();
     prodNewCmdClient = 'NEOLYS';
     prodNewCmdQty = {};
+    prodShowImportZone = false;
     renderProdCommandeForm();
+  };
+  window.showEditProdCommandeForm = (id) => {
+    const c = getProdCommandes()[id];
+    if(!c) return;
+    prodEditCmdId = id;
+    prodNewCmdNom = c.nom || '';
+    prodNewCmdRef = c.ref || '';
+    prodNewCmdAnnee = c.annee || new Date().getFullYear();
+    prodNewCmdClient = c.client || 'NEOLYS';
+    prodNewCmdRefs = Object.keys(c.lignes||{});
+    prodNewCmdQty = {};
+    Object.entries(c.lignes||{}).forEach(([rk, ligne]) => { prodNewCmdQty[rk] = {...(ligne.tailles||{})}; });
+    prodShowImportZone = false;
+    renderProdCommandeForm();
+    document.getElementById('prod-cmd-form-zone').scrollIntoView({behavior:'smooth', block:'start'});
   };
   function renderProdCommandeForm(){
     const refs = prodRefsAllowedFor(prodNewCmdClient);
     const zone = document.getElementById('prod-cmd-form-zone');
     zone.innerHTML = `
       <div class="card" style="background:var(--surface-2);">
-        <h3 style="margin-top:0;">Nouvelle commande</h3>
+        <h3 style="margin-top:0;">${prodEditCmdId ? 'Modifier la commande' : 'Nouvelle commande'}</h3>
         <div class="field"><label>Client</label>
           <div style="display:flex;gap:8px;">
             ${PROD_CLIENTS.map(cl => `<button class="btn ${prodNewCmdClient===cl?'btn-primary':'btn-ghost'}" style="flex:1;padding:8px;" onclick="setProdNewCmdClient('${cl}')">${cl}</button>`).join('')}
@@ -255,6 +275,16 @@ function renderProdCommandes(container){
           <div class="field" style="flex:1;"><label>Année</label><input id="pc-annee" type="number" value="${prodNewCmdAnnee}" oninput="prodNewCmdAnnee=this.value" placeholder="2026"></div>
         </div>
         <p style="font-size:10.5px;color:var(--ink-faint);margin:0 0 6px;">Plusieurs commandes peuvent partager le même nom (ex. deux commandes "OCTOBRE" pour deux clients différents) — c'est la référence/LOT qui les distingue, et qui doit être unique.</p>
+
+        <button class="btn btn-ghost" style="width:100%;margin:6px 0;font-size:11.5px;" onclick="toggleProdImportZone()">${prodShowImportZone ? '▲ Masquer' : '▼'} Importer depuis un tableau (copier/coller)</button>
+        ${prodShowImportZone ? `
+        <div style="background:var(--surface);border:1.5px solid var(--border);border-radius:10px;padding:10px;margin-bottom:10px;">
+          <p style="font-size:10.5px;color:var(--ink-soft);margin:0 0 6px;">Une ligne par taille, colonnes séparées par tabulation ou virgule (copiez directement une plage Excel) :<br><code style="font-size:9.5px;">Référence&#9;Taille&#9;Quantité</code><br>Ex : <code style="font-size:9.5px;">PHARMA-HOMME / Noir&#9;XS&#9;60</code></p>
+          <textarea id="pc-import-text" rows="6" style="width:100%;font-family:monospace;font-size:11px;padding:8px;border:1.5px solid var(--border);border-radius:8px;" placeholder="Collez ici…"></textarea>
+          <button class="btn btn-primary" style="width:100%;margin-top:8px;padding:8px;font-size:12px;" onclick="runProdImport()">Analyser et remplir</button>
+          <div id="pc-import-result" style="margin-top:8px;"></div>
+        </div>` : ''}
+
         <div style="font-size:11px;font-weight:700;color:var(--ink-faint);margin:10px 0 6px;">RÉFÉRENCES CONCERNÉES</div>
         <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">
           ${refs.map(([k,r]) => `<button class="btn ${prodNewCmdRefs.includes(k)?'btn-primary':'btn-ghost'}" style="padding:6px 10px;font-size:11px;" onclick="toggleProdNewCmdRef('${k}')">${esc(prodRefLabel(r.famille,r.variante))}</button>`).join('')}
@@ -273,7 +303,7 @@ function renderProdCommandes(container){
         }).join('')}
         <div style="display:flex;gap:8px;margin-top:14px;">
           <button class="btn btn-primary" onclick="saveProdCommandeForm()">Enregistrer</button>
-          <button class="btn btn-ghost" onclick="document.getElementById('prod-cmd-form-zone').innerHTML=''">Annuler</button>
+          <button class="btn btn-ghost" onclick="prodEditCmdId=null; document.getElementById('prod-cmd-form-zone').innerHTML=''">Annuler</button>
         </div>
       </div>
     `;
@@ -292,6 +322,29 @@ function renderProdCommandes(container){
     if(!prodNewCmdQty[refKey]) prodNewCmdQty[refKey] = {};
     prodNewCmdQty[refKey][taille] = val;
   };
+  window.toggleProdImportZone = () => { prodShowImportZone = !prodShowImportZone; renderProdCommandeForm(); };
+  window.runProdImport = () => {
+    const text = document.getElementById('pc-import-text').value;
+    const result = prodParseImportText(text, prodNewCmdClient);
+    Object.entries(result.matched).forEach(([rk, tailles]) => {
+      if(!prodNewCmdRefs.includes(rk)) prodNewCmdRefs.push(rk);
+      if(!prodNewCmdQty[rk]) prodNewCmdQty[rk] = {};
+      Object.entries(tailles).forEach(([t,q]) => { prodNewCmdQty[rk][t] = q; });
+    });
+    const nbLignes = Object.values(result.matched).reduce((s,t)=>s+Object.keys(t).length, 0);
+    prodShowImportZone = false;
+    renderProdCommandeForm();
+    if(nbLignes>0) showToast(nbLignes+' ligne(s) importée(s)'+(result.errors.length?' — '+result.errors.length+' erreur(s), voir détail avant import':''));
+    if(result.errors.length>0){
+      // Ré-ouvrir la zone d'import pour montrer les erreurs si tout a échoué
+      if(nbLignes===0){
+        prodShowImportZone = true;
+        renderProdCommandeForm();
+        document.getElementById('pc-import-text').value = text;
+        document.getElementById('pc-import-result').innerHTML = `<div style="font-size:10.5px;color:var(--bad);">${result.errors.map(e=>esc(e)).join('<br>')}</div>`;
+      }
+    }
+  };
   window.saveProdCommandeForm = () => {
     const nom = prodNewCmdNom.trim();
     const ref = prodNewCmdRef.trim();
@@ -299,7 +352,7 @@ function renderProdCommandes(container){
     const client = prodNewCmdClient;
     if(!nom){ showToast('Le nom de la commande est obligatoire'); return; }
     if(!ref){ showToast('La référence / LOT est obligatoire'); return; }
-    if(!prodRefIsUnique(ref)){ showToast('Cette référence/LOT existe déjà — elle doit être unique'); return; }
+    if(!prodRefIsUnique(ref, prodEditCmdId)){ showToast('Cette référence/LOT existe déjà — elle doit être unique'); return; }
     const lignes = {};
     Object.entries(prodNewCmdQty).forEach(([rk, tailles]) => {
       Object.entries(tailles).forEach(([t, v]) => {
@@ -309,16 +362,48 @@ function renderProdCommandes(container){
           lignes[rk].tailles[t] = q;
         }
       });
-
     });
     if(Object.keys(lignes).length===0){ showToast('Indiquez au moins une quantité'); return; }
     const list = getProdCommandes();
-    const id = 'cmd'+Date.now()+Math.floor(Math.random()*1000);
-    list[id] = {nom, ref, annee, client, dateCreation: getTodayISO(), lignes};
-    saveProdCommandes(list);
-    showToast('Commande créée');
+    if(prodEditCmdId){
+      list[prodEditCmdId] = {...list[prodEditCmdId], nom, ref, annee, client, lignes};
+      saveProdCommandes(list);
+      showToast('Commande modifiée');
+    } else {
+      const id = 'cmd'+Date.now()+Math.floor(Math.random()*1000);
+      list[id] = {nom, ref, annee, client, dateCreation: getTodayISO(), lignes};
+      saveProdCommandes(list);
+      showToast('Commande créée');
+    }
+    prodEditCmdId = null;
     nav('prodchain');
   };
+}
+
+// --- Import par copier-coller : "Référence <sep> Taille <sep> Quantité" par ligne ---
+function prodParseImportText(text, client){
+  const refs = getProdReferences();
+  const refByLabel = {};
+  Object.entries(refs).forEach(([k,r]) => { refByLabel[prodRefLabel(r.famille,r.variante).toLowerCase().trim()] = k; });
+  const allowedKeys = prodRefsAllowedFor(client).map(([k])=>k);
+  const lines = (text||'').split('\n').map(l=>l.trim()).filter(l=>l);
+  const matched = {};
+  const errors = [];
+  lines.forEach((line, i) => {
+    const parts = line.split(/\t|,|;/).map(p=>p.trim()).filter(p=>p!=='');
+    if(parts.length<3){ errors.push(`Ligne ${i+1} : format invalide ("${line}")`); return; }
+    const [refText, tailleText, qtyText] = parts;
+    const refKey = refByLabel[refText.toLowerCase().trim()];
+    const taille = PROD_TAILLES.find(t => t.toLowerCase()===tailleText.toLowerCase().trim());
+    const qty = parseInt(qtyText);
+    if(!refKey){ errors.push(`Ligne ${i+1} : référence inconnue ("${refText}")`); return; }
+    if(client && !allowedKeys.includes(refKey)){ errors.push(`Ligne ${i+1} : "${refText}" n'est pas autorisée pour ${client}`); return; }
+    if(!taille){ errors.push(`Ligne ${i+1} : taille inconnue ("${tailleText}")`); return; }
+    if(isNaN(qty) || qty<=0){ errors.push(`Ligne ${i+1} : quantité invalide ("${qtyText}")`); return; }
+    if(!matched[refKey]) matched[refKey] = {};
+    matched[refKey][taille] = qty;
+  });
+  return {matched, errors};
 }
 
 // --- Sélecteur de commande réutilisable ---
@@ -346,9 +431,11 @@ function renderProdSuiviScreen(container, isTek){
   if(!commande) return;
   const headerZone = document.getElementById('prod-suivi-lignes');
   const statutCmd = prodStatutCommande(prodSuiviCmdId);
+  const canEditHeader = isTek && canEditProdTek();
   headerZone.insertAdjacentHTML('beforebegin', `<div style="padding:6px 2px 10px;border-bottom:1px solid var(--border-soft);margin-bottom:10px;">
     <div style="display:flex;justify-content:space-between;align-items:center;"><b style="font-size:13.5px;">${esc(commande.nom)}</b><span style="font-size:11px;color:var(--ink-faint);">LOT ${esc(commande.ref)} · ${commande.annee}</span></div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;"><span style="font-size:11px;color:var(--ink-soft);">${esc(commande.client||'—')}</span><span style="font-size:10px;font-weight:800;color:#fff;background:${PROD_STATUT_COLOR[statutCmd]};padding:3px 8px;border-radius:10px;">${PROD_STATUT_LABEL[statutCmd]}</span></div>
+    ${canEditHeader ? `<button class="btn btn-ghost" style="width:100%;margin-top:8px;padding:6px;font-size:11px;" onclick="prodTekSubTab='commandes'; renderProdChainTek(document.getElementById('main')); setTimeout(()=>showEditProdCommandeForm('${prodSuiviCmdId}'), 0)">Modifier cette commande</button>` : ''}
   </div>`);
   const refs = getProdReferences();
   const canEditTek = isTek && canEditProdTek();
