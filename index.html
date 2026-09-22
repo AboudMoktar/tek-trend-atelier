@@ -532,7 +532,8 @@ function attachFirebaseDataListeners(){
       const composer = document.getElementById('msg-text');
       if(!composer || composer.value.trim() === '') nav('messages');
     }
-    else if(document.activeElement && ['INPUT','SELECT','TEXTAREA'].includes(document.activeElement.tagName)){ /* un champ est en cours d'édition (formulaire RH/GADH/autre ouvert) : ne pas le redessiner sous la personne */ }
+    else if(document.activeElement && ['INPUT','SELECT','TEXTAREA','BUTTON'].includes(document.activeElement.tagName)){ /* un champ ou un bouton vient d'être utilisé (formulaire RH/GADH/Production en cours) : ne pas le redessiner sous la personne */ }
+    else if(document.querySelector('[id$="-form-zone"]:not(:empty)')){ /* un panneau de formulaire est actuellement ouvert (ex: création de commande) : le focus se perd entre deux clics de bouton, donc ce contrôle est plus fiable que activeElement seul */ }
     else { nav(activeTab); }
   }, function(err){
     console.error('Erreur Firebase (lecture) :', err);
