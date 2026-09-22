@@ -185,7 +185,7 @@
   /* --- Cartes KPI avec badge icône coloré --- */
   .kpi-ic{display:flex;flex-direction:column;gap:10px;}
   .kpi-mini-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:8px;}
-  .kpi-mini{border:1px solid var(--border);border-radius:11px;padding:8px 4px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:2px;}
+  .kpi-mini{border:1px solid var(--border);border-radius:11px;padding:8px 4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:78px;}
   .kpi-mini.tint-blue{background:linear-gradient(180deg,var(--accent-bg) 0%,var(--surface) 65%);}
   .kpi-mini.tint-green{background:linear-gradient(180deg,var(--good-bg) 0%,var(--surface) 65%);}
   .kpi-mini.tint-red{background:linear-gradient(180deg,var(--bad-bg) 0%,var(--surface) 65%);}
@@ -1086,16 +1086,24 @@ function navItems(){
   return items.filter(i=>i.show);
 }
 
+function appBrandingHTML(){
+  if(activeModule === 'gadh'){
+    return `<div class="logo-wrap" style="align-items:flex-start;">
+      ${ICONS.gadh}
+    </div>`;
+  }
+  return `<div class="logo-wrap" style="align-items:flex-start;">
+    <div class="logo-text"><span class="tek">TEK</span> <span class="trend">TREND</span></div>
+    <div class="logo-sub">TECHNICAL WEAR</div>
+  </div>`;
+}
 function renderShell(){
   const items = navItems();
   const navBtn = (i, cls) => `<button class="${cls}" data-tab="${i.tab}" onclick="${i.onclick || `nav('${i.tab}')`}"><span class="nav-icon-wrap">${i.icon}</span><span>${i.label}</span></button>`;
 
   document.getElementById('app').innerHTML = `
     <div class="sidebar no-print">
-      <div class="side-logo logo-wrap" style="align-items:flex-start;">
-        <div class="logo-text"><span class="tek">TEK</span> <span class="trend">TREND</span></div>
-        <div class="logo-sub">TECHNICAL WEAR</div>
-      </div>
+      <div class="side-logo">${appBrandingHTML()}</div>
       <nav>${items.map(i=>navBtn(i,'')).join('')}</nav>
       <div class="side-sep"></div>
       <nav>
@@ -1105,10 +1113,7 @@ function renderShell(){
     </div>
     <div class="app-body">
       <div class="topbar no-print">
-        <div class="logo-wrap">
-          <div class="logo-text"><span class="tek">TEK</span> <span class="trend">TREND</span></div>
-          <div class="logo-sub">TECHNICAL WEAR</div>
-        </div>
+        ${appBrandingHTML()}
         <div class="user-chip">
           <div class="sync-wrap">
             <span id="sync-badge" class="sync-badge sync-off">Mode local</span>
