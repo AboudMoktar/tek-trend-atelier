@@ -347,9 +347,11 @@ function renderProdListe(container, site){
   const rows = all.filter(x => prodListFilter==='toutes' || (prodListFilter==='encours' ? x.s.statut!=='EXPEDIE' : x.s.statut==='EXPEDIE'));
   container.innerHTML = `
     <div class="card">
-      <div class="flex-header" style="margin-bottom:8px;"><h3 style="margin:0;font-size:14px;">Commandes</h3>
-        ${canEdit ? `<button class="btn btn-primary" style="padding:6px 12px;font-size:12px;" onclick="showAddProdCommandeForm()">+ Nouvelle commande</button>` : ''}
-      </div>
+      <div class="flex-header" style="margin-bottom:8px;"><h3 style="margin:0;font-size:14px;">Commandes</h3></div>
+      ${canEdit ? `<div style="display:flex;gap:6px;margin-bottom:8px;">
+        <button class="btn btn-primary" style="flex:1;padding:8px 4px;font-size:12px;" onclick="showAddProdCommandeForm()">+ Nouvelle commande</button>
+        <button class="btn btn-ghost" style="flex:1;padding:8px 4px;font-size:12px;" onclick="prodChoisirFichierExcel()">📥 Importer Excel</button>
+      </div>` : ''}
       <div id="prod-cmd-form-zone"></div>
       <div style="display:flex;gap:6px;margin-bottom:6px;">
         ${[['encours',`En cours (${nbEnCours})`],['expediees',`Expédiées (${all.length-nbEnCours})`],['toutes','Toutes']].map(([k,l]) =>
@@ -844,7 +846,10 @@ function renderProdDashboard(container, site){
           <div style="font-size:10.5px;color:rgba(255,255,255,.75);">pièces à livrer</div>
         </div>
       </div>
-      ${site==='tek' && canEditProdTek() ? `<button class="btn" style="width:100%;margin-top:10px;padding:9px;font-size:12.5px;background:#fff;color:#0B2C4D;border:none;font-weight:800;" onclick="prodNouvelleCommande()">+ Nouvelle commande</button>` : ''}
+      ${site==='tek' && canEditProdTek() ? `<div style="display:flex;gap:6px;margin-top:10px;">
+        <button class="btn" style="flex:1;padding:9px 4px;font-size:12px;background:#fff;color:#0B2C4D;border:none;font-weight:800;" onclick="prodNouvelleCommande()">+ Nouvelle commande</button>
+        <button class="btn" style="flex:1;padding:9px 4px;font-size:12px;background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.35);font-weight:800;" onclick="prodGo('tek','list'); prodChoisirFichierExcel()">📥 Importer Excel</button>
+      </div>` : ''}
       <div style="display:flex;gap:6px;margin-top:8px;">
         ${['tous', ...PROD_CLIENTS].map(cl => `<button class="btn" style="flex:1;padding:6px 4px;font-size:11.5px;background:${prodDashClient===cl?'#fff':'rgba(255,255,255,.12)'};color:${prodDashClient===cl?'#0B2C4D':'#fff'};border:1px solid rgba(255,255,255,.25);" onclick="prodDashClient='${cl}'; prodRerender('${site}')">${cl==='tous'?'Tous clients':cl}</button>`).join('')}
       </div>
@@ -972,6 +977,303 @@ function prodCarteResume(container, site){
 window.prodNouvelleCommande = () => {
   prodGo('tek', 'list');
   if(typeof window.showAddProdCommandeForm === 'function') window.showAddProdCommandeForm();
+};
+
+// ============================================================
+// IMPORT DE COMMANDES DEPUIS UN FICHIER EXCEL (.xlsx) OU CSV
+// ============================================================
+// Lecteur .xlsx intégré (un .xlsx est un zip de fichiers XML) : aucune bibliothèque
+// externe, fonctionne hors connexion. Format reconnu = celui des fiches de commande :
+//   « Commande: <nom> », « LOT/REF » (valeur dessous ou à droite), « ANNEE »,
+//   puis un tableau Model · LIBELLE · Taille · FR (ou Quantité) [· colonnes d'avancement].
+// Une feuille = une commande. On montre un aperçu : rien n'est créé sans validation.
+
+async function prodLireZip(buffer){
+  const dv = new DataView(buffer), u8 = new Uint8Array(buffer);
+  let eocd = -1;
+  for(let i = u8.length - 22; i >= Math.max(0, u8.length - 70000); i--){ if(dv.getUint32(i, true) === 0x06054b50){ eocd = i; break; } }
+  if(eocd < 0) throw new Error("Ce fichier n'est pas un classeur Excel (.xlsx) valide");
+  const nb = dv.getUint16(eocd + 10, true);
+  let p = dv.getUint32(eocd + 16, true);
+  const fichiers = {};
+  const dec = new TextDecoder('utf-8');
+  for(let k = 0; k < nb; k++){
+    if(dv.getUint32(p, true) !== 0x02014b50) break;
+    const methode = dv.getUint16(p + 10, true), taille = dv.getUint32(p + 20, true);
+    const lNom = dv.getUint16(p + 28, true), lExtra = dv.getUint16(p + 30, true), lCom = dv.getUint16(p + 32, true);
+    const local = dv.getUint32(p + 42, true);
+    const nom = dec.decode(u8.subarray(p + 46, p + 46 + lNom));
+    fichiers[nom] = {methode, taille, local};
+    p += 46 + lNom + lExtra + lCom;
+  }
+  const lire = async (nom) => {
+    const f = fichiers[nom];
+    if(!f) return null;
+    const debut = f.local + 30 + dv.getUint16(f.local + 26, true) + dv.getUint16(f.local + 28, true);
+    const brut = u8.subarray(debut, debut + f.taille);
+    if(f.methode === 0) return dec.decode(brut);
+    if(f.methode !== 8) throw new Error('Compression non prise en charge');
+    const flux = new Blob([brut]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+    return await new Response(flux).text();
+  };
+  return {noms: Object.keys(fichiers), lire};
+}
+function prodXml(txt){ return new DOMParser().parseFromString(txt, 'application/xml'); }
+function prodTags(doc, tag){ return Array.from(doc.getElementsByTagNameNS('*', tag)); }
+function prodColIndex(ref){ let n = 0; for(const ch of ref.replace(/\d+/g,'')) n = n*26 + (ch.charCodeAt(0) - 64); return n - 1; }
+
+// Renvoie [{nom, lignes: [[cellule, ...], ...]}] pour chaque feuille
+async function prodLireXlsx(buffer){
+  const zip = await prodLireZip(buffer);
+  const partages = [];
+  const ss = await zip.lire('xl/sharedStrings.xml');
+  if(ss) prodTags(prodXml(ss), 'si').forEach(si => partages.push(prodTags(si, 't').map(t => t.textContent).join('')));
+  const wb = prodXml(await zip.lire('xl/workbook.xml') || '<x/>');
+  const rels = prodXml(await zip.lire('xl/_rels/workbook.xml.rels') || '<x/>');
+  const cible = {};
+  prodTags(rels, 'Relationship').forEach(r => { cible[r.getAttribute('Id')] = r.getAttribute('Target'); });
+  let feuilles = prodTags(wb, 'sheet').map(s => {
+    const rid = s.getAttribute('r:id') || s.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'id');
+    let t = cible[rid] || '';
+    t = t.replace(/^\//, '');
+    if(!t.startsWith('xl/')) t = 'xl/' + t;
+    return {nom: s.getAttribute('name'), chemin: t};
+  });
+  if(!feuilles.length) feuilles = zip.noms.filter(n => /^xl\/worksheets\/sheet\d+\.xml$/.test(n)).sort().map((c,i) => ({nom:'Feuille '+(i+1), chemin:c}));
+  const res = [];
+  for(const f of feuilles){
+    const xml = await zip.lire(f.chemin);
+    if(!xml) continue;
+    const lignes = [];
+    prodTags(prodXml(xml), 'c').forEach(c => {
+      const ref = c.getAttribute('r'); if(!ref) return;
+      const r = parseInt(ref.replace(/[A-Z]+/i, '')) - 1, col = prodColIndex(ref.toUpperCase());
+      const type = c.getAttribute('t');
+      const v = prodTags(c, 'v')[0];
+      let val = null;
+      if(type === 's' && v) val = partages[parseInt(v.textContent)];
+      else if(type === 'inlineStr') val = prodTags(c, 't').map(t => t.textContent).join('');
+      else if(v) val = (type === 'str' || type === 'b') ? v.textContent : (isNaN(Number(v.textContent)) ? v.textContent : Number(v.textContent));
+      if(val === null || val === '') return;
+      if(!lignes[r]) lignes[r] = [];
+      lignes[r][col] = val;
+    });
+    res.push({nom: f.nom, lignes});
+  }
+  return res;
+}
+function prodLireCsv(texte){
+  const sep = (texte.split('\n')[0].match(/;/g)||[]).length >= (texte.split('\n')[0].match(/,/g)||[]).length ? ';' : ',';
+  return [{nom:'CSV', lignes: texte.split(/\r?\n/).map(l => l.split(sep).map(x => { const t = x.trim().replace(/^"|"$/g,''); return t==='' ? undefined : (isNaN(Number(t)) ? t : Number(t)); }))}];
+}
+
+// --- Reconnaissance des références (modèle + libellé → référence de l'application) ---
+function prodNorm(x){ return String(x==null?'':x).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/[_\-\/]+/g,' ').replace(/\s+/g,' ').trim(); }
+function prodReconnaitreRef(modele, libelle){
+  const t = ' ' + prodNorm(modele) + ' ' + prodNorm(libelle) + ' ';
+  const mot = (m) => t.includes(' '+m+' ');
+  let famille = null;
+  if(t.includes('PHARMA') && mot('HOMME')) famille = 'PHARMA-HOMME';
+  else if(t.includes('PHARMA') && mot('FEMME')) famille = (t.includes('COL ROND') || mot('CR')) ? 'PHARMA-FEMME CR' : 'PHARMA-FEMME CV';
+  else if(t.includes('SPORT')) famille = 'SPORT';
+  else if(t.includes('GILET')) famille = 'GILET-NOIR';
+  else if(t.includes('FLEX')) famille = 'LYNE-FLEX';
+  else if(mot('PRO') || t.includes('LYNE PRO')) famille = 'LYNE-PRO';
+  if(!famille) return null;
+  let variante = null;
+  if(famille.startsWith('PHARMA')){
+    variante = mot('NOIR') ? 'Noir' : mot('SABLE') ? 'Sable' : mot('GRIS') ? 'Gris' : mot('ROSE') ? 'Rose' : null;
+  } else {
+    const m = prodNorm(modele);
+    variante = mot('FEMME') ? 'Femme' : mot('HOMME') ? 'Homme' : (/(^| )F( |$)/.test(m) ? 'Femme' : /(^| )H( |$)/.test(m) ? 'Homme' : null);
+  }
+  const k = variante ? prodRefKey(famille, variante) : null;
+  return k && getProdReferences()[k] ? k : null;
+}
+function prodReconnaitreTaille(x){
+  const t = prodNorm(x).replace(/\s/g,'');
+  const alias = {'2XL':'XXL', '3XL':'XXXL', 'XXXXL':null};
+  const v = alias[t] !== undefined ? alias[t] : t;
+  return PROD_TAILLES.includes(v) ? v : null;
+}
+const PROD_COL_AVANCEMENT = [
+  {etape:'coupe', motif:/COUP/}, {etape:'retour', motif:/ASSEMBL|RETOURN/}, {etape:'confection', motif:/CONFECTION/},
+  {etape:'controle', motif:/CONTROL/}, {etape:'emballage', motif:/EMBALL/}, {etape:'expedition', motif:/EXPED/}
+];
+
+// Analyse d'une feuille → commande (ou null si ce n'est pas une fiche de commande)
+function prodAnalyserFeuille(feuille){
+  const L = feuille.lignes;
+  const cell = (r,c) => (L[r] && L[r][c] !== undefined) ? L[r][c] : undefined;
+  let nom = '', ref = '', annee = null, client = null, entete = -1;
+  const valeurPres = (r,c) => { for(const [dr,dc] of [[1,0],[0,1],[0,2],[1,1]]){ const v = cell(r+dr,c+dc); if(v!==undefined && prodNorm(v)!=='') return v; } return undefined; };
+  for(let r = 0; r < L.length; r++){
+    if(!L[r]) continue;
+    for(let c = 0; c < L[r].length; c++){
+      const v = L[r][c]; if(v===undefined) continue;
+      const n = prodNorm(v);
+      if(/^COMMANDE\b/.test(n) && !nom){ const m = String(v).split(/:/); nom = (m[1]||'').trim() || String(valeurPres(r,c)||'').trim(); }
+      else if(/^(LOT|REF|LOT REF|REFERENCE)$/.test(n) && !ref){ const x = valeurPres(r,c); if(x!==undefined) ref = String(x).trim(); }
+      else if(/^(ANNEE|AN)$/.test(n) && !annee){ const x = parseInt(valeurPres(r,c)); if(x>2000) annee = x; }
+      if(/ALLOGA/.test(n)) client = 'ALLOGA'; else if(/NEOLYS/.test(n) && !client) client = 'NEOLYS';
+      if(n==='TAILLE' && entete<0) entete = r;
+    }
+  }
+  if(entete < 0) return null;
+  const H = (L[entete]||[]).map(prodNorm);
+  const col = (motif) => H.findIndex(h => h && motif.test(h));
+  const cModele = col(/^MODELE?$|^MODEL$/), cLib = col(/LIBELLE|DESIGNATION|ARTICLE/), cTaille = col(/^TAILLE$/);
+  let cQte = col(/^FR$/); if(cQte<0) cQte = col(/^(QTE|QTY|QUANTITE|QUANTITES|COMMANDE|COMMANDEE|NB|PIECES)$/);
+  if(cQte<0) return null;
+  const cAv = PROD_COL_AVANCEMENT.map(a => ({...a, c: col(a.motif)})).filter(a => a.c>=0 && a.c!==cQte);
+  const lignes = {}, avancement = {}, ignorees = [];
+  let modeleCourant = '', total = 0;
+  for(let r = entete+1; r < L.length; r++){
+    if(!L[r]) continue;
+    if(cModele>=0 && cell(r,cModele)!==undefined) modeleCourant = cell(r,cModele);
+    const tailleBrute = cell(r,cTaille), qte = parseInt(cell(r,cQte));
+    // Pas de taille = ligne de total ou ligne vide : on l'écarte sans la signaler.
+    if(tailleBrute===undefined || prodNorm(tailleBrute)==='' || /^TOTAL/.test(prodNorm(tailleBrute))) continue;
+    const lib = cLib>=0 ? cell(r,cLib) : '';
+    const rk = prodReconnaitreRef(modeleCourant, lib), t = prodReconnaitreTaille(tailleBrute);
+    const libelleLigne = `${prodNorm(modeleCourant) || '—'} ${lib ? '· '+String(lib).trim() : ''} · ${tailleBrute===undefined?'?':tailleBrute}`;
+    if(!rk){ ignorees.push(`Ligne ${r+1} : référence non reconnue (${libelleLigne})`); continue; }
+    if(!t){ ignorees.push(`Ligne ${r+1} : taille non reconnue (${libelleLigne})`); continue; }
+    if(!(qte>0)) continue;
+    if(!lignes[rk]) lignes[rk] = {tailles:{}};
+    lignes[rk].tailles[t] = (lignes[rk].tailles[t]||0) + qte;
+    total += qte;
+    cAv.forEach(a => {
+      const q = parseInt(cell(r,a.c));
+      if(q>0){ if(!avancement[a.etape]) avancement[a.etape] = {}; if(!avancement[a.etape][rk]) avancement[a.etape][rk] = {}; avancement[a.etape][rk][t] = (avancement[a.etape][rk][t]||0) + q; }
+    });
+  }
+  if(total===0) return null;
+  const totAv = {};
+  Object.entries(avancement).forEach(([e, refs]) => { totAv[e] = 0; Object.values(refs).forEach(ts => Object.values(ts).forEach(q => { totAv[e] += q; })); });
+  return {
+    feuille: feuille.nom, nom: nom || feuille.nom, ref, annee: annee || new Date().getFullYear(),
+    client: client || 'NEOLYS', lignes, total, avancement, totAv, ignorees,
+    importerAvancement: Object.keys(avancement).length>0, dateAvancement: getTodayISO(), cree: false
+  };
+}
+
+// ============================================================
+// ÉCRAN D'IMPORT (aperçu puis création)
+// ============================================================
+let prodImports = [];
+window.prodChoisirFichierExcel = () => {
+  let inp = document.getElementById('prod-import-file');
+  if(!inp){
+    inp = document.createElement('input');
+    inp.type = 'file'; inp.id = 'prod-import-file'; inp.accept = '.xlsx,.csv'; inp.style.display = 'none';
+    inp.addEventListener('change', () => { if(inp.files && inp.files[0]) prodImporterFichier(inp.files[0]); inp.value = ''; });
+    document.body.appendChild(inp);
+  }
+  inp.click();
+};
+async function prodImporterFichier(fichier){
+  const zone = document.getElementById('prod-cmd-form-zone');
+  if(zone) zone.innerHTML = `<div class="card" style="text-align:center;font-size:12.5px;color:var(--ink-soft);">Lecture de « ${esc(fichier.name)} »…</div>`;
+  try{
+    let feuilles;
+    if(/\.csv$/i.test(fichier.name)) feuilles = prodLireCsv(await fichier.text());
+    else if(/\.xls$/i.test(fichier.name)) throw new Error("Ancien format .xls : dans Excel, faites « Enregistrer sous » → Classeur Excel (.xlsx), puis réessayez");
+    else feuilles = await prodLireXlsx(await fichier.arrayBuffer());
+    prodImports = feuilles.map(prodAnalyserFeuille).filter(Boolean);
+    if(!prodImports.length) throw new Error("Aucune commande reconnue : il faut une colonne « Taille » et une colonne de quantité (« FR » ou « Quantité »)");
+    renderProdImports();
+  } catch(e){
+    console.error(e);
+    if(zone) zone.innerHTML = `<div class="card" style="border:1.5px solid var(--bad);"><b style="color:var(--bad);font-size:12.5px;">Import impossible</b><p style="font-size:12px;margin:4px 0 8px;">${esc(e.message||String(e))}</p><button class="btn btn-ghost" style="padding:6px 10px;font-size:12px;" onclick="document.getElementById('prod-cmd-form-zone').innerHTML=''">Fermer</button></div>`;
+  }
+}
+window.prodImpSet = (i, champ, val) => { if(prodImports[i]) prodImports[i][champ] = val; };
+window.prodImpClient = (i, cl) => { prodImports[i].client = cl; renderProdImports(); };
+window.prodImpFermer = () => { prodImports = []; const z = document.getElementById('prod-cmd-form-zone'); if(z) z.innerHTML = ''; };
+function renderProdImports(){
+  const zone = document.getElementById('prod-cmd-form-zone');
+  if(!zone) return;
+  zone.innerHTML = prodImports.map((imp, i) => {
+    if(imp.cree) return `<div class="card" style="border:1.5px solid var(--good);font-size:12.5px;">✓ Commande <b>${esc(imp.ref)}</b> créée.</div>`;
+    const autorisees = prodRefsAllowedFor(imp.client).map(([k])=>k);
+    const interdites = Object.keys(imp.lignes).filter(k => !autorisees.includes(k));
+    const labelsAv = {coupe:'coupé', retour:'retourné', confection:'confectionné', controle:'contrôlé', emballage:'emballé', expedition:'expédié'};
+    return `
+    <div class="card" style="background:var(--surface-2);">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <h3 style="margin:0;font-size:14px;">Import Excel${prodImports.length>1?` (${i+1}/${prodImports.length})`:''}</h3>
+        <span style="font-size:10.5px;color:var(--ink-faint);">Feuille « ${esc(imp.feuille)} »</span>
+      </div>
+      <div class="field"><label>Client</label><div style="display:flex;gap:8px;">
+        ${PROD_CLIENTS.map(cl => `<button class="btn ${imp.client===cl?'btn-primary':'btn-ghost'}" style="flex:1;padding:8px;" onclick="prodImpClient(${i},'${cl}')">${cl}</button>`).join('')}
+      </div></div>
+      <div class="field"><label>Nom</label><input value="${esc(imp.nom)}" oninput="prodImpSet(${i},'nom',this.value)"></div>
+      <div style="display:flex;gap:8px;">
+        <div class="field" style="flex:1.4;"><label>Référence / LOT</label><input value="${esc(imp.ref)}" oninput="prodImpSet(${i},'ref',this.value)" placeholder="Obligatoire"></div>
+        <div class="field" style="flex:1;"><label>Année</label><input type="number" inputmode="numeric" value="${imp.annee}" oninput="prodImpSet(${i},'annee',this.value)"></div>
+      </div>
+      <div style="font-size:11px;font-weight:700;color:var(--ink-faint);margin:6px 0;">${Object.keys(imp.lignes).length} MODÈLE(S) · ${imp.total} PIÈCES</div>
+      ${Object.entries(imp.lignes).map(([rk,l]) => `
+        <div style="padding:5px 0;border-bottom:1px solid var(--border-soft);${interdites.includes(rk)?'color:var(--bad);':''}">
+          <div style="display:flex;justify-content:space-between;"><b style="font-size:12px;">${esc(prodRefName(rk))}</b><b style="font-size:12px;">${prodLigneTotal(l)}</b></div>
+          <div style="font-size:10.5px;color:var(--ink-soft);">${PROD_TAILLES.filter(t=>l.tailles[t]).map(t=>`${t} ${l.tailles[t]}`).join(' · ')}</div>
+        </div>`).join('')}
+      ${interdites.length ? `<p style="font-size:11px;color:var(--bad);margin:6px 0 0;">ALLOGA n'autorise pas : ${interdites.map(prodRefName).join(', ')}. Choisissez NEOLYS ou corrigez le fichier.</p>` : ''}
+      ${imp.ignorees.length ? `<details style="margin-top:8px;"><summary style="font-size:11px;color:var(--warn);cursor:pointer;">${imp.ignorees.length} ligne(s) ignorée(s)</summary><div style="font-size:10.5px;color:var(--ink-soft);margin-top:4px;line-height:1.5;">${imp.ignorees.slice(0,20).map(esc).join('<br>')}</div></details>` : ''}
+      ${Object.keys(imp.avancement).length ? `
+      <div style="margin-top:10px;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--surface);">
+        <label style="display:flex;gap:8px;align-items:flex-start;font-size:12px;cursor:pointer;">
+          <input type="checkbox" ${imp.importerAvancement?'checked':''} onchange="prodImpSet(${i},'importerAvancement',this.checked)" style="margin-top:2px;">
+          <span>Importer aussi l'avancement du fichier : ${Object.entries(imp.totAv).map(([e,q])=>`${labelsAv[e]} ${q}`).join(' · ')}</span>
+        </label>
+        <div class="field" style="margin:6px 0 0;"><label style="font-size:10px;">Date de ces quantités</label><input type="date" value="${imp.dateAvancement}" max="${getTodayISO()}" onchange="prodImpSet(${i},'dateAvancement',this.value)"></div>
+      </div>` : ''}
+      <div style="display:flex;gap:8px;margin-top:12px;">
+        <button class="btn btn-primary" style="flex:1;" onclick="prodImpCreer(${i})">Créer la commande</button>
+        <button class="btn btn-ghost" onclick="prodImpFermer()">Annuler</button>
+      </div>
+    </div>`;
+  }).join('');
+  zone.scrollIntoView({behavior:'smooth', block:'start'});
+}
+window.prodImpCreer = (i) => {
+  const imp = prodImports[i];
+  if(!imp || imp.cree) return;
+  const nom = String(imp.nom||'').trim(), ref = String(imp.ref||'').trim();
+  const annee = parseInt(imp.annee) || new Date().getFullYear();
+  if(!nom){ showToast('Le nom de la commande est obligatoire'); return; }
+  if(!ref){ showToast('La référence / LOT est obligatoire'); return; }
+  if(!prodRefIsUnique(ref)){ showToast(`La référence ${ref} existe déjà — une commande ne peut pas être importée deux fois`); return; }
+  const autorisees = prodRefsAllowedFor(imp.client).map(([k])=>k);
+  const interdites = Object.keys(imp.lignes).filter(k => !autorisees.includes(k));
+  if(interdites.length){ showToast(`ALLOGA n'autorise pas ${prodRefName(interdites[0])}`); return; }
+  const cmds = getProdCommandes();
+  const id = 'cmd'+Date.now()+Math.floor(Math.random()*1000);
+  cmds[id] = {nom, ref, annee, client: imp.client, dateCreation: getTodayISO(), lignes: imp.lignes, createdBy: currentUser.nom, importe: true};
+  saveProdCommandes(cmds);
+  let msgAv = '';
+  if(imp.importerAvancement && Object.keys(imp.avancement).length){
+    const date = imp.dateAvancement || getTodayISO();
+    const jour = JSON.parse(JSON.stringify(imp.avancement));
+    // Le fichier n'a pas de colonne Confection : une pièce contrôlée a forcément été confectionnée.
+    if(!jour.confection && jour.controle){
+      jour.confection = {};
+      Object.entries(jour.controle).forEach(([rk,ts]) => Object.entries(ts).forEach(([t,q]) => {
+        const ret = (jour.retour && jour.retour[rk] && jour.retour[rk][t]) || 0;
+        const v = Math.min(q, ret);
+        if(v>0){ if(!jour.confection[rk]) jour.confection[rk] = {}; jour.confection[rk][t] = v; }
+      }));
+    }
+    saveProdSaisies(id, {[date]: jour});
+    const nbViol = prodViolations(prodCumuls(id)).length;
+    msgAv = nbViol ? ` — avancement importé, ${nbViol} incohérence(s) du fichier à vérifier` : ' avec son avancement';
+  }
+  const faits = getJSON('prod_v4_migre', {}); faits[id] = true; setJSON('prod_v4_migre', faits);
+  imp.cree = true;
+  showToast(`Commande ${ref} importée${msgAv}`);
+  if(prodImports.every(x => x.cree)){ prodImports = []; prodGo('tek', 'fiche', id); }
+  else renderProdImports();
 };
 // ============================================================
 // FORMULAIRE COMMANDE (création / modification / import copier-coller)
