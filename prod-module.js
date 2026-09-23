@@ -483,8 +483,34 @@ function renderProdFiche(container, site){
       <p style="font-size:10.5px;color:var(--ink-faint);margin:0 0 4px;">${canEdit ? 'Touchez une ligne pour la corriger.' : ''}</p>
       ${journal || buildEmptyState("Aucune saisie", canEdit ? "Commencez par « + Saisie du jour »." : "")}
     </div>
+
+    ${site==='tek' && canEditProdTek() ? `
+    <div class="card" style="border:1.5px solid var(--bad);">
+      <h3 style="margin:0 0 4px;font-size:13px;color:var(--bad);">Supprimer la commande</h3>
+      <p style="font-size:11px;color:var(--ink-soft);margin:0 0 8px;">Supprime définitivement ${esc(cmd.ref)} et toutes ses saisies (${dates.length} date${dates.length>1?'s':''}), pour TEK-TREND comme pour la GADH. Impossible à annuler.</p>
+      <button class="btn btn-warning" style="width:100%;padding:9px;" onclick="prodSupprimerCommande('${cmdId}')">Supprimer ${esc(cmd.ref)}</button>
+    </div>` : ''}
   `;
 }
+window.prodSupprimerCommande = (cmdId) => {
+  if(!canEditProdTek()) return;
+  const list = getProdCommandes();
+  const cmd = list[cmdId];
+  if(!cmd) return;
+  const nbDates = Object.keys(getProdSaisies(cmdId)).length;
+  const saisie = prompt(`Suppression définitive de la commande ${cmd.ref} (${cmd.nom}, ${cmd.client||''})${nbDates ? ' et de ses ' + nbDates + ' date(s) de saisie' : ''}.\n\nPour confirmer, tapez la référence : ${cmd.ref}`);
+  if(saisie===null) return;
+  if(saisie.trim().toLowerCase() !== (cmd.ref||'').trim().toLowerCase()){ showToast('Référence incorrecte : la commande n\'a pas été supprimée'); return; }
+  delete list[cmdId];
+  saveProdCommandes(list);
+  saveProdSaisies(cmdId, {});
+  const migre = getJSON('prod_v4_migre', {});
+  if(migre[cmdId]){ delete migre[cmdId]; setJSON('prod_v4_migre', migre); }
+  ['tek','gadh'].forEach(site => { if(prodNav[site].cmdId===cmdId){ prodNav[site].cmdId = null; prodNav[site].view = 'list'; } });
+  if(prodSaisie && prodSaisie.cmdId===cmdId) prodSaisie = null;
+  showToast(`Commande ${cmd.ref} supprimée`);
+  prodGo('tek', 'list');
+};
 window.prodEditFromFiche = (cmdId) => {
   prodGo('tek','list');
   if(typeof window.showEditProdCommandeForm === 'function') window.showEditProdCommandeForm(cmdId);
