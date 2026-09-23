@@ -451,7 +451,10 @@ function renderProdFiche(container, site){
         ${prodBarre(s.pctExp, '#15803D', 'Expédié')}
       </div>
       ${canEdit ? `<button class="btn btn-primary" style="width:100%;margin-top:10px;padding:10px;" onclick="prodOuvrirSaisie('${site}','${cmdId}')">+ Saisie du jour</button>` : ''}
-      ${site==='tek' && canEdit ? `<button class="btn btn-ghost" style="width:100%;margin-top:6px;padding:7px;font-size:11.5px;" onclick="prodEditFromFiche('${cmdId}')">Modifier la commande</button>` : ''}
+      ${site==='tek' && canEdit ? `<div style="display:flex;gap:6px;margin-top:6px;">
+        <button class="btn btn-ghost" style="flex:1;padding:7px;font-size:11.5px;" onclick="prodEditFromFiche('${cmdId}')">Modifier la commande</button>
+        <button class="btn btn-ghost" style="flex:1;padding:7px;font-size:11.5px;color:var(--bad);border-color:var(--bad);" onclick="prodSupprimerCommande('${cmdId}')">Supprimer la commande</button>
+      </div>` : ''}
     </div>
 
     ${viol.length ? `
@@ -507,6 +510,31 @@ window.prodSupprimerCommande = (cmdId) => {
   const migre = getJSON('prod_v4_migre', {});
   if(migre[cmdId]){ delete migre[cmdId]; setJSON('prod_v4_migre', migre); }
   ['tek','gadh'].forEach(site => { if(prodNav[site].cmdId===cmdId){ prodNav[site].cmdId = null; prodNav[site].view = 'list'; } });
+  if(prodSaisie && prodSaisie.cmdId===cmdId) prodSaisie = null;
+  showToast(`Commande ${cmd.ref} supprimée`);
+  prodGo('tek', 'list');
+};
+// Suppression définitive : la commande ET toutes ses saisies. On fait retaper la
+// référence pour éviter toute suppression par erreur d'un simple clic.
+window.prodSupprimerCommande = (cmdId) => {
+  if(!canEditProdTek()) return;
+  const cmds = getProdCommandes();
+  const cmd = cmds[cmdId];
+  if(!cmd) return;
+  const saisies = getProdSaisies(cmdId);
+  const nbDates = Object.keys(saisies).length;
+  let nbPieces = 0;
+  Object.values(saisies).forEach(j => Object.values(j||{}).forEach(refs => Object.values(refs||{}).forEach(ts => Object.values(ts||{}).forEach(q => { nbPieces += parseInt(q)||0; }))));
+  const detail = nbDates ? `\n\nElle contient ${nbDates} journée(s) de saisie (${nbPieces} pièces enregistrées), qui seront effacées aussi.` : '';
+  const tape = prompt(`Supprimer définitivement la commande ${cmd.ref} (${cmd.nom}, ${cmd.client||''}) ?${detail}\n\nCette action est irréversible, pour TEK-TREND comme pour la GADH.\nPour confirmer, tapez la référence : ${cmd.ref}`);
+  if(tape===null) return;
+  if(tape.trim().toLowerCase() !== String(cmd.ref).trim().toLowerCase()){ showToast('Référence incorrecte — commande non supprimée'); return; }
+  delete cmds[cmdId];
+  saveProdCommandes(cmds);
+  saveProdSaisies(cmdId, {});
+  const faits = getJSON('prod_v4_migre', {});
+  if(faits[cmdId]){ delete faits[cmdId]; setJSON('prod_v4_migre', faits); }
+  ['tek','gadh'].forEach(site => { if(prodNav[site].cmdId===cmdId){ prodNav[site].cmdId = null; if(prodNav[site].view==='fiche') prodNav[site].view = 'list'; } });
   if(prodSaisie && prodSaisie.cmdId===cmdId) prodSaisie = null;
   showToast(`Commande ${cmd.ref} supprimée`);
   prodGo('tek', 'list');
