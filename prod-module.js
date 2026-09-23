@@ -277,12 +277,59 @@ function prodMigrerAnciennesSaisies(){
   if(changedFlag) setJSON('prod_v4_migre', faits);
 }
 
+// --- Parcours d'une commande : pour chaque étape, ce qui a été REÇU de l'étape
+// précédente, ce qui est FAIT, et ce qui reste À PASSER vers l'étape suivante. ---
+const PROD_PARCOURS = [
+  {etape:'coupe',      titre:'Coupe',             recuLbl:'Commandé',          faitLbl:'Coupé',        attenteLbl:'À couper',        color:'#F59E0B',
+   recu:(c,q)=>q,              fait:c=>c.coupe},
+  {etape:'retour',     titre:'GADH (assemblage)', recuLbl:'Envoyé à la GADH',  faitLbl:'Retourné',     attenteLbl:'Chez la GADH',    color:'#8E2A5B',
+   recu:c=>c.coupe,            fait:c=>c.retour},
+  {etape:'confection', titre:'Confection',        recuLbl:'Retourné GADH',     faitLbl:'Confectionné', attenteLbl:'À confectionner', color:'#2563EB',
+   recu:c=>c.retour,           fait:c=>c.confection},
+  {etape:'controle',   titre:'Contrôle',          recuLbl:'Confectionné',      faitLbl:'Contrôlé',     attenteLbl:'À contrôler',     color:'#0891B2',
+   recu:c=>c.confection,       fait:c=>c.controle + c.rebut},
+  {etape:'emballage',  titre:'Emballage',         recuLbl:'Conformes',         faitLbl:'Emballé',      attenteLbl:'À emballer',      color:'#0D9488',
+   recu:c=>c.controle,         fait:c=>c.emballage},
+  {etape:'expedition', titre:'Expédition',        recuLbl:'Emballé',           faitLbl:'Expédié',      attenteLbl:'Prêt à expédier', color:'#15803D',
+   recu:c=>c.emballage,        fait:c=>c.expedition}
+];
+const PROD_ETAT_ETAPE = {
+  vide:    {label:'Pas encore',   icone:'○', color:'#9CA3AF'},
+  attente: {label:'À démarrer',   icone:'●', color:'#F59E0B'},
+  encours: {label:'En cours',     icone:'◐', color:'#2563EB'},
+  ajour:   {label:'À jour',       icone:'✓', color:'#0D9488'},
+  fini:    {label:'Terminée',     icone:'✓', color:'#15803D'}
+};
+function prodParcours(cmd, cum, refFilter){
+  const items = prodItems(cmd, cum, refFilter);
+  let precedenteFinie = true;
+  return PROD_PARCOURS.map(p => {
+    let recu = 0, fait = 0, attente = 0, rebut = 0;
+    const detail = {};
+    items.forEach(({rk, t, q, c}) => {
+      const r = p.recu(c, q), f = p.fait(c), a = Math.max(0, r - f);
+      recu += r; fait += f; attente += a;
+      if(p.etape==='controle') rebut += c.rebut;
+      if(a>0){ if(!detail[rk]) detail[rk] = []; detail[rk].push({t, a}); }
+    });
+    let etat;
+    if(recu===0) etat = 'vide';
+    else if(attente===0) etat = precedenteFinie ? 'fini' : 'ajour';
+    else if(fait===0) etat = 'attente';
+    else etat = 'encours';
+    precedenteFinie = (etat==='fini');
+    return {...p, recu, fait, attente, rebut, detail, etat};
+  });
+}
+
 // ============================================================
 // NAVIGATION (commune TEK-TREND / GADH)
 // ============================================================
 const prodNav = { tek: {view:'dash', cmdId:null}, gadh: {view:'dash', cmdId:null} };
 let prodListFilter = 'encours';
 let prodSaisie = null; // saisie du jour en cours
+let prodFicheMode = 'attente'; // tableau de la fiche : 'attente' (à passer) ou 'cumul'
+const prodParcoursOuvert = {};
 function canEditProdTek(){ return currentUser && currentUser.role === 'admin'; }
 function prodCanEditSite(site){ return site==='gadh' ? (typeof canEditGadh==='function' && canEditGadh()) : canEditProdTek(); }
 function prodRerender(site){
@@ -378,6 +425,52 @@ function renderProdListe(container, site){
 // ============================================================
 // FICHE COMMANDE : tableau façon Excel (cumuls par modèle et par taille)
 // ============================================================
+// Frise verticale : une ligne par étape, avec ce qui reste à passer vers l'étape suivante.
+function prodParcoursHTML(cmd, cum, site, cmdId, canEdit, r){
+  const etapes = prodParcours(cmd, cum);
+  return `<div class="card" style="padding:12px 12px 2px;">
+    <h3 style="margin:0 0 2px;font-size:13.5px;">Parcours de la commande</h3>
+    <p style="font-size:10.5px;color:var(--ink-faint);margin:0 0 12px;">Pour chaque étape : ce qu'elle a reçu, ce qu'elle a déjà passé, et ce qui reste à passer.</p>
+    ${etapes.map((e, i) => {
+      const etat = PROD_ETAT_ETAPE[e.etat];
+      const actif = e.etat!=='vide';
+      const pct = e.recu>0 ? Math.min(100, Math.round(e.fait/e.recu*100)) : 0;
+      const saisissable = canEdit && PROD_ETAPE_INFO[e.etape].site===site && (e.attente>0 || e.etape==='coupe');
+      const cle = cmdId+'|'+e.etape;
+      const ouvert = !!prodParcoursOuvert[cle];
+      const dernier = i===etapes.length-1;
+      const detail = Object.entries(e.detail).map(([rk,arr]) => `<div><b>${esc(prodRefName(rk))}</b> : ${arr.map(x => `${x.t} <b>${x.a}</b>`).join(' · ')}</div>`).join('');
+      return `
+      <div style="display:flex;gap:10px;">
+        <div style="display:flex;flex-direction:column;align-items:center;flex-shrink:0;">
+          <div style="width:28px;height:28px;border-radius:50%;background:${actif?e.color:'var(--surface-2)'};color:${actif?'#fff':'var(--ink-faint)'};border:2px solid ${actif?e.color:'var(--border)'};display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:800;">${e.etat==='fini'?'✓':i+1}</div>
+          ${dernier ? '' : `<div style="flex:1;width:2px;min-height:12px;background:${e.etat==='fini'?e.color:'var(--border)'};"></div>`}
+        </div>
+        <div style="flex:1;min-width:0;padding-bottom:14px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">
+            <b style="font-size:13.5px;${actif?'':'color:var(--ink-faint);'}">${e.titre}</b>
+            <span style="font-size:10px;font-weight:800;color:${etat.color};white-space:nowrap;">${etat.label}</span>
+          </div>
+          ${actif ? `
+          <div style="font-size:11px;color:var(--ink-soft);margin-top:2px;">${e.recuLbl} <b>${e.recu}</b> · ${e.faitLbl} <b>${e.fait}</b>${e.rebut?` <span style="color:var(--bad);">(dont ${e.rebut} rebut)</span>`:''}</div>
+          <div style="height:6px;background:var(--border-soft);border-radius:4px;overflow:hidden;margin:6px 0;"><div style="width:${pct}%;height:100%;background:${e.color};"></div></div>
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+            <div ${e.attente>0 ? `onclick="prodToggleParcours('${site}','${cle}')" style="cursor:pointer;"` : ''}>
+              <div style="font-size:10.5px;color:var(--ink-faint);font-weight:700;">${e.attenteLbl.toUpperCase()}</div>
+              <div style="font-size:20px;font-weight:800;line-height:1.1;color:${e.attente>0?e.color:'var(--ink-faint)'};">${e.attente} <span style="font-size:11px;font-weight:600;">pcs</span>${e.attente>0 ? ` <span style="font-size:10.5px;font-weight:600;color:var(--ink-faint);">${ouvert?'▾ masquer':'▸ par taille'}</span>` : ''}</div>
+            </div>
+            ${saisissable ? `<button class="btn btn-primary" style="padding:8px 14px;font-size:12px;flex-shrink:0;background:${e.color};border-color:${e.color};" onclick="prodOuvrirSaisie('${site}','${cmdId}',null,'${e.etape}')">Saisir</button>` : ''}
+          </div>
+          ${ouvert && e.attente>0 ? `<div style="font-size:11px;background:var(--surface-2);border-radius:8px;padding:6px 8px;margin-top:6px;line-height:1.7;">${detail}</div>` : ''}
+          ${e.etape==='expedition' ? `<div style="font-size:11.5px;margin-top:6px;">Reste à livrer au client : <b style="color:${r.resteALivrer?'var(--bad)':'var(--good)'};">${r.resteALivrer}</b></div>` : ''}
+          ` : `<div style="font-size:11px;color:var(--ink-faint);margin-top:2px;">Rien reçu pour l'instant</div>`}
+        </div>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+window.prodToggleParcours = (site, cle) => { prodParcoursOuvert[cle] = !prodParcoursOuvert[cle]; prodRerender(site); };
+
 function renderProdFiche(container, site){
   const cmdId = prodNav[site].cmdId;
   const cmd = getProdCommandes()[cmdId];
@@ -391,31 +484,49 @@ function renderProdFiche(container, site){
   const tuile = (val, lbl, color, fort) => `<div class="kpi-mini" style="min-height:58px;${fort?'border-color:'+color+';border-width:1.5px;':''}"><div class="kpi-mini-val" style="color:${val>0?color:'var(--ink-faint)'};">${val}</div><div class="kpi-mini-lbl">${lbl}</div></div>`;
   const statutsVus = new Set();
 
-  const tables = Object.entries(cmd.lignes||{}).map(([rk,l]) => {
+  const tables = `
+    <div style="display:flex;gap:6px;margin:0 0 8px;">
+      <button class="btn ${prodFicheMode==='attente'?'btn-primary':'btn-ghost'}" style="flex:1;padding:7px 4px;font-size:11.5px;" onclick="prodFicheMode='attente'; prodRerender('${site}')">Tableau : à passer</button>
+      <button class="btn ${prodFicheMode==='cumul'?'btn-primary':'btn-ghost'}" style="flex:1;padding:7px 4px;font-size:11.5px;" onclick="prodFicheMode='cumul'; prodRerender('${site}')">Tableau : cumuls</button>
+    </div>` + Object.entries(cmd.lignes||{}).map(([rk,l]) => {
     const tailles = PROD_TAILLES.filter(t => l.tailles && l.tailles[t]);
-    const tot = {q:0, ...prodEmptyCell()};
-    const rows = tailles.map(t => {
-      const q = prodCmdQty(cmd, rk, t), c = prodCell(cum, rk, t);
-      Object.keys(tot).forEach(k => { tot[k] += (k==='q' ? q : c[k]); });
-      const st = prodStatut([{c,q}]); statutsVus.add(st);
-      return `<tr>
-        <td style="text-align:left;font-weight:800;white-space:nowrap;"><span title="${PROD_STATUTS[st].label}" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${PROD_STATUTS[st].color};margin-right:3px;"></span>${t}</td>
-        <td style="color:var(--ink-soft);">${q}</td><td>${c.coupe||''}</td><td>${c.retour||''}</td><td>${c.confection||''}</td>
-        <td>${c.controle||''}${c.rebut?`<div style="font-size:9px;color:var(--bad);line-height:1;">−${c.rebut}</div>`:''}</td>
-        <td>${c.emballage||''}</td><td style="font-weight:800;">${c.expedition||''}</td></tr>`;
-    }).join('');
     const stModele = prodStatut(tailles.map(t => ({c: prodCell(cum, rk, t), q: prodCmdQty(cmd, rk, t)})));
+    let entete, rows, pied;
+    const dot = (st) => `<span title="${PROD_STATUTS[st].label}" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${PROD_STATUTS[st].color};margin-right:3px;"></span>`;
+    if(prodFicheMode==='attente'){
+      // Ce qui attend entre chaque étape (reçu de l'étape précédente, pas encore passé)
+      const cols = [['resteACouper','À couper'],['aLaGadh','GADH'],['enConfection','À conf.'],['auControle','À ctrl'],['aEmballer','À emb.'],['pretAExpedier','Prêt'],['resteALivrer','Reste liv.']];
+      const tot = {};
+      entete = `<tr><th style="text-align:left;">Taille</th>${cols.map(([k,lbl])=>`<th>${lbl}</th>`).join('')}</tr>`;
+      rows = tailles.map(t => {
+        const q = prodCmdQty(cmd, rk, t), c = prodCell(cum, rk, t), rr = prodRestes(c, q), st = prodStatut([{c,q}]);
+        statutsVus.add(st);
+        cols.forEach(([k]) => { tot[k] = (tot[k]||0) + rr[k]; });
+        return `<tr><td style="text-align:left;font-weight:800;white-space:nowrap;">${dot(st)}${t}</td>${cols.map(([k]) => `<td style="${rr[k]?'font-weight:800;'+(k==='resteALivrer'?'color:var(--bad);':''):'color:var(--ink-faint);'}">${rr[k]||'·'}</td>`).join('')}</tr>`;
+      }).join('');
+      pied = `<tr><td style="text-align:left;">Total</td>${cols.map(([k]) => `<td>${tot[k]||0}</td>`).join('')}</tr>`;
+    } else {
+      const tot = {q:0, ...prodEmptyCell()};
+      entete = `<tr><th style="text-align:left;">Taille</th><th>Cmd</th><th>Coupé</th><th>Retour</th><th>Conf.</th><th>Ctrl</th><th>Emb.</th><th>Exp.</th></tr>`;
+      rows = tailles.map(t => {
+        const q = prodCmdQty(cmd, rk, t), c = prodCell(cum, rk, t);
+        Object.keys(tot).forEach(k => { tot[k] += (k==='q' ? q : c[k]); });
+        const st = prodStatut([{c,q}]); statutsVus.add(st);
+        return `<tr>
+          <td style="text-align:left;font-weight:800;white-space:nowrap;">${dot(st)}${t}</td>
+          <td style="color:var(--ink-soft);">${q}</td><td>${c.coupe||''}</td><td>${c.retour||''}</td><td>${c.confection||''}</td>
+          <td>${c.controle||''}${c.rebut?`<div style="font-size:9px;color:var(--bad);line-height:1;">−${c.rebut}</div>`:''}</td>
+          <td>${c.emballage||''}</td><td style="font-weight:800;">${c.expedition||''}</td></tr>`;
+      }).join('');
+      pied = `<tr><td style="text-align:left;">Total</td><td>${tot.q}</td><td>${tot.coupe}</td><td>${tot.retour}</td><td>${tot.confection}</td>
+            <td>${tot.controle}${tot.rebut?`<div style="font-size:9px;color:var(--bad);line-height:1;">−${tot.rebut}</div>`:''}</td><td>${tot.emballage}</td><td>${tot.expedition}</td></tr>`;
+    }
     return `
       <div class="card" style="padding:10px;">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
           <b style="font-size:13px;">${esc(prodRefName(rk))}</b>${prodStatutBadge(stModele, true)}
         </div>
-        <table class="prod-xl">
-          <thead><tr><th style="text-align:left;">Taille</th><th>Cmd</th><th>Coupé</th><th>Retour</th><th>Conf.</th><th>Ctrl</th><th>Emb.</th><th>Exp.</th></tr></thead>
-          <tbody>${rows}</tbody>
-          <tfoot><tr><td style="text-align:left;">Total</td><td>${tot.q}</td><td>${tot.coupe}</td><td>${tot.retour}</td><td>${tot.confection}</td>
-            <td>${tot.controle}${tot.rebut?`<div style="font-size:9px;color:var(--bad);line-height:1;">−${tot.rebut}</div>`:''}</td><td>${tot.emballage}</td><td>${tot.expedition}</td></tr></tfoot>
-        </table>
+        <table class="prod-xl"><thead>${entete}</thead><tbody>${rows}</tbody><tfoot>${pied}</tfoot></table>
       </div>`;
   }).join('');
 
@@ -467,21 +578,10 @@ function renderProdFiche(container, site){
       ${viol.length>6 ? `<div style="font-size:11px;color:var(--ink-faint);">… et ${viol.length-6} autre(s)</div>` : ''}
     </div>` : ''}
 
-    <div class="card">
-      <h3 style="margin:0 0 8px;font-size:13px;">Où sont les pièces</h3>
-      <div class="kpi-mini-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:6px;">
-        ${tuile(r.resteACouper,'Reste à couper','#F59E0B')}${tuile(r.aLaGadh,'À la GADH','#8E2A5B')}${tuile(r.enConfection,'En confection','#2563EB')}
-      </div>
-      <div class="kpi-mini-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:6px;">
-        ${tuile(r.auControle,'Au contrôle','#0891B2')}${tuile(r.aEmballer,'À emballer','#0D9488')}${tuile(r.pretAExpedier,'Prêt à expédier','#059669', r.pretAExpedier>0)}
-      </div>
-      <div class="kpi-mini-grid" style="grid-template-columns:repeat(3,1fr);">
-        ${tuile(r.expedie,'Expédié','#15803D')}${tuile(r.resteALivrer,'Reste à livrer','#DC2626')}${tuile(r.rebut,'Rebut','#DC2626')}
-      </div>
-    </div>
+    ${prodParcoursHTML(cmd, cum, site, cmdId, canEdit, r)}
 
     ${tables}
-    <p style="font-size:10.5px;color:var(--ink-faint);margin:-4px 4px 12px;line-height:1.7;">Pastille = statut de la taille : ${[...statutsVus].map(st => `<span style="white-space:nowrap;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${PROD_STATUTS[st].color};"></span> ${PROD_STATUTS[st].label}</span>`).join(' · ')}. En rouge sous Ctrl : le rebut.</p>
+    <p style="font-size:10.5px;color:var(--ink-faint);margin:-4px 4px 12px;line-height:1.7;">Pastille = statut de la taille : ${[...statutsVus].map(st => `<span style="white-space:nowrap;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${PROD_STATUTS[st].color};"></span> ${PROD_STATUTS[st].label}</span>`).join(' · ')}.${prodFicheMode==='cumul' ? ' En rouge sous Ctrl : le rebut.' : ' Chaque colonne = pièces qui attendent à cette étape.'}</p>
 
     <div class="card">
       <h3 style="margin:0 0 4px;font-size:13px;">Saisies par date</h3>
@@ -653,6 +753,29 @@ window.prodSjToutDispo = () => {
   }));
   prodRerender(prodSaisie.site);
 };
+function prodAttenteEtape(cmd, cmdId, etape){
+  const cum = prodCumulsFrom(cmd, getProdSaisies(cmdId));
+  let n = 0;
+  prodItems(cmd, cum).forEach(({q, c}) => { n += etape==='coupe' ? Math.max(0, q - c.coupe) : Math.max(0, prodDisponible(etape, c)); });
+  return n;
+}
+// Toucher « à passer N » remplit la case avec tout ce qui attend (en tenant compte du rebut saisi)
+window.prodSjPasserTout = (rk, t) => {
+  const cmd = getProdCommandes()[prodSaisie.cmdId];
+  const saisies = getProdSaisies(prodSaisie.cmdId);
+  const c = prodCell(prodCumulsFrom(cmd, saisies), rk, t);
+  const jour = saisies[prodSaisie.date] || {};
+  const deja = parseInt(jour[prodSaisie.etape] && jour[prodSaisie.etape][rk] && jour[prodSaisie.etape][rk][t])||0;
+  const rbDeja = prodSaisie.etape==='controle' ? (parseInt(jour.rebut && jour.rebut[rk] && jour.rebut[rk][t])||0) : 0;
+  const dispo = prodSaisie.etape==='coupe' ? Math.max(0, prodCmdQty(cmd,rk,t) - c.coupe) : Math.max(0, prodDisponible(prodSaisie.etape, c));
+  const rb = parseInt(prodSaisie.rebut[rk] && prodSaisie.rebut[rk][t])||0;
+  const v = Math.max(0, deja + rbDeja + dispo - rb);
+  if(!prodSaisie.vals[rk]) prodSaisie.vals[rk] = {};
+  prodSaisie.vals[rk][t] = v;
+  const inp = document.querySelector(`#prod-saisie-form-zone input.sj[data-quoi="vals"][data-rk="${rk}"][data-t="${t}"]`);
+  if(inp) inp.value = v;
+  prodSaisieRafraichir();
+};
 window.prodSjEnregistrer = () => {
   const chk = prodSaisieRafraichir();
   if(chk.erreurs.length){ showToast('Corrigez les cases en rouge : ' + chk.erreurs[0]); return; }
@@ -690,23 +813,29 @@ function renderProdSaisie(container, site){
         // Maximum de la journée = ce qui est déjà saisi ce jour + ce qui reste disponible
         const dejaJour = (parseInt(jour[prodSaisie.etape] && jour[prodSaisie.etape][rk] && jour[prodSaisie.etape][rk][t])||0)
                        + (prodSaisie.etape==='controle' ? (parseInt(jour.rebut && jour.rebut[rk] && jour.rebut[rk][t])||0) : 0);
-        let aide, bloque = false;
-        if(prodSaisie.etape==='coupe'){ aide = `reste ${Math.max(0, prodCmdQty(cmd,rk,t) - c.coupe)}`; }
-        else { const max = dejaJour + Math.max(0, prodDisponible(prodSaisie.etape, c)); aide = `max ${max}`; bloque = max<=0; }
+        // Ce qui attend encore à cette étape (hors ce qui est déjà saisi ce jour-là)
+        let aPasser, bloque = false;
+        if(prodSaisie.etape==='coupe') aPasser = Math.max(0, prodCmdQty(cmd,rk,t) - c.coupe);
+        else { aPasser = Math.max(0, prodDisponible(prodSaisie.etape, c)); bloque = (dejaJour + aPasser)<=0; }
+        const aide = bloque ? `<span style="color:var(--ink-faint);">—</span>`
+          : aPasser>0 ? `<span onclick="prodSjPasserTout('${rk}','${t}')" style="cursor:pointer;color:${PROD_ETAPE_INFO[prodSaisie.etape]===undefined?'':'var(--accent)'};font-weight:800;text-decoration:underline dotted;">${prodSaisie.etape==='coupe'?'reste':'à passer'} ${aPasser}</span>`
+          : `<span style="color:var(--good);font-weight:700;">✓ ${prodSaisie.etape==='coupe'?'coupé':'passé'}</span>`;
         return `<div style="text-align:center;flex:1;min-width:0;">
           ${quoi==='vals' ? `<div style="font-size:10px;font-weight:800;color:var(--ink-soft);margin-bottom:2px;">${t}</div>` : ''}
-          <input type="number" inputmode="numeric" enterkeyhint="next" min="0" class="sj" data-rk="${rk}" data-t="${t}" value="${val}" ${bloque?'disabled':''}
+          <input type="number" inputmode="numeric" enterkeyhint="next" min="0" class="sj" data-quoi="${quoi}" data-rk="${rk}" data-t="${t}" value="${val}" ${bloque?'disabled':''}
             onfocus="this.select()" oninput="prodSjSet('${quoi}','${rk}','${t}',this.value)"
             style="width:100%;max-width:52px;padding:7px 2px;text-align:center;font-size:14px;font-weight:700;border:1.5px solid var(--border);border-radius:7px;${bloque?'opacity:.35;':''}${quoi==='rebut'?'color:var(--bad);':''}">
           ${quoi==='vals' ? `<div style="font-size:9.5px;color:var(--ink-faint);margin-top:2px;white-space:nowrap;">${aide}</div>` : ''}
         </div>`;
       }).join('');
+      const attenteModele = tailles.reduce((sum,t) => { const c = prodCell(cum, rk, t); return sum + (prodSaisie.etape==='coupe' ? Math.max(0, prodCmdQty(cmd,rk,t) - c.coupe) : Math.max(0, prodDisponible(prodSaisie.etape, c))); }, 0);
       return `
-        <div class="card" style="padding:10px;">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <div class="card" style="padding:10px;${attenteModele===0 && prodSaisie.etape!=='coupe' ? 'opacity:.6;' : ''}">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">
             <b style="font-size:13px;">${esc(prodRefName(rk))}</b>
             <span id="sj-tot-${rk.replace(/[^a-zA-Z0-9]/g,'_')}" style="font-size:11.5px;font-weight:800;color:var(--ink-soft);"></span>
           </div>
+          <div style="font-size:10.5px;color:var(--ink-soft);margin-bottom:6px;">${attenteModele>0 ? `${prodSaisie.etape==='coupe'?'Reste à couper':'À passer'} : <b>${attenteModele} pcs</b>` : (prodSaisie.etape==='coupe' ? 'Tout est coupé' : 'Rien en attente à cette étape')}</div>
           ${prodSaisie.etape==='controle' ? `<div style="font-size:10px;font-weight:800;color:var(--ink-faint);margin-bottom:2px;">CONFORMES</div>` : ''}
           <div style="display:flex;gap:4px;">${ligne('vals')}</div>
           ${prodSaisie.etape==='controle' ? `<div style="font-size:10px;font-weight:800;color:var(--bad);margin:8px 0 2px;">REBUT (non conformes)</div><div style="display:flex;gap:4px;">${ligne('rebut')}</div>` : ''}
@@ -728,17 +857,17 @@ function renderProdSaisie(container, site){
         ${etapes.length>1 ? `
         <label style="font-size:11px;font-weight:700;color:var(--ink-faint);">ÉTAPE</label>
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-top:4px;">
-          ${etapes.map(e => `<button class="btn ${prodSaisie.etape===e?'btn-primary':'btn-ghost'}" style="padding:9px 2px;font-size:11.5px;" onclick="prodSjEtape('${e}')">${PROD_ETAPE_INFO[e].label}</button>`).join('')}
+          ${etapes.map(e => { const n = cmd ? prodAttenteEtape(cmd, prodSaisie.cmdId, e) : null; return `<button class="btn ${prodSaisie.etape===e?'btn-primary':'btn-ghost'}" style="padding:7px 2px;font-size:11.5px;line-height:1.25;flex-direction:column;gap:1px;" onclick="prodSjEtape('${e}')"><span>${PROD_ETAPE_INFO[e].label}</span>${n===null?'':`<span style="font-size:10.5px;font-weight:800;${prodSaisie.etape===e?'':(n>0?'color:'+PROD_PARCOURS.find(x=>x.etape===e).color+';':'color:var(--ink-faint);')}">${n>0?n+' à passer':'—'}</span>`}</button>`; }).join('')}
         </div>` : `<div style="font-weight:800;color:#8E2A5B;">${info.long}</div>`}
       </div>
       ${!cmd ? (choix.length ? '' : `<div class="card">${buildEmptyState("Aucune commande en cours")}</div>`) : `
-      <p style="font-size:11px;color:var(--ink-soft);margin:0 4px 8px;">Quantités faites <b>ce jour-là</b> à l'étape ${info.long}. ${prodSaisie.etape==='coupe' ? 'Couper plus que la commande est permis (marge).' : 'Le maximum affiché est ce qui est disponible.'}</p>
+      <p style="font-size:11px;color:var(--ink-soft);margin:0 4px 8px;">Quantités faites <b>ce jour-là</b> à l'étape ${info.long}. ${prodSaisie.etape==='coupe' ? 'Sous chaque case : le reste à couper (couper plus que la commande est permis). Touchez-le pour remplir la case.' : 'Sous chaque case : ce qui attend à cette étape. Touchez « à passer » pour remplir la case, ou « Tout passer » pour tout remplir.'}</p>
       ${grille}
       <div class="card" style="padding:10px;position:sticky;bottom:78px;z-index:5;box-shadow:0 -4px 16px rgba(15,23,42,.10);">
         <div id="sj-erreurs" style="font-size:11px;color:var(--bad);margin-bottom:6px;"></div>
         <div style="font-size:13px;font-weight:800;margin-bottom:8px;" id="sj-total"></div>
         <div style="display:flex;align-items:center;gap:6px;">
-          ${prodSaisie.etape!=='coupe' ? `<button class="btn btn-ghost" style="flex:1;padding:10px 4px;font-size:12px;" onclick="prodSjToutDispo()">Tout le dispo</button>` : ''}
+          ${prodSaisie.etape!=='coupe' ? `<button class="btn btn-ghost" style="flex:1;padding:10px 4px;font-size:12px;" onclick="prodSjToutDispo()">Tout passer</button>` : ''}
           <button class="btn btn-ghost" style="flex:1;padding:10px 4px;font-size:12px;" onclick="prodSjFermer()">Fermer</button>
           <button class="btn btn-primary" style="flex:1.3;padding:10px 4px;font-size:13px;" onclick="prodSjEnregistrer()">Enregistrer</button>
         </div>
