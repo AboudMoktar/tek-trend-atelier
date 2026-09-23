@@ -1382,6 +1382,7 @@ function renderDashboard(container){
       </div>
       <div class="card">${buildEmptyState("Jour non travaillé", "Aucun créneau n'est programmé pour aujourd'hui (voir Paramètres → Horaires).")}</div>
     `;
+    if(typeof prodCarteResume === 'function') prodCarteResume(container, 'tek');
     return;
   }
 
@@ -1490,6 +1491,7 @@ function renderDashboard(container){
   }
 
   window.openOperatriceDetail = (opKey) => renderOperatriceDetail(opKey, data, ops, obj);
+  if(typeof prodCarteResume === 'function') prodCarteResume(container, 'tek');
 }
 
 function renderOperatriceDetail(opKey, data, ops, dayObj){

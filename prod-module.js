@@ -280,7 +280,7 @@ function prodMigrerAnciennesSaisies(){
 // ============================================================
 // NAVIGATION (commune TEK-TREND / GADH)
 // ============================================================
-const prodNav = { tek: {view:'list', cmdId:null}, gadh: {view:'list', cmdId:null} };
+const prodNav = { tek: {view:'dash', cmdId:null}, gadh: {view:'dash', cmdId:null} };
 let prodListFilter = 'encours';
 let prodSaisie = null; // saisie du jour en cours
 function canEditProdTek(){ return currentUser && currentUser.role === 'admin'; }
@@ -307,15 +307,17 @@ function prodShell(main, site){
   main.innerHTML = `
     <div class="flex-header"><h2>${ICONS.prodchain} Suivi des commandes</h2></div>
     <div class="card" style="padding:8px;display:flex;gap:6px;">
-      <button class="btn ${v!=='saisie'?'btn-primary':'btn-ghost'}" style="flex:1;padding:9px 4px;font-size:12.5px;" onclick="prodGo('${site}','list')">Commandes</button>
-      ${canEdit ? `<button class="btn ${v==='saisie'?'btn-primary':'btn-ghost'}" style="flex:1;padding:9px 4px;font-size:12.5px;" onclick="prodOuvrirSaisie('${site}', ${v==='fiche'&&prodNav[site].cmdId?`'${prodNav[site].cmdId}'`:'null'})">+ Saisie du jour</button>` : ''}
+      <button class="btn ${v==='dash'?'btn-primary':'btn-ghost'}" style="flex:1;padding:9px 2px;font-size:12px;" onclick="prodGo('${site}','dash')">Tableau de bord</button>
+      <button class="btn ${v==='list'||v==='fiche'?'btn-primary':'btn-ghost'}" style="flex:1;padding:9px 2px;font-size:12px;" onclick="prodGo('${site}','list')">Commandes</button>
+      ${canEdit ? `<button class="btn ${v==='saisie'?'btn-primary':'btn-ghost'}" style="flex:1;padding:9px 2px;font-size:12px;" onclick="prodOuvrirSaisie('${site}', ${v==='fiche'&&prodNav[site].cmdId?`'${prodNav[site].cmdId}'`:'null'})">+ Saisie</button>` : ''}
     </div>
     <div id="prod-body-${site}"></div>
   `;
   const body = document.getElementById('prod-body-'+site);
   if(v==='fiche') renderProdFiche(body, site);
   else if(v==='saisie') renderProdSaisie(body, site);
-  else renderProdListe(body, site);
+  else if(v==='list') renderProdListe(body, site);
+  else renderProdDashboard(body, site);
 }
 function renderProdChainTek(main){ prodShell(main, 'tek'); }
 function renderProdChainGadh(main){ prodShell(main, 'gadh'); }
@@ -697,6 +699,226 @@ function renderProdSaisie(container, site){
   });
   if(cmd) prodSaisieRafraichir();
 }
+
+// ============================================================
+// TABLEAU DE BORD DES COMMANDES
+// ============================================================
+let prodDashClient = 'tous';
+const PROD_FLUX = [
+  {k:'resteACouper',  label:'À couper',        color:'#F59E0B'},
+  {k:'aLaGadh',       label:'À la GADH',       color:'#8E2A5B'},
+  {k:'enConfection',  label:'En confection',   color:'#2563EB'},
+  {k:'auControle',    label:'Au contrôle',     color:'#0891B2'},
+  {k:'aEmballer',     label:'À emballer',      color:'#0D9488'},
+  {k:'pretAExpedier', label:'Prêt à expédier', color:'#059669'}
+];
+// Ordre des statuts pour la frise d'avancement de chaque commande
+const PROD_FRISE = [
+  {st:['COUPE'], label:'Coupe'}, {st:['GADH'], label:'GADH'}, {st:['RETOUR'], label:'Retour'},
+  {st:['CONFECTION'], label:'Conf.'}, {st:['CONTROLE'], label:'Ctrl'}, {st:['EMBALLAGE'], label:'Emb.'},
+  {st:['PRET'], label:'Prêt'}, {st:['PARTIEL','EXPEDIE'], label:'Exp.'}
+];
+function prodFriseIndex(statut){ return PROD_FRISE.findIndex(f => f.st.includes(statut)); }
+function prodJoursEntre(d1, d2){ return Math.round((new Date(d2+'T00:00:00') - new Date(d1+'T00:00:00')) / 86400000); }
+
+function prodDashDonnees(client){
+  prodMigrerAnciennesSaisies();
+  const today = getTodayISO();
+  const d7 = (() => { const d = new Date(today+'T00:00:00'); d.setDate(d.getDate()-6); return toISODateLocal(d); })();
+  const lignes = activeProdCommandes()
+    .filter(([id,c]) => client==='tous' || c.client===client)
+    .map(([id,c]) => {
+      const saisies = getProdSaisies(id);
+      const cum = prodCumulsFrom(c, saisies);
+      return {id, c, saisies, s: prodSynthese(id, null, cum), nbViol: prodViolations(cum).length};
+    });
+  const enCours = lignes.filter(x => x.s.statut!=='EXPEDIE');
+  const tot = {commande:0, resteACouper:0, aLaGadh:0, enConfection:0, auControle:0, aEmballer:0, pretAExpedier:0, expedie:0, resteALivrer:0, rebut:0};
+  enCours.forEach(x => { tot.commande += x.s.total; Object.keys(x.s.restes).forEach(k => { tot[k] += x.s.restes[k]; }); });
+  const parStatut = {};
+  lignes.forEach(x => { parStatut[x.s.statut] = (parStatut[x.s.statut]||0) + 1; });
+  const activite = {coupe:0, retour:0, confection:0, controle:0, emballage:0, expedition:0, rebut:0};
+  const activiteJour = {coupe:0, retour:0, confection:0, controle:0, emballage:0, expedition:0};
+  const recents = [];
+  const alertes = [];
+  lignes.forEach(x => {
+    let dernierRetour = null, premiereCoupe = null;
+    Object.entries(x.saisies).forEach(([date, jour]) => Object.entries(jour||{}).forEach(([etape, refs]) => {
+      let q = 0;
+      Object.values(refs||{}).forEach(ts => Object.values(ts||{}).forEach(v => { q += parseInt(v)||0; }));
+      if(!q) return;
+      if(etape==='retour' && (!dernierRetour || date>dernierRetour)) dernierRetour = date;
+      if(etape==='coupe' && (!premiereCoupe || date<premiereCoupe)) premiereCoupe = date;
+      if(date>=d7 && activite[etape]!==undefined) activite[etape] += q;
+      if(date===today && activiteJour[etape]!==undefined) activiteJour[etape] += q;
+      if(etape!=='rebut') recents.push({date, id:x.id, ref:x.c.ref, etape, q});
+    }));
+    if(x.nbViol) alertes.push({niveau:'bad', id:x.id, txt:`${x.c.ref} : ${x.nbViol} incohérence${x.nbViol>1?'s':''} à corriger`});
+    const r = x.s.restes;
+    const depuis = dernierRetour || premiereCoupe;
+    if(r.aLaGadh>0 && depuis){
+      const j = prodJoursEntre(depuis, today);
+      if(j>=7) alertes.push({niveau:'warn', id:x.id, txt:`${x.c.ref} : ${r.aLaGadh} pcs à la GADH, aucun retour depuis ${j} jours`});
+    }
+    if(r.pretAExpedier>0) alertes.push({niveau:'ok', id:x.id, txt:`${x.c.ref} : ${r.pretAExpedier} pcs prêtes à expédier`});
+  });
+  recents.sort((a,b) => b.date.localeCompare(a.date));
+  return {lignes, enCours, tot, parStatut, activite, activiteJour, recents: recents.slice(0,8), alertes};
+}
+
+function prodKpi(val, lbl, color, bg, onclick){
+  return `<div class="kpi-mini" style="background:linear-gradient(160deg,${bg},var(--surface));border-color:${color}33;${onclick?'cursor:pointer;':''}" ${onclick?`onclick="${onclick}"`:''}>
+    <div class="kpi-mini-val" style="color:${color};">${val}</div><div class="kpi-mini-lbl">${lbl}</div></div>`;
+}
+
+function renderProdDashboard(container, site){
+  const d = prodDashDonnees(prodDashClient);
+  const t = d.tot;
+  const fluxTotal = PROD_FLUX.reduce((s,f) => s + t[f.k], 0);
+  const maxAct = Math.max(1, ...PROD_ETAPES.map(e => d.activite[e]));
+  const couleurNiveau = {bad:'var(--bad)', warn:'var(--warn)', ok:'var(--good)'};
+  const iconeNiveau = {bad:'⚠️', warn:'⏳', ok:'📦'};
+  container.innerHTML = `
+    <div class="card" style="background:linear-gradient(120deg,#0B2C4D,#123B63);color:#fff;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+        <div>
+          <div style="font-size:17px;font-weight:800;">📦 Commandes</div>
+          <div style="font-size:11.5px;color:rgba(255,255,255,.75);">${d.enCours.length} en cours · ${d.lignes.length - d.enCours.length} expédiée${d.lignes.length-d.enCours.length>1?'s':''}</div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:22px;font-weight:800;">${t.resteALivrer}</div>
+          <div style="font-size:10.5px;color:rgba(255,255,255,.75);">pièces à livrer</div>
+        </div>
+      </div>
+      ${site==='tek' && canEditProdTek() ? `<button class="btn" style="width:100%;margin-top:10px;padding:9px;font-size:12.5px;background:#fff;color:#0B2C4D;border:none;font-weight:800;" onclick="prodNouvelleCommande()">+ Nouvelle commande</button>` : ''}
+      <div style="display:flex;gap:6px;margin-top:8px;">
+        ${['tous', ...PROD_CLIENTS].map(cl => `<button class="btn" style="flex:1;padding:6px 4px;font-size:11.5px;background:${prodDashClient===cl?'#fff':'rgba(255,255,255,.12)'};color:${prodDashClient===cl?'#0B2C4D':'#fff'};border:1px solid rgba(255,255,255,.25);" onclick="prodDashClient='${cl}'; prodRerender('${site}')">${cl==='tous'?'Tous clients':cl}</button>`).join('')}
+      </div>
+    </div>
+
+    ${d.lignes.length===0 ? `<div class="card">${buildEmptyState("Aucune commande", site==='tek' && canEditProdTek() ? "Créez la première commande avec le bouton ci-dessus." : "")}</div>` : `
+
+    <div class="kpi-mini-grid" style="grid-template-columns:repeat(3,1fr);">
+      ${prodKpi(d.enCours.length, 'Commandes en cours', '#1D4ED8', '#EFF6FF', `prodListFilter='encours'; prodGo('${site}','list')`)}
+      ${prodKpi(t.aLaGadh, 'Pièces à la GADH', '#8E2A5B', '#FDF2F8')}
+      ${prodKpi(t.pretAExpedier, 'Prêt à expédier', '#059669', '#ECFDF5')}
+    </div>
+
+    <div class="card">
+      <h3 style="margin:0 0 4px;font-size:13px;">Où sont les pièces</h3>
+      <p style="font-size:10.5px;color:var(--ink-faint);margin:0 0 8px;">Commandes en cours · ${t.commande} pièces commandées</p>
+      <div style="display:flex;height:12px;border-radius:6px;overflow:hidden;background:var(--border-soft);margin-bottom:10px;">
+        ${fluxTotal ? PROD_FLUX.map(f => t[f.k] ? `<div title="${f.label} ${t[f.k]}" style="width:${t[f.k]/fluxTotal*100}%;background:${f.color};"></div>` : '').join('') : ''}
+      </div>
+      ${PROD_FLUX.map(f => `
+        <div style="display:flex;align-items:center;gap:8px;padding:4px 0;">
+          <span style="width:9px;height:9px;border-radius:50%;background:${f.color};flex-shrink:0;"></span>
+          <span style="flex:1;font-size:12px;">${f.label}</span>
+          <b style="font-size:13px;color:${t[f.k]?f.color:'var(--ink-faint)'};">${t[f.k]}</b>
+        </div>`).join('')}
+      <div style="display:flex;justify-content:space-between;border-top:1px solid var(--border-soft);margin-top:6px;padding-top:6px;font-size:11.5px;">
+        <span>Expédié <b>${t.expedie}</b></span><span style="color:var(--bad);">Rebut <b>${t.rebut}</b></span>
+      </div>
+    </div>
+
+    <div class="card" style="border:1.5px solid ${d.alertes.some(a=>a.niveau!=='ok')?'var(--warn)':'var(--border)'};">
+      <h3 style="margin:0 0 6px;font-size:13px;">Points d'attention</h3>
+      ${d.alertes.length===0 ? `<p style="font-size:12px;color:var(--good);font-weight:700;margin:0;">✓ Rien à signaler</p>` : d.alertes.map(a => `
+        <div style="display:flex;gap:8px;align-items:flex-start;padding:5px 0;cursor:pointer;border-bottom:1px solid var(--border-soft);" onclick="prodGo('${site}','fiche','${a.id}')">
+          <span>${iconeNiveau[a.niveau]}</span><span style="flex:1;font-size:12px;color:${couleurNiveau[a.niveau]};">${esc(a.txt)}</span><span style="color:var(--ink-faint);">›</span>
+        </div>`).join('')}
+    </div>
+
+    <div class="card">
+      <h3 style="margin:0 0 8px;font-size:13px;">Commandes en cours</h3>
+      ${d.enCours.length===0 ? buildEmptyState("Toutes les commandes sont expédiées") : d.enCours.map(x => {
+        const idx = prodFriseIndex(x.s.statut);
+        return `
+        <div style="padding:9px 0;border-bottom:1px solid var(--border-soft);cursor:pointer;" onclick="prodGo('${site}','fiche','${x.id}')">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;">
+            <div style="min-width:0;"><b style="font-size:13px;">${esc(x.c.ref)}</b> <span style="font-size:11.5px;color:var(--ink-soft);">${esc(x.c.nom)}</span>
+              <div style="font-size:10.5px;color:var(--ink-faint);">${esc(x.c.client||'—')} · ${x.s.total} pcs · reste à livrer ${x.s.restes.resteALivrer}</div></div>
+            ${prodStatutBadge(x.s.statut, true)}
+          </div>
+          <div style="display:flex;gap:3px;margin-top:8px;">
+            ${PROD_FRISE.map((f,i) => `<div style="flex:1;text-align:center;">
+              <div style="height:5px;border-radius:3px;background:${i<=idx ? PROD_STATUTS[x.s.statut].color : 'var(--border-soft)'};"></div>
+              <div style="font-size:8.5px;color:${i===idx?PROD_STATUTS[x.s.statut].color:'var(--ink-faint)'};font-weight:${i===idx?'800':'500'};margin-top:2px;">${f.label}</div></div>`).join('')}
+          </div>
+          <div style="margin-top:6px;display:flex;flex-direction:column;gap:3px;">
+            ${prodBarre(x.s.pctPret, '#0D9488', 'Prêt')}${prodBarre(x.s.pctExp, '#15803D', 'Expédié')}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+
+    <div class="card">
+      <h3 style="margin:0 0 8px;font-size:13px;">Activité des 7 derniers jours</h3>
+      ${PROD_ETAPES.map(e => `
+        <div style="display:flex;align-items:center;gap:8px;padding:3px 0;">
+          <span style="width:78px;font-size:11.5px;">${PROD_ETAPE_INFO[e].label}</span>
+          <div style="flex:1;height:9px;background:var(--border-soft);border-radius:5px;overflow:hidden;"><div style="width:${d.activite[e]/maxAct*100}%;height:100%;background:#3B82F6;"></div></div>
+          <b style="width:48px;text-align:right;font-size:12px;">${d.activite[e]}</b>
+        </div>`).join('')}
+      <p style="font-size:10.5px;color:var(--ink-faint);margin:6px 0 0;">Aujourd'hui : ${PROD_ETAPES.filter(e=>d.activiteJour[e]).map(e=>`${PROD_ETAPE_INFO[e].label} ${d.activiteJour[e]}`).join(' · ') || 'aucune saisie'}${d.activite.rebut?` · rebut 7 j : ${d.activite.rebut}`:''}</p>
+    </div>
+
+    <div class="card">
+      <h3 style="margin:0 0 6px;font-size:13px;">Dernières saisies</h3>
+      ${d.recents.length===0 ? buildEmptyState("Aucune saisie") : d.recents.map(r => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border-soft);cursor:pointer;" onclick="prodGo('${site}','fiche','${r.id}')">
+          <div><div style="font-size:12px;font-weight:700;">${esc(r.ref)} · ${PROD_ETAPE_INFO[r.etape] ? PROD_ETAPE_INFO[r.etape].label : r.etape}</div>
+            <div style="font-size:10.5px;color:var(--ink-faint);">${r.date.split('-').reverse().join('/')}</div></div>
+          <b style="font-size:12.5px;">${r.q} pcs</b>
+        </div>`).join('')}
+    </div>
+
+    <div class="card">
+      <h3 style="margin:0 0 8px;font-size:13px;">Commandes par statut</h3>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;">
+        ${Object.keys(PROD_STATUTS).filter(st => d.parStatut[st]).map(st => `<span style="font-size:11px;font-weight:800;color:#fff;background:${PROD_STATUTS[st].color};padding:4px 9px;border-radius:10px;">${PROD_STATUTS[st].label} · ${d.parStatut[st]}</span>`).join('')}
+      </div>
+    </div>`}
+  `;
+}
+
+// Carte résumé à afficher sur le Tableau principal (TEK-TREND) et le Dashboard GADH
+function prodCarteResume(container, site){
+  if(!container) return;
+  let d;
+  try { d = prodDashDonnees('tous'); } catch(e){ console.error(e); return; }
+  if(d.lignes.length===0) return;
+  const t = d.tot;
+  const cible = site==='gadh' ? 'gadh-prodchain' : 'prodchain';
+  const aller = `prodNav['${site}'].view='dash'; nav('${cible}')`;
+  const alertesFortes = d.alertes.filter(a => a.niveau!=='ok').length;
+  const html = `
+    <div class="card" style="cursor:pointer;" onclick="${aller}">
+      <div class="flex-header" style="margin-bottom:8px;">
+        <h3 style="margin:0;font-size:14px;">📦 Suivi des commandes</h3>
+        <span style="font-size:12px;font-weight:700;color:var(--accent);">Voir tout ›</span>
+      </div>
+      <div class="kpi-mini-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:8px;">
+        ${site==='gadh'
+          ? prodKpi(t.aLaGadh, 'Pièces à la GADH', '#8E2A5B', '#FDF2F8') + prodKpi(d.activite.retour, 'Retournées 7 j', '#7C3AED', '#F5F3FF') + prodKpi(d.enCours.length, 'Commandes en cours', '#1D4ED8', '#EFF6FF')
+          : prodKpi(d.enCours.length, 'Commandes en cours', '#1D4ED8', '#EFF6FF') + prodKpi(t.pretAExpedier, 'Prêt à expédier', '#059669', '#ECFDF5') + prodKpi(t.resteALivrer, 'Reste à livrer', '#DC2626', '#FEF2F2')}
+      </div>
+      ${d.enCours.slice(0,3).map(x => `
+        <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-top:1px solid var(--border-soft);">
+          <b style="font-size:12px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(x.c.ref)} <span style="font-weight:500;color:var(--ink-faint);">${esc(x.c.client||'')}</span></b>
+          ${prodStatutBadge(x.s.statut, true)}
+          <span style="font-size:11px;font-weight:800;width:62px;text-align:right;">${site==='gadh' ? x.s.restes.aLaGadh+' pcs' : x.s.pctExp+'% exp.'}</span>
+        </div>`).join('')}
+      ${d.enCours.length>3 ? `<div style="font-size:11px;color:var(--ink-faint);padding-top:4px;">+ ${d.enCours.length-3} autre(s)</div>` : ''}
+      ${alertesFortes ? `<div style="font-size:11.5px;color:var(--warn);font-weight:700;margin-top:6px;">⚠️ ${alertesFortes} point${alertesFortes>1?'s':''} d'attention</div>` : ''}
+    </div>`;
+  container.insertAdjacentHTML('beforeend', html);
+}
+
+window.prodNouvelleCommande = () => {
+  prodGo('tek', 'list');
+  if(typeof window.showAddProdCommandeForm === 'function') window.showAddProdCommandeForm();
+};
 // ============================================================
 // FORMULAIRE COMMANDE (création / modification / import copier-coller)
 // ============================================================

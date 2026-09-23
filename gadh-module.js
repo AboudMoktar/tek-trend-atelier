@@ -883,6 +883,7 @@ function renderGadhDashboard(container){
       </div>
     </div>
   `;
+  if(typeof prodCarteResume === 'function') prodCarteResume(container, 'gadh');
 }
 
 // ============================================================
