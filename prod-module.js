@@ -1,18 +1,15 @@
 // ============================================================
-// SUIVI DE PRODUCTION — TEK-TREND ⇄ GADH TUNISIA (v3 : bons datés)
+// SUIVI DE COMMANDE — TEK-TREND ⇄ GADH TUNISIA (v4 : tableau façon Excel)
 // ============================================================
-// Logique validée avec le Responsable :
-//  - chaque opération est un BON daté (Coupe/Envoi GADH, Retour GADH,
-//    Contrôle, Emballage, Expédition) ; les totaux, restes et statuts
-//    sont TOUJOURS calculés à partir des bons, jamais saisis à la main
-//  - blocage : un bon ne peut pas dépasser ce qui est disponible à l'étape
-//    précédente (seule la coupe peut dépasser la commande : marge de sécurité)
-//  - contrôle : les non conformes partent au REBUT définitif
-//  - expédition par référence/taille, prélevée sur l'emballé
-//  - un bon erroné s'ANNULE (jamais d'écrasement), avec vérification
-//    que les étapes suivantes ne l'ont pas déjà utilisé
-//  - suivi par taille, aucun champ "opérateur"
-//  - données partagées TEK-TREND/GADH, interface séparée par société
+// Modèle du rapport journalier de la confection : pour chaque commande
+// (clé = référence/LOT), par modèle et par taille, on saisit chaque jour la
+// quantité faite à une étape ; l'écran montre les CUMULS comme un tableau Excel.
+//   Coupé (= envoyé automatiquement à la GADH) → Retour GADH → Confection
+//   → Contrôle (conformes + rebut) → Emballage (= prêt à expédier) → Expédition
+// Tout peut se faire en partiel, sur plusieurs dates. Pour corriger, on rouvre
+// la même date et la même étape et on change le chiffre.
+// Règle : une étape ne dépasse jamais la précédente (sauf la coupe : marge).
+// Données partagées TEK-TREND/GADH, interface séparée par société.
 
 const PROD_TAILLES = ['XS','S','M','L','XL','XXL','XXXL'];
 
@@ -73,189 +70,219 @@ function prodRefIsUnique(ref, ignoreId){
   return !Object.entries(getProdCommandes()).some(([id,c]) => id!==ignoreId && (c.ref||'').trim().toLowerCase()===ref.trim().toLowerCase());
 }
 
-// --- Étapes ---
-const PROD_ETAPES = ['coupe','retour','controle','emballage','expedition'];
+
+// --- Étapes (colonnes du tableau) ---
+// 'rebut' n'est pas une étape à part : il se saisit avec le contrôle (non conformes).
+const PROD_ETAPES = ['coupe','retour','confection','controle','emballage','expedition'];
 const PROD_ETAPE_INFO = {
-  coupe:      {label:'Coupe / Envoi GADH', court:'Coupé/Envoyé', site:'tek',  color:'#F59E0B'},
-  retour:     {label:'Retour GADH',        court:'Retourné',     site:'gadh', color:'#8E2A5B'},
-  controle:   {label:'Contrôle',           court:'Contrôlé',     site:'tek',  color:'#3B82F6'},
-  emballage:  {label:'Emballage',          court:'Emballé',      site:'tek',  color:'#0EA5A4'},
-  expedition: {label:'Expédition',         court:'Expédié',      site:'tek',  color:'#10B981'}
+  coupe:      {label:'Coupe',        long:'Coupe (envoyé à la GADH)', col:'Coupé',  site:'tek',  amont:null},
+  retour:     {label:'Retour GADH',  long:'Retour GADH → TEK-TREND',  col:'Retour', site:'gadh', amont:'coupe'},
+  confection: {label:'Confection',   long:'Confection',               col:'Conf.',  site:'tek',  amont:'retour'},
+  controle:   {label:'Contrôle',     long:'Contrôle (conformes)',     col:'Ctrl',   site:'tek',  amont:'confection'},
+  emballage:  {label:'Emballage',    long:'Emballage',                col:'Emb.',   site:'tek',  amont:'controle'},
+  expedition: {label:'Expédition',   long:'Expédition',               col:'Exp.',   site:'tek',  amont:'emballage'}
 };
+function prodEtapesSite(site){ return PROD_ETAPES.filter(e => PROD_ETAPE_INFO[e].site===site); }
 
-// --- Bons : { etape, commandeId, date, lignes:{refKey:{taille:qte}}, nc:{...} (contrôle), observation, createdBy, createdAt, annule } ---
-function getProdBons(){ return getJSON('prod_bons', {}); }
-function saveProdBons(b){ setJSON('prod_bons', b); }
-function prodBonTotal(b){
-  let s = 0;
-  Object.values(b.lignes||{}).forEach(ts => Object.values(ts).forEach(q => { s += parseInt(q)||0; }));
-  return s;
-}
-function prodBonNcTotal(b){
-  let s = 0;
-  Object.values(b.nc||{}).forEach(ts => Object.values(ts).forEach(q => { s += parseInt(q)||0; }));
-  return s;
-}
-function prodBonsCommande(cmdId, includeAnnules){
-  return Object.entries(getProdBons())
-    .filter(([id,b]) => b.commandeId===cmdId && (includeAnnules || !b.annule))
-    .sort((a,b)=> ((b[1].date||'')+(b[1].createdAt||'')).localeCompare((a[1].date||'')+(a[1].createdAt||'')));
-}
+// --- Saisies journalières : prod_saisies_<cmdId> = { 'AAAA-MM-JJ': { etape: { refKey: { taille: qte } } } } ---
+function getProdSaisies(cmdId){ return getJSON('prod_saisies_'+cmdId, {}); }
+function saveProdSaisies(cmdId, s){ setJSON('prod_saisies_'+cmdId, s); }
 
-// --- Cumuls par référence/taille, calculés à partir des bons non annulés ---
-function prodEmptyCell(){ return {coupe:0, retour:0, controle:0, nc:0, emballage:0, expedition:0}; }
-function prodCumuls(cmdId, excludeBonId, extraBon){
-  const cmd = getProdCommandes()[cmdId];
+// --- Cumuls à date, par référence/taille ---
+function prodEmptyCell(){ return {coupe:0, retour:0, confection:0, controle:0, rebut:0, emballage:0, expedition:0}; }
+function prodCumulsFrom(cmd, saisies){
   const res = {};
   const cell = (rk,t) => { if(!res[rk]) res[rk] = {}; if(!res[rk][t]) res[rk][t] = prodEmptyCell(); return res[rk][t]; };
   if(cmd) Object.entries(cmd.lignes||{}).forEach(([rk,l]) => Object.keys(l.tailles||{}).forEach(t => cell(rk,t)));
-  const add = (b) => {
-    Object.entries(b.lignes||{}).forEach(([rk,ts]) => Object.entries(ts).forEach(([t,q]) => { cell(rk,t)[b.etape] += parseInt(q)||0; }));
-    if(b.etape==='controle') Object.entries(b.nc||{}).forEach(([rk,ts]) => Object.entries(ts).forEach(([t,q]) => { cell(rk,t).nc += parseInt(q)||0; }));
-  };
-  Object.entries(getProdBons()).forEach(([id,b]) => {
-    if(b.commandeId!==cmdId || b.annule || id===excludeBonId) return;
-    add(b);
-  });
-  if(extraBon) add(extraBon);
+  Object.values(saisies||{}).forEach(jour => Object.entries(jour||{}).forEach(([etape, refs]) => {
+    Object.entries(refs||{}).forEach(([rk, ts]) => Object.entries(ts||{}).forEach(([t,q]) => {
+      const c = cell(rk,t);
+      if(c[etape] !== undefined) c[etape] += parseInt(q)||0;
+    }));
+  }));
   return res;
 }
+function prodCumuls(cmdId){ return prodCumulsFrom(getProdCommandes()[cmdId], getProdSaisies(cmdId)); }
 function prodCell(cum, rk, t){ return (cum[rk] && cum[rk][t]) || prodEmptyCell(); }
 
-// Ce qui peut encore passer à une étape (plafond du bon). null = pas de plafond (coupe).
+// Quantité déjà passée à une étape (le contrôle compte conformes + rebut)
+function prodSortieEtape(etape, c){ return etape==='controle' ? c.controle + c.rebut : c[etape]; }
+// Ce qui reste disponible pour l'étape (null = pas de plafond : la coupe)
 function prodDisponible(etape, c){
-  if(etape==='retour') return c.coupe - c.retour;
-  if(etape==='controle') return c.retour - c.controle;
-  if(etape==='emballage') return (c.controle - c.nc) - c.emballage;
-  if(etape==='expedition') return c.emballage - c.expedition;
-  return null;
+  const amont = PROD_ETAPE_INFO[etape].amont;
+  if(!amont) return null;
+  return c[amont] - prodSortieEtape(etape, c);
 }
-function prodRestes(c, qteCommandee){
+// Où sont les pièces
+function prodRestes(c, q){
   return {
-    resteACouper: Math.max(0, qteCommandee - c.coupe),
-    chezGadh: Math.max(0, c.coupe - c.retour),
-    aControler: Math.max(0, c.retour - c.controle),
-    rebut: c.nc,
-    aEmballer: Math.max(0, (c.controle - c.nc) - c.emballage),
+    resteACouper:  Math.max(0, q - c.coupe),
+    aLaGadh:       Math.max(0, c.coupe - c.retour),
+    enConfection:  Math.max(0, c.retour - c.confection),
+    auControle:    Math.max(0, c.confection - c.controle - c.rebut),
+    aEmballer:     Math.max(0, c.controle - c.emballage),
     pretAExpedier: Math.max(0, c.emballage - c.expedition),
-    resteALivrer: Math.max(0, qteCommandee - c.expedition)
+    expedie:       c.expedition,
+    resteALivrer:  Math.max(0, q - c.expedition),
+    rebut:         c.rebut
   };
 }
-
-// Incohérences (une étape qui dépasse la précédente). Normalement impossibles avec
-// les bons, mais possibles dans les saisies reprises de l'ancienne version.
+// Incohérences : une étape qui dépasse la précédente
 function prodViolations(cum){
   const v = [];
   Object.entries(cum).forEach(([rk,ts]) => Object.entries(ts).forEach(([t,c]) => {
-    if(c.retour > c.coupe) v.push({rk, t, code:'retour', msg:`retourné ${c.retour} > coupé/envoyé ${c.coupe}`});
-    if(c.controle > c.retour) v.push({rk, t, code:'controle', msg:`contrôlé ${c.controle} > retourné ${c.retour}`});
-    if(c.nc > c.controle) v.push({rk, t, code:'nc', msg:`non conformes ${c.nc} > contrôlé ${c.controle}`});
-    if(c.emballage > c.controle - c.nc) v.push({rk, t, code:'emballage', msg:`emballé ${c.emballage} > conformes ${c.controle - c.nc}`});
-    if(c.expedition > c.emballage) v.push({rk, t, code:'expedition', msg:`expédié ${c.expedition} > emballé ${c.emballage}`});
+    if(c.retour > c.coupe) v.push({rk,t,code:'retour', msg:`retour ${c.retour} > coupé ${c.coupe}`});
+    if(c.confection > c.retour) v.push({rk,t,code:'confection', msg:`confection ${c.confection} > retour ${c.retour}`});
+    if(c.controle + c.rebut > c.confection) v.push({rk,t,code:'controle', msg:`contrôle ${c.controle}${c.rebut?' + rebut '+c.rebut:''} > confection ${c.confection}`});
+    if(c.emballage > c.controle) v.push({rk,t,code:'emballage', msg:`emballé ${c.emballage} > conformes ${c.controle}`});
+    if(c.expedition > c.emballage) v.push({rk,t,code:'expedition', msg:`expédié ${c.expedition} > emballé ${c.emballage}`});
   }));
   return v;
 }
 function prodViolationKey(v){ return v.rk+'|'+v.t+'|'+v.code; }
 
-// --- Statut automatique d'une commande (ou d'une seule référence de la commande) ---
+// --- Statut automatique : l'étape la plus avancée atteinte ---
 const PROD_STATUTS = {
-  RECUE:         {label:'Reçue',                  color:'#9CA3AF'},
-  EN_PRODUCTION: {label:'En production',          color:'#3B82F6'},
-  PRETE:         {label:'Prête à expédier',       color:'#0EA5A4'},
-  PARTIELLE:     {label:'Partiellement expédiée', color:'#F59E0B'},
-  EXPEDIEE:      {label:'Expédiée',               color:'#10B981'}
+  TRAITEMENT: {label:'En traitement',          color:'#9CA3AF'},
+  COUPE:      {label:'En coupe',               color:'#F59E0B'},
+  GADH:       {label:'À la GADH',              color:'#8E2A5B'},
+  RETOUR:     {label:'Retour à TEK-TREND',     color:'#7C3AED'},
+  CONFECTION: {label:'En cours de confection', color:'#2563EB'},
+  CONTROLE:   {label:'Contrôle',               color:'#0891B2'},
+  EMBALLAGE:  {label:'Emballage',              color:'#0D9488'},
+  PRET:       {label:'Prêt à expédier',        color:'#059669'},
+  PARTIEL:    {label:'Expédié en partie',      color:'#65A30D'},
+  EXPEDIE:    {label:'Expédié',                color:'#15803D'}
 };
-// Les quantités sont plafonnées taille par taille à la quantité commandée : un surplus
-// sur une taille ne doit jamais masquer un manque sur une autre.
+// items = [{c, q}] : une taille, un modèle ou toute une commande.
+// Les fins d'étape (tout coupé, tout emballé, tout expédié) se vérifient taille par
+// taille, plafonnées à la commande : un surplus sur une taille ne cache pas un manque ailleurs.
+function prodStatut(items){
+  let total=0, capCoupe=0, capEmb=0, capExp=0;
+  const any = {coupe:0, retour:0, confection:0, controle:0, emballage:0, expedition:0};
+  items.forEach(({c,q}) => {
+    total += q;
+    capCoupe += Math.min(c.coupe, q); capEmb += Math.min(c.emballage, q); capExp += Math.min(c.expedition, q);
+    any.coupe += c.coupe; any.retour += c.retour; any.confection += c.confection;
+    any.controle += c.controle + c.rebut; any.emballage += c.emballage; any.expedition += c.expedition;
+  });
+  if(total>0 && capExp>=total) return 'EXPEDIE';
+  if(any.expedition>0) return 'PARTIEL';
+  if(total>0 && capEmb>=total) return 'PRET';
+  if(any.emballage>0) return 'EMBALLAGE';
+  if(any.controle>0) return 'CONTROLE';
+  if(any.confection>0) return 'CONFECTION';
+  if(any.retour>0) return 'RETOUR';
+  if(any.coupe>0) return (total>0 && capCoupe>=total) ? 'GADH' : 'COUPE';
+  return 'TRAITEMENT';
+}
+function prodItems(cmd, cum, refFilter){
+  const items = [];
+  Object.entries(cmd.lignes||{}).forEach(([rk,l]) => {
+    if(refFilter && rk!==refFilter) return;
+    Object.entries(l.tailles||{}).forEach(([t,q]) => items.push({rk, t, q: parseInt(q)||0, c: prodCell(cum, rk, t)}));
+  });
+  return items;
+}
 function prodSynthese(cmdId, refFilter, cumOpt){
   const cmd = getProdCommandes()[cmdId];
   if(!cmd) return null;
   const cum = cumOpt || prodCumuls(cmdId);
-  const restes = {resteACouper:0, chezGadh:0, aControler:0, rebut:0, aEmballer:0, pretAExpedier:0, resteALivrer:0};
-  let total=0, embCap=0, expCap=0, expRaw=0, activite=0;
-  Object.entries(cmd.lignes||{}).forEach(([rk,l]) => {
-    if(refFilter && rk!==refFilter) return;
-    Object.entries(l.tailles||{}).forEach(([t,qRaw]) => {
-      const q = parseInt(qRaw)||0;
-      const c = prodCell(cum, rk, t);
-      total += q;
-      embCap += Math.min(c.emballage, q);
-      expCap += Math.min(c.expedition, q);
-      expRaw += c.expedition;
-      activite += c.coupe + c.retour + c.controle + c.emballage + c.expedition;
-      const r = prodRestes(c, q);
-      Object.keys(restes).forEach(k => { restes[k] += r[k]; });
-    });
+  const items = prodItems(cmd, cum, refFilter);
+  const restes = {resteACouper:0, aLaGadh:0, enConfection:0, auControle:0, aEmballer:0, pretAExpedier:0, expedie:0, resteALivrer:0, rebut:0};
+  let total=0, capExp=0, capEmb=0;
+  items.forEach(({c,q}) => {
+    total += q; capExp += Math.min(c.expedition, q); capEmb += Math.min(c.emballage, q);
+    const r = prodRestes(c, q);
+    Object.keys(restes).forEach(k => { restes[k] += r[k]; });
   });
-  let statut = 'RECUE';
-  if(total>0 && expCap>=total) statut = 'EXPEDIEE';
-  else if(expRaw>0) statut = 'PARTIELLE';
-  else if(total>0 && embCap>=total) statut = 'PRETE';
-  else if(activite>0) statut = 'EN_PRODUCTION';
   return {
-    total, embCap, expCap, statut, restes,
-    pctProd: total ? Math.min(100, Math.round(embCap/total*100)) : 0,
-    pctExp: total ? Math.min(100, Math.round(expCap/total*100)) : 0
+    total, restes, statut: prodStatut(items),
+    pctPret: total ? Math.min(100, Math.round(capEmb/total*100)) : 0,
+    pctExp: total ? Math.min(100, Math.round(capExp/total*100)) : 0
   };
 }
 function prodStatutBadge(statut, small){
-  const s = PROD_STATUTS[statut] || PROD_STATUTS.RECUE;
+  const s = PROD_STATUTS[statut] || PROD_STATUTS.TRAITEMENT;
   return `<span style="font-size:${small?'9.5':'10.5'}px;font-weight:800;color:#fff;background:${s.color};padding:3px 8px;border-radius:10px;white-space:nowrap;">${s.label}</span>`;
 }
 
-// --- Reprise des saisies faites avant les bons (version précédente du module) ---
-// Chaque ancienne saisie cumulée devient UN bon "Reprise" par étape et par commande.
-// Identifiant déterministe => jamais de doublon, même si deux téléphones le font en même temps.
+// --- Reprise des saisies des versions précédentes (une seule fois par commande) ---
+// Sources : bons (v3) ou tableaux cumulés (v2). Tout est rangé à la date d'origine.
+// Ces versions n'avaient pas d'étape Confection : on la déduit du contrôle (une pièce
+// contrôlée a forcément été confectionnée), sans jamais la mettre au-delà du retour.
 function prodMigrerAnciennesSaisies(){
+  // Attendre le premier chargement Firebase : sinon on travaillerait sur une copie locale périmée.
+  if(typeof firebaseReady!=='undefined' && firebaseReady && typeof fbFirstLoad!=='undefined' && fbFirstLoad) return;
   const cmds = getProdCommandes();
   if(Object.keys(cmds).length===0) return;
-  const bons = getProdBons();
-  const sources = {
-    coupe: getJSON('prod_stage_coupe', {}),
-    retour: getJSON('prod_stage_assemble', {}),
-    controle: getJSON('prod_stage_controle', {}),
-    emballage: getJSON('prod_stage_emballage', {})
+  const faits = getJSON('prod_v4_migre', {});
+  const bons = getJSON('prod_bons', {});
+  const v2 = {
+    coupe: getJSON('prod_stage_coupe', {}), retour: getJSON('prod_stage_assemble', {}),
+    controle: getJSON('prod_stage_controle', {}), emballage: getJSON('prod_stage_emballage', {})
   };
-  let changed = false;
+  let changedFlag = false;
   Object.keys(cmds).forEach(cmdId => {
-    Object.entries(sources).forEach(([etape, src]) => {
-      const bonId = 'reprise_'+cmdId+'_'+etape;
-      if(bons[bonId]) return;
-      const lignes = {}, nc = {};
-      let total = 0;
-      Object.entries(src||{}).forEach(([k,v]) => {
-        const parts = k.split('|');
-        if(parts.length!==3 || parts[0]!==cmdId) return;
-        const rk = parts[1], t = parts[2];
-        let q = 0, n = 0;
-        if(etape==='controle'){ n = parseInt(v && v.nonConforme)||0; q = (parseInt(v && v.conforme)||0) + n; }
-        else q = parseInt(v && v.quantite)||0;
-        if(q<=0) return;
-        (lignes[rk] = lignes[rk] || {})[t] = q;
-        if(n>0) (nc[rk] = nc[rk] || {})[t] = n;
-        total += q;
+    if(faits[cmdId]) return;
+    const s = getProdSaisies(cmdId);
+    // Déjà des saisies (reprise faite sur un autre téléphone) : on ne double jamais.
+    if(Object.keys(s).length){ faits[cmdId] = true; changedFlag = true; return; }
+    const add = (date, etape, rk, t, q) => {
+      if(!(q>0)) return;
+      if(!s[date]) s[date] = {};
+      if(!s[date][etape]) s[date][etape] = {};
+      if(!s[date][etape][rk]) s[date][etape][rk] = {};
+      s[date][etape][rk][t] = (parseInt(s[date][etape][rk][t])||0) + q;
+    };
+    let n = 0;
+    const bonsCmd = Object.values(bons).filter(b => b && b.commandeId===cmdId && !b.annule);
+    if(bonsCmd.length){
+      bonsCmd.forEach(b => {
+        const date = b.date || cmds[cmdId].dateCreation || getTodayISO();
+        Object.entries(b.lignes||{}).forEach(([rk,ts]) => Object.entries(ts).forEach(([t,raw]) => {
+          const q = parseInt(raw)||0;
+          if(b.etape==='controle'){
+            const nc = parseInt(b.nc && b.nc[rk] && b.nc[rk][t])||0;
+            add(date, 'controle', rk, t, q - nc); add(date, 'rebut', rk, t, nc);
+          } else if(PROD_ETAPE_INFO[b.etape]) add(date, b.etape, rk, t, q);
+          n++;
+        }));
       });
-      if(total>0){
-        bons[bonId] = {
-          etape, commandeId: cmdId, date: cmds[cmdId].dateCreation || getTodayISO(),
-          lignes, nc, reprise: true,
-          observation: 'Reprise des saisies faites avant la mise en place des bons',
-          createdBy: 'Reprise automatique', createdAt: new Date().toISOString()
-        };
-        changed = true;
-      }
-    });
+    } else {
+      const date = cmds[cmdId].dateCreation || getTodayISO();
+      Object.entries(v2).forEach(([etape, src]) => Object.entries(src||{}).forEach(([k,v]) => {
+        const p = k.split('|');
+        if(p.length!==3 || p[0]!==cmdId) return;
+        if(etape==='controle'){ add(date,'controle',p[1],p[2],parseInt(v&&v.conforme)||0); add(date,'rebut',p[1],p[2],parseInt(v&&v.nonConforme)||0); }
+        else add(date, etape, p[1], p[2], parseInt(v&&v.quantite)||0);
+        n++;
+      }));
+    }
+    if(n>0){
+      // Confection déduite du contrôle, à la date où le contrôle a été saisi
+      const cumAvant = prodCumulsFrom(cmds[cmdId], s);
+      Object.entries(s).forEach(([date, jour]) => {
+        Object.entries(jour.controle||{}).forEach(([rk,ts]) => Object.keys(ts).forEach(t => {
+          const c = prodCell(cumAvant, rk, t);
+          const besoin = c.controle + c.rebut - c.confection;
+          if(besoin>0){ add(date, 'confection', rk, t, Math.min(besoin, Math.max(0, c.retour - c.confection))); c.confection += besoin; }
+        }));
+      });
+      saveProdSaisies(cmdId, s);
+    }
+    faits[cmdId] = true;
+    changedFlag = true;
   });
-  if(changed) saveProdBons(bons);
+  if(changedFlag) setJSON('prod_v4_migre', faits);
 }
 
 // ============================================================
-// NAVIGATION DU MODULE (commune TEK-TREND / GADH)
+// NAVIGATION (commune TEK-TREND / GADH)
 // ============================================================
-// site = 'tek' (onglet Chaîne de Gestion Rendement) ou 'gadh' (onglet Chaîne de GADH Tunisia)
 const prodNav = { tek: {view:'list', cmdId:null}, gadh: {view:'list', cmdId:null} };
 let prodListFilter = 'encours';
-let prodBon = null; // état du bon en cours de saisie
+let prodSaisie = null; // saisie du jour en cours
 function canEditProdTek(){ return currentUser && currentUser.role === 'admin'; }
 function prodCanEditSite(site){ return site==='gadh' ? (typeof canEditGadh==='function' && canEditGadh()) : canEditProdTek(); }
 function prodRerender(site){
@@ -269,26 +296,25 @@ window.prodGo = (site, view, cmdId) => {
   prodRerender(site);
   window.scrollTo(0,0);
 };
-window.prodOpenBon = (site, etape, cmdId) => {
-  prodInitBonState(site, etape, cmdId);
-  prodGo(site, 'bon');
+window.prodOuvrirSaisie = (site, cmdId, date, etape) => {
+  prodInitSaisie(site, cmdId||null, date||getTodayISO(), etape||null);
+  prodGo(site, 'saisie');
 };
-
 function prodShell(main, site){
   prodMigrerAnciennesSaisies();
   const v = prodNav[site].view;
   const canEdit = prodCanEditSite(site);
   main.innerHTML = `
-    <div class="flex-header"><h2>${ICONS.prodchain} Chaîne de production</h2></div>
+    <div class="flex-header"><h2>${ICONS.prodchain} Suivi des commandes</h2></div>
     <div class="card" style="padding:8px;display:flex;gap:6px;">
-      <button class="btn ${v!=='bon'?'btn-primary':'btn-ghost'}" style="flex:1;padding:9px 4px;font-size:12.5px;" onclick="prodGo('${site}','list')">Commandes</button>
-      ${canEdit ? `<button class="btn ${v==='bon'?'btn-primary':'btn-ghost'}" style="flex:1;padding:9px 4px;font-size:12.5px;" onclick="prodOpenBon('${site}', ${site==='gadh'?"'retour'":'null'}, null)">+ ${site==='gadh'?'Bon de retour':'Nouveau bon'}</button>` : ''}
+      <button class="btn ${v!=='saisie'?'btn-primary':'btn-ghost'}" style="flex:1;padding:9px 4px;font-size:12.5px;" onclick="prodGo('${site}','list')">Commandes</button>
+      ${canEdit ? `<button class="btn ${v==='saisie'?'btn-primary':'btn-ghost'}" style="flex:1;padding:9px 4px;font-size:12.5px;" onclick="prodOuvrirSaisie('${site}', ${v==='fiche'&&prodNav[site].cmdId?`'${prodNav[site].cmdId}'`:'null'})">+ Saisie du jour</button>` : ''}
     </div>
     <div id="prod-body-${site}"></div>
   `;
   const body = document.getElementById('prod-body-'+site);
   if(v==='fiche') renderProdFiche(body, site);
-  else if(v==='bon') renderProdBonForm(body, site);
+  else if(v==='saisie') renderProdSaisie(body, site);
   else renderProdListe(body, site);
 }
 function renderProdChainTek(main){ prodShell(main, 'tek'); }
@@ -297,12 +323,26 @@ function renderProdChainGadh(main){ prodShell(main, 'gadh'); }
 // ============================================================
 // LISTE DES COMMANDES
 // ============================================================
+function prodBarre(pct, color, label){
+  return `<div style="display:flex;align-items:center;gap:8px;">
+    <div style="flex:1;height:6px;background:var(--border-soft);border-radius:4px;overflow:hidden;"><div style="width:${pct}%;height:100%;background:${color};"></div></div>
+    <span style="font-size:10.5px;font-weight:800;width:98px;text-align:right;">${label} ${pct}%</span></div>`;
+}
+function prodPositionTexte(r){
+  const parts = [];
+  if(r.resteACouper) parts.push(`À couper ${r.resteACouper}`);
+  if(r.aLaGadh) parts.push(`GADH ${r.aLaGadh}`);
+  if(r.enConfection) parts.push(`Confection ${r.enConfection}`);
+  if(r.auControle) parts.push(`Contrôle ${r.auControle}`);
+  if(r.aEmballer) parts.push(`À emballer ${r.aEmballer}`);
+  if(r.pretAExpedier) parts.push(`<b>Prêt ${r.pretAExpedier}</b>`);
+  return parts.join(' · ');
+}
 function renderProdListe(container, site){
   const canEdit = site==='tek' && canEditProdTek();
   const all = activeProdCommandes().map(([id,c]) => ({id, c, s: prodSynthese(id)}));
-  const nbEnCours = all.filter(x=>x.s.statut!=='EXPEDIEE').length;
-  const nbExp = all.length - nbEnCours;
-  const rows = all.filter(x => prodListFilter==='toutes' || (prodListFilter==='encours' ? x.s.statut!=='EXPEDIEE' : x.s.statut==='EXPEDIEE'));
+  const nbEnCours = all.filter(x => x.s.statut!=='EXPEDIE').length;
+  const rows = all.filter(x => prodListFilter==='toutes' || (prodListFilter==='encours' ? x.s.statut!=='EXPEDIE' : x.s.statut==='EXPEDIE'));
   container.innerHTML = `
     <div class="card">
       <div class="flex-header" style="margin-bottom:8px;"><h3 style="margin:0;font-size:14px;">Commandes</h3>
@@ -310,40 +350,353 @@ function renderProdListe(container, site){
       </div>
       <div id="prod-cmd-form-zone"></div>
       <div style="display:flex;gap:6px;margin-bottom:6px;">
-        ${[['encours','En cours ('+nbEnCours+')'],['expediees','Expédiées ('+nbExp+')'],['toutes','Toutes']].map(([k,l]) =>
+        ${[['encours',`En cours (${nbEnCours})`],['expediees',`Expédiées (${all.length-nbEnCours})`],['toutes','Toutes']].map(([k,l]) =>
           `<button class="btn ${prodListFilter===k?'btn-primary':'btn-ghost'}" style="flex:1;padding:6px 4px;font-size:11px;" onclick="prodListFilter='${k}'; prodRerender('${site}')">${l}</button>`).join('')}
       </div>
-      ${rows.length===0 ? buildEmptyState(all.length===0 ? "Aucune commande" : "Aucune commande dans ce filtre") : rows.map(({id,c,s}) => {
-        const nbRef = Object.keys(c.lignes||{}).length;
-        const r = s.restes;
-        const pos = site==='gadh'
-          ? `Chez GADH <b>${r.chezGadh}</b> · Reste à couper ${r.resteACouper}`
-          : [r.chezGadh?`GADH ${r.chezGadh}`:'', r.aControler?`À contrôler ${r.aControler}`:'', r.aEmballer?`À emballer ${r.aEmballer}`:'', r.pretAExpedier?`<b>Prêt ${r.pretAExpedier}</b>`:''].filter(Boolean).join(' · ') || (s.statut==='EXPEDIEE' ? 'Commande livrée' : 'Aucune pièce en cours');
-        return `
+      ${rows.length===0 ? buildEmptyState(all.length===0 ? "Aucune commande" : "Aucune commande dans ce filtre") : rows.map(({id,c,s}) => `
         <div class="session-row" style="cursor:pointer;flex-direction:column;align-items:stretch;gap:5px;" onclick="prodGo('${site}','fiche','${id}')">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
             <div style="min-width:0;">
-              <b style="font-size:13px;">${esc(c.nom)} <span style="font-weight:600;color:var(--ink-soft);">— ${esc(c.ref)}</span></b>
-              <div style="font-size:10.5px;color:var(--ink-faint);">${esc(c.client||'—')} · ${c.annee} · ${nbRef} réf. · ${s.total} pcs</div>
+              <b style="font-size:13.5px;">${esc(c.ref)}</b> <span style="font-size:12px;color:var(--ink-soft);">${esc(c.nom)}</span>
+              <div style="font-size:10.5px;color:var(--ink-faint);">${esc(c.client||'—')} · ${c.annee} · ${Object.keys(c.lignes||{}).length} modèle(s) · ${s.total} pcs</div>
             </div>
             ${prodStatutBadge(s.statut, true)}
           </div>
-          <div style="display:flex;align-items:center;gap:8px;">
-            <div style="flex:1;height:6px;background:var(--border-soft);border-radius:4px;overflow:hidden;"><div style="width:${s.pctProd}%;height:100%;background:#3B82F6;"></div></div>
-            <span style="font-size:10.5px;font-weight:800;width:92px;text-align:right;">Emballé ${s.pctProd}%</span>
-          </div>
-          <div style="display:flex;align-items:center;gap:8px;">
-            <div style="flex:1;height:6px;background:var(--border-soft);border-radius:4px;overflow:hidden;"><div style="width:${s.pctExp}%;height:100%;background:#10B981;"></div></div>
-            <span style="font-size:10.5px;font-weight:800;width:92px;text-align:right;">Expédié ${s.pctExp}%</span>
-          </div>
-          <div style="font-size:10.5px;color:var(--ink-soft);">${pos}</div>
-        </div>`;
-      }).join('')}
+          ${prodBarre(s.pctPret, '#0D9488', 'Prêt')}
+          ${prodBarre(s.pctExp, '#15803D', 'Expédié')}
+          <div style="font-size:10.5px;color:var(--ink-soft);">${prodPositionTexte(s.restes) || (s.statut==='EXPEDIE' ? 'Commande livrée' : 'Rien de commencé')}</div>
+        </div>`).join('')}
     </div>
   `;
   if(canEdit) prodBindCommandeForm();
 }
 
+// ============================================================
+// FICHE COMMANDE : tableau façon Excel (cumuls par modèle et par taille)
+// ============================================================
+function renderProdFiche(container, site){
+  const cmdId = prodNav[site].cmdId;
+  const cmd = getProdCommandes()[cmdId];
+  if(!cmd){ prodNav[site].view = 'list'; renderProdListe(container, site); return; }
+  const saisies = getProdSaisies(cmdId);
+  const cum = prodCumulsFrom(cmd, saisies);
+  const s = prodSynthese(cmdId, null, cum);
+  const viol = prodViolations(cum);
+  const canEdit = prodCanEditSite(site);
+  const r = s.restes;
+  const tuile = (val, lbl, color, fort) => `<div class="kpi-mini" style="min-height:58px;${fort?'border-color:'+color+';border-width:1.5px;':''}"><div class="kpi-mini-val" style="color:${val>0?color:'var(--ink-faint)'};">${val}</div><div class="kpi-mini-lbl">${lbl}</div></div>`;
+  const statutsVus = new Set();
+
+  const tables = Object.entries(cmd.lignes||{}).map(([rk,l]) => {
+    const tailles = PROD_TAILLES.filter(t => l.tailles && l.tailles[t]);
+    const tot = {q:0, ...prodEmptyCell()};
+    const rows = tailles.map(t => {
+      const q = prodCmdQty(cmd, rk, t), c = prodCell(cum, rk, t);
+      Object.keys(tot).forEach(k => { tot[k] += (k==='q' ? q : c[k]); });
+      const st = prodStatut([{c,q}]); statutsVus.add(st);
+      return `<tr>
+        <td style="text-align:left;font-weight:800;white-space:nowrap;"><span title="${PROD_STATUTS[st].label}" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${PROD_STATUTS[st].color};margin-right:3px;"></span>${t}</td>
+        <td style="color:var(--ink-soft);">${q}</td><td>${c.coupe||''}</td><td>${c.retour||''}</td><td>${c.confection||''}</td>
+        <td>${c.controle||''}${c.rebut?`<div style="font-size:9px;color:var(--bad);line-height:1;">−${c.rebut}</div>`:''}</td>
+        <td>${c.emballage||''}</td><td style="font-weight:800;">${c.expedition||''}</td></tr>`;
+    }).join('');
+    const stModele = prodStatut(tailles.map(t => ({c: prodCell(cum, rk, t), q: prodCmdQty(cmd, rk, t)})));
+    return `
+      <div class="card" style="padding:10px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
+          <b style="font-size:13px;">${esc(prodRefName(rk))}</b>${prodStatutBadge(stModele, true)}
+        </div>
+        <table class="prod-xl">
+          <thead><tr><th style="text-align:left;">Taille</th><th>Cmd</th><th>Coupé</th><th>Retour</th><th>Conf.</th><th>Ctrl</th><th>Emb.</th><th>Exp.</th></tr></thead>
+          <tbody>${rows}</tbody>
+          <tfoot><tr><td style="text-align:left;">Total</td><td>${tot.q}</td><td>${tot.coupe}</td><td>${tot.retour}</td><td>${tot.confection}</td>
+            <td>${tot.controle}${tot.rebut?`<div style="font-size:9px;color:var(--bad);line-height:1;">−${tot.rebut}</div>`:''}</td><td>${tot.emballage}</td><td>${tot.expedition}</td></tr></tfoot>
+        </table>
+      </div>`;
+  }).join('');
+
+  // Journal : ce qui a été saisi, date par date (touchez une ligne pour corriger)
+  const dates = Object.keys(saisies).sort().reverse();
+  const journal = dates.map(d => {
+    const jour = saisies[d] || {};
+    const lignes = PROD_ETAPES.filter(e => jour[e]).map(e => {
+      let tot = 0; Object.values(jour[e]).forEach(ts => Object.values(ts).forEach(q => { tot += parseInt(q)||0; }));
+      let reb = 0; if(e==='controle' && jour.rebut) Object.values(jour.rebut).forEach(ts => Object.values(ts).forEach(q => { reb += parseInt(q)||0; }));
+      const modifiable = canEdit && PROD_ETAPE_INFO[e].site===site;
+      return `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;${modifiable?'cursor:pointer;':''}" ${modifiable?`onclick="prodOuvrirSaisie('${site}','${cmdId}','${d}','${e}')"`:''}>
+        <span style="font-size:12px;">${PROD_ETAPE_INFO[e].label}</span>
+        <span style="font-size:12px;font-weight:800;">${tot} pcs${reb?` <span style="color:var(--bad);font-weight:600;">+ ${reb} rebut</span>`:''}${modifiable?' <span style="color:var(--ink-faint);font-weight:400;">›</span>':''}</span></div>`;
+    }).join('');
+    return lignes ? `<div style="padding:6px 0;border-bottom:1px solid var(--border-soft);"><div style="font-size:11px;font-weight:800;color:var(--ink-faint);">${d.split('-').reverse().join('/')}</div>${lignes}</div>` : '';
+  }).join('');
+
+  container.innerHTML = `
+    <style>
+      .prod-xl{width:100%;table-layout:fixed;border-collapse:collapse;font-size:11.5px;text-align:center;}
+      .prod-xl th{font-size:10px !important;text-transform:none !important;letter-spacing:0 !important;color:var(--ink-faint);font-weight:800;padding:5px 1px !important;border-bottom:1.5px solid var(--border);}
+      .prod-xl td{padding:6px 1px !important;border-bottom:1px solid var(--border-soft);}
+      .prod-xl th:first-child,.prod-xl td:first-child{width:52px;}
+      .prod-xl tfoot td{font-weight:800;border-top:1.5px solid var(--border);border-bottom:none;}
+    </style>
+    <button class="btn btn-ghost" style="padding:6px 10px;font-size:12px;margin-bottom:8px;" onclick="prodGo('${site}','list')">← Commandes</button>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+        <div><b style="font-size:16px;">${esc(cmd.ref)}</b><div style="font-size:11.5px;color:var(--ink-soft);">${esc(cmd.nom)} · ${esc(cmd.client||'—')} · ${cmd.annee}</div></div>
+        ${prodStatutBadge(s.statut)}
+      </div>
+      <div style="margin-top:10px;display:flex;flex-direction:column;gap:5px;">
+        ${prodBarre(s.pctPret, '#0D9488', 'Prêt')}
+        ${prodBarre(s.pctExp, '#15803D', 'Expédié')}
+      </div>
+      ${canEdit ? `<button class="btn btn-primary" style="width:100%;margin-top:10px;padding:10px;" onclick="prodOuvrirSaisie('${site}','${cmdId}')">+ Saisie du jour</button>` : ''}
+      ${site==='tek' && canEdit ? `<button class="btn btn-ghost" style="width:100%;margin-top:6px;padding:7px;font-size:11.5px;" onclick="prodEditFromFiche('${cmdId}')">Modifier la commande</button>` : ''}
+    </div>
+
+    ${viol.length ? `
+    <div class="card" style="border:1.5px solid var(--bad);">
+      <b style="font-size:12.5px;color:var(--bad);">⚠️ ${viol.length} incohérence${viol.length>1?'s':''} à corriger</b>
+      <p style="font-size:11px;color:var(--ink-soft);margin:4px 0 6px;">Une étape dépasse la précédente (saisies reprises de l'ancienne version). Complétez l'étape manquante dans une saisie du jour.</p>
+      ${viol.slice(0,6).map(v => `<div style="font-size:11px;">• ${esc(prodRefName(v.rk))} ${v.t} : ${esc(v.msg)}</div>`).join('')}
+      ${viol.length>6 ? `<div style="font-size:11px;color:var(--ink-faint);">… et ${viol.length-6} autre(s)</div>` : ''}
+    </div>` : ''}
+
+    <div class="card">
+      <h3 style="margin:0 0 8px;font-size:13px;">Où sont les pièces</h3>
+      <div class="kpi-mini-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:6px;">
+        ${tuile(r.resteACouper,'Reste à couper','#F59E0B')}${tuile(r.aLaGadh,'À la GADH','#8E2A5B')}${tuile(r.enConfection,'En confection','#2563EB')}
+      </div>
+      <div class="kpi-mini-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:6px;">
+        ${tuile(r.auControle,'Au contrôle','#0891B2')}${tuile(r.aEmballer,'À emballer','#0D9488')}${tuile(r.pretAExpedier,'Prêt à expédier','#059669', r.pretAExpedier>0)}
+      </div>
+      <div class="kpi-mini-grid" style="grid-template-columns:repeat(3,1fr);">
+        ${tuile(r.expedie,'Expédié','#15803D')}${tuile(r.resteALivrer,'Reste à livrer','#DC2626')}${tuile(r.rebut,'Rebut','#DC2626')}
+      </div>
+    </div>
+
+    ${tables}
+    <p style="font-size:10.5px;color:var(--ink-faint);margin:-4px 4px 12px;line-height:1.7;">Pastille = statut de la taille : ${[...statutsVus].map(st => `<span style="white-space:nowrap;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${PROD_STATUTS[st].color};"></span> ${PROD_STATUTS[st].label}</span>`).join(' · ')}. En rouge sous Ctrl : le rebut.</p>
+
+    <div class="card">
+      <h3 style="margin:0 0 4px;font-size:13px;">Saisies par date</h3>
+      <p style="font-size:10.5px;color:var(--ink-faint);margin:0 0 4px;">${canEdit ? 'Touchez une ligne pour la corriger.' : ''}</p>
+      ${journal || buildEmptyState("Aucune saisie", canEdit ? "Commencez par « + Saisie du jour »." : "")}
+    </div>
+  `;
+}
+window.prodEditFromFiche = (cmdId) => {
+  prodGo('tek','list');
+  if(typeof window.showEditProdCommandeForm === 'function') window.showEditProdCommandeForm(cmdId);
+};
+
+// ============================================================
+// SAISIE DU JOUR : date + étape + quantités du jour (par modèle et par taille)
+// ============================================================
+function prodCommandesSaisissables(){
+  return activeProdCommandes().filter(([id]) => prodSynthese(id).statut!=='EXPEDIE');
+}
+function prodInitSaisie(site, cmdId, date, etape){
+  const etapes = prodEtapesSite(site);
+  prodSaisie = {site, cmdId, date: date || getTodayISO(), etape: (etape && etapes.includes(etape)) ? etape : etapes[0], vals:{}, rebut:{}};
+  if(!prodSaisie.cmdId){
+    const dispo = prodCommandesSaisissables();
+    if(dispo.length===1) prodSaisie.cmdId = dispo[0][0];
+  }
+  prodChargerJour();
+}
+// Charge ce qui est déjà saisi pour cette date et cette étape (pour corriger).
+function prodChargerJour(){
+  prodSaisie.vals = {}; prodSaisie.rebut = {};
+  if(!prodSaisie.cmdId) return;
+  const jour = getProdSaisies(prodSaisie.cmdId)[prodSaisie.date] || {};
+  const copie = (src) => { const o = {}; Object.entries(src||{}).forEach(([rk,ts]) => { o[rk] = {...ts}; }); return o; };
+  prodSaisie.vals = copie(jour[prodSaisie.etape]);
+  if(prodSaisie.etape==='controle') prodSaisie.rebut = copie(jour.rebut);
+}
+function prodSaisieNouvellesSaisies(){
+  const saisies = getProdSaisies(prodSaisie.cmdId);
+  const jour = {...(saisies[prodSaisie.date] || {})};
+  const nettoie = (src) => {
+    const o = {};
+    Object.entries(src).forEach(([rk,ts]) => Object.entries(ts).forEach(([t,v]) => {
+      const q = parseInt(v); if(q>0){ if(!o[rk]) o[rk] = {}; o[rk][t] = q; }
+    }));
+    return Object.keys(o).length ? o : null;
+  };
+  const v = nettoie(prodSaisie.vals);
+  if(v) jour[prodSaisie.etape] = v; else delete jour[prodSaisie.etape];
+  if(prodSaisie.etape==='controle'){ const rb = nettoie(prodSaisie.rebut); if(rb) jour.rebut = rb; else delete jour.rebut; }
+  if(Object.keys(jour).length) saisies[prodSaisie.date] = jour; else delete saisies[prodSaisie.date];
+  return saisies;
+}
+// Vérifie la journée : aucune étape ne doit dépasser la précédente après enregistrement.
+// Les incohérences déjà présentes avant (anciennes saisies) ne bloquent pas.
+function prodSaisieVerifier(){
+  const res = {erreurs:[], cases:new Set(), totalJour:0, rebutJour:0};
+  if(!prodSaisie || !prodSaisie.cmdId) return res;
+  const cmd = getProdCommandes()[prodSaisie.cmdId];
+  const check = (src, label) => Object.entries(src).forEach(([rk,ts]) => Object.entries(ts).forEach(([t,v]) => {
+    if(v==='' || v==null) return;
+    const q = parseInt(v);
+    if(isNaN(q) || q<0){ res.erreurs.push(`${prodRefName(rk)} ${t} : ${label} invalide`); res.cases.add(rk+'|'+t); }
+    else if(label==='rebut') res.rebutJour += q; else res.totalJour += q;
+  }));
+  check(prodSaisie.vals, 'quantité');
+  if(prodSaisie.etape==='controle') check(prodSaisie.rebut, 'rebut');
+  const avant = new Set(prodViolations(prodCumulsFrom(cmd, getProdSaisies(prodSaisie.cmdId))).map(prodViolationKey));
+  prodViolations(prodCumulsFrom(cmd, prodSaisieNouvellesSaisies())).filter(v => !avant.has(prodViolationKey(v))).forEach(v => {
+    res.erreurs.push(`${prodRefName(v.rk)} ${v.t} : ${v.msg}`);
+    res.cases.add(v.rk+'|'+v.t);
+  });
+  return res;
+}
+function prodSaisieRafraichir(){
+  const chk = prodSaisieVerifier();
+  document.querySelectorAll('#prod-saisie-form-zone input.sj').forEach(inp => {
+    const bad = chk.cases.has(inp.dataset.rk+'|'+inp.dataset.t);
+    inp.style.borderColor = bad ? 'var(--bad)' : 'var(--border)';
+    inp.style.background = bad ? '#FEF2F2' : '';
+  });
+  Object.keys(prodSaisie.vals).concat(Object.keys(prodSaisie.rebut)).forEach(rk => {
+    const el = document.getElementById('sj-tot-'+rk.replace(/[^a-zA-Z0-9]/g,'_'));
+    if(el){
+      const t = Object.values(prodSaisie.vals[rk]||{}).reduce((s,v)=>s+(parseInt(v)||0),0);
+      const rb = Object.values(prodSaisie.rebut[rk]||{}).reduce((s,v)=>s+(parseInt(v)||0),0);
+      el.textContent = t + ' pcs' + (rb ? ' + ' + rb + ' rebut' : '');
+    }
+  });
+  const tot = document.getElementById('sj-total');
+  if(tot) tot.textContent = `${chk.totalJour} pcs ce jour${prodSaisie.etape==='controle' && chk.rebutJour ? ' + '+chk.rebutJour+' rebut' : ''}`;
+  const err = document.getElementById('sj-erreurs');
+  if(err) err.innerHTML = chk.erreurs.slice(0,4).map(e => `<div>• ${esc(e)}</div>`).join('') + (chk.erreurs.length>4 ? `<div>… et ${chk.erreurs.length-4} autre(s)</div>` : '');
+  return chk;
+}
+window.prodSjSet = (quoi, rk, t, v) => {
+  const cible = quoi==='rebut' ? prodSaisie.rebut : prodSaisie.vals;
+  if(!cible[rk]) cible[rk] = {};
+  cible[rk][t] = v;
+  prodSaisieRafraichir();
+};
+window.prodSjDate = (d) => { prodSaisie.date = d || getTodayISO(); prodChargerJour(); prodRerender(prodSaisie.site); };
+window.prodSjEtape = (e) => { prodSaisie.etape = e; prodChargerJour(); prodRerender(prodSaisie.site); };
+window.prodSjCommande = (id) => { prodSaisie.cmdId = id || null; prodChargerJour(); prodRerender(prodSaisie.site); };
+window.prodSjToutDispo = () => {
+  const cmd = getProdCommandes()[prodSaisie.cmdId];
+  const cum = prodCumulsFrom(cmd, getProdSaisies(prodSaisie.cmdId));
+  const jour = getProdSaisies(prodSaisie.cmdId)[prodSaisie.date] || {};
+  Object.entries(cmd.lignes||{}).forEach(([rk,l]) => Object.keys(l.tailles||{}).forEach(t => {
+    const c = prodCell(cum, rk, t);
+    const deja = parseInt(jour[prodSaisie.etape] && jour[prodSaisie.etape][rk] && jour[prodSaisie.etape][rk][t])||0;
+    const rbDeja = prodSaisie.etape==='controle' ? (parseInt(jour.rebut && jour.rebut[rk] && jour.rebut[rk][t])||0) : 0;
+    const dispo = prodSaisie.etape==='coupe' ? Math.max(0, prodCmdQty(cmd,rk,t) - c.coupe) : Math.max(0, prodDisponible(prodSaisie.etape, c));
+    const rb = parseInt(prodSaisie.rebut[rk] && prodSaisie.rebut[rk][t])||0;
+    const v = deja + rbDeja + dispo - rb;
+    if(!prodSaisie.vals[rk]) prodSaisie.vals[rk] = {};
+    prodSaisie.vals[rk][t] = v>0 ? v : '';
+  }));
+  prodRerender(prodSaisie.site);
+};
+window.prodSjEnregistrer = () => {
+  const chk = prodSaisieRafraichir();
+  if(chk.erreurs.length){ showToast('Corrigez les cases en rouge : ' + chk.erreurs[0]); return; }
+  saveProdSaisies(prodSaisie.cmdId, prodSaisieNouvellesSaisies());
+  const cmd = getProdCommandes()[prodSaisie.cmdId];
+  showToast(`${cmd.ref} · ${PROD_ETAPE_INFO[prodSaisie.etape].label} du ${prodSaisie.date.split('-').reverse().join('/')} enregistré : ${chk.totalJour} pcs`);
+  const site = prodSaisie.site, cmdId = prodSaisie.cmdId;
+  prodSaisie = null;
+  prodGo(site, 'fiche', cmdId);
+};
+window.prodSjFermer = () => {
+  const site = prodSaisie ? prodSaisie.site : 'tek', cmdId = prodSaisie && prodSaisie.cmdId;
+  prodSaisie = null;
+  if(cmdId) prodGo(site, 'fiche', cmdId); else prodGo(site, 'list');
+};
+
+function renderProdSaisie(container, site){
+  if(!prodCanEditSite(site)){ container.innerHTML = `<div class="card">${buildEmptyState("Lecture seule", "Votre rôle ne permet pas de saisir.")}</div>`; return; }
+  if(!prodSaisie || prodSaisie.site!==site) prodInitSaisie(site, null, getTodayISO(), null);
+  const etapes = prodEtapesSite(site);
+  const cmd = prodSaisie.cmdId ? getProdCommandes()[prodSaisie.cmdId] : null;
+  const choix = prodCommandesSaisissables();
+  const info = PROD_ETAPE_INFO[prodSaisie.etape];
+  let grille = '';
+  if(cmd){
+    const saisies = getProdSaisies(prodSaisie.cmdId);
+    const cum = prodCumulsFrom(cmd, saisies);
+    const jour = saisies[prodSaisie.date] || {};
+    grille = Object.entries(cmd.lignes||{}).map(([rk,l]) => {
+      const tailles = PROD_TAILLES.filter(t => l.tailles && l.tailles[t]);
+      const ligne = (quoi) => tailles.map(t => {
+        const c = prodCell(cum, rk, t);
+        const src = quoi==='rebut' ? prodSaisie.rebut : prodSaisie.vals;
+        const val = src[rk] && src[rk][t] !== undefined ? src[rk][t] : '';
+        // Maximum de la journée = ce qui est déjà saisi ce jour + ce qui reste disponible
+        const dejaJour = (parseInt(jour[prodSaisie.etape] && jour[prodSaisie.etape][rk] && jour[prodSaisie.etape][rk][t])||0)
+                       + (prodSaisie.etape==='controle' ? (parseInt(jour.rebut && jour.rebut[rk] && jour.rebut[rk][t])||0) : 0);
+        let aide, bloque = false;
+        if(prodSaisie.etape==='coupe'){ aide = `reste ${Math.max(0, prodCmdQty(cmd,rk,t) - c.coupe)}`; }
+        else { const max = dejaJour + Math.max(0, prodDisponible(prodSaisie.etape, c)); aide = `max ${max}`; bloque = max<=0; }
+        return `<div style="text-align:center;flex:1;min-width:0;">
+          ${quoi==='vals' ? `<div style="font-size:10px;font-weight:800;color:var(--ink-soft);margin-bottom:2px;">${t}</div>` : ''}
+          <input type="number" inputmode="numeric" enterkeyhint="next" min="0" class="sj" data-rk="${rk}" data-t="${t}" value="${val}" ${bloque?'disabled':''}
+            onfocus="this.select()" oninput="prodSjSet('${quoi}','${rk}','${t}',this.value)"
+            style="width:100%;max-width:52px;padding:7px 2px;text-align:center;font-size:14px;font-weight:700;border:1.5px solid var(--border);border-radius:7px;${bloque?'opacity:.35;':''}${quoi==='rebut'?'color:var(--bad);':''}">
+          ${quoi==='vals' ? `<div style="font-size:9.5px;color:var(--ink-faint);margin-top:2px;white-space:nowrap;">${aide}</div>` : ''}
+        </div>`;
+      }).join('');
+      return `
+        <div class="card" style="padding:10px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+            <b style="font-size:13px;">${esc(prodRefName(rk))}</b>
+            <span id="sj-tot-${rk.replace(/[^a-zA-Z0-9]/g,'_')}" style="font-size:11.5px;font-weight:800;color:var(--ink-soft);"></span>
+          </div>
+          ${prodSaisie.etape==='controle' ? `<div style="font-size:10px;font-weight:800;color:var(--ink-faint);margin-bottom:2px;">CONFORMES</div>` : ''}
+          <div style="display:flex;gap:4px;">${ligne('vals')}</div>
+          ${prodSaisie.etape==='controle' ? `<div style="font-size:10px;font-weight:800;color:var(--bad);margin:8px 0 2px;">REBUT (non conformes)</div><div style="display:flex;gap:4px;">${ligne('rebut')}</div>` : ''}
+        </div>`;
+    }).join('');
+  }
+  container.innerHTML = `
+    <div id="prod-saisie-form-zone">
+      <div class="card" style="padding:10px;">
+        ${cmd && prodNav[site].view==='saisie' && choix.length<=1 ? '' : `
+        <div class="field" style="margin:0 0 8px;"><label>Commande</label>
+          <select onchange="prodSjCommande(this.value)" style="width:100%;">
+            <option value="">— Choisir la commande —</option>
+            ${choix.map(([id,c]) => `<option value="${id}" ${prodSaisie.cmdId===id?'selected':''}>${esc(c.ref)} — ${esc(c.nom)} (${esc(c.client||'')})</option>`).join('')}
+            ${cmd && !choix.some(([id])=>id===prodSaisie.cmdId) ? `<option value="${prodSaisie.cmdId}" selected>${esc(cmd.ref)} — ${esc(cmd.nom)}</option>` : ''}
+          </select></div>`}
+        ${cmd && choix.length<=1 ? `<div style="font-weight:800;font-size:14px;margin-bottom:8px;">${esc(cmd.ref)} <span style="font-weight:600;font-size:12px;color:var(--ink-soft);">${esc(cmd.nom)} · ${esc(cmd.client||'')}</span></div>` : ''}
+        <div class="field" style="margin:0 0 8px;"><label>Date</label><input type="date" value="${prodSaisie.date}" max="${getTodayISO()}" onchange="prodSjDate(this.value)"></div>
+        ${etapes.length>1 ? `
+        <label style="font-size:11px;font-weight:700;color:var(--ink-faint);">ÉTAPE</label>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-top:4px;">
+          ${etapes.map(e => `<button class="btn ${prodSaisie.etape===e?'btn-primary':'btn-ghost'}" style="padding:9px 2px;font-size:11.5px;" onclick="prodSjEtape('${e}')">${PROD_ETAPE_INFO[e].label}</button>`).join('')}
+        </div>` : `<div style="font-weight:800;color:#8E2A5B;">${info.long}</div>`}
+      </div>
+      ${!cmd ? (choix.length ? '' : `<div class="card">${buildEmptyState("Aucune commande en cours")}</div>`) : `
+      <p style="font-size:11px;color:var(--ink-soft);margin:0 4px 8px;">Quantités faites <b>ce jour-là</b> à l'étape ${info.long}. ${prodSaisie.etape==='coupe' ? 'Couper plus que la commande est permis (marge).' : 'Le maximum affiché est ce qui est disponible.'}</p>
+      ${grille}
+      <div class="card" style="padding:10px;position:sticky;bottom:78px;z-index:5;box-shadow:0 -4px 16px rgba(15,23,42,.10);">
+        <div id="sj-erreurs" style="font-size:11px;color:var(--bad);margin-bottom:6px;"></div>
+        <div style="font-size:13px;font-weight:800;margin-bottom:8px;" id="sj-total"></div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          ${prodSaisie.etape!=='coupe' ? `<button class="btn btn-ghost" style="flex:1;padding:10px 4px;font-size:12px;" onclick="prodSjToutDispo()">Tout le dispo</button>` : ''}
+          <button class="btn btn-ghost" style="flex:1;padding:10px 4px;font-size:12px;" onclick="prodSjFermer()">Fermer</button>
+          <button class="btn btn-primary" style="flex:1.3;padding:10px 4px;font-size:13px;" onclick="prodSjEnregistrer()">Enregistrer</button>
+        </div>
+      </div>`}
+    </div>
+  `;
+  const zone = document.getElementById('prod-saisie-form-zone');
+  zone.addEventListener('keydown', (e) => {
+    if(e.key!=='Enter' || e.target.tagName!=='INPUT' || e.target.type!=='number') return;
+    e.preventDefault();
+    const inputs = [...zone.querySelectorAll('input.sj:not([disabled])')];
+    const i = inputs.indexOf(e.target);
+    if(i>=0 && i<inputs.length-1) inputs[i+1].focus(); else e.target.blur();
+  });
+  if(cmd) prodSaisieRafraichir();
+}
 // ============================================================
 // FORMULAIRE COMMANDE (création / modification / import copier-coller)
 // ============================================================
@@ -416,12 +769,12 @@ function prodBindCommandeForm(){
     if(Object.keys(lignes).length===0){ showToast('Indiquez au moins une quantité'); return; }
     const list = getProdCommandes();
     if(f.editId){
-      // Une référence/taille déjà utilisée par des bons ne peut pas être retirée de la commande.
+      // Une référence/taille qui a déjà des saisies ne peut pas être retirée de la commande.
       const utilisees = new Set();
-      prodBonsCommande(f.editId).forEach(([id,b]) => Object.entries(b.lignes||{}).forEach(([rk,ts]) => Object.keys(ts).forEach(t => utilisees.add(rk+'|'+t))));
+      Object.values(getProdSaisies(f.editId)).forEach(jour => Object.values(jour||{}).forEach(refs => Object.entries(refs||{}).forEach(([rk,ts]) => Object.entries(ts||{}).forEach(([t,q]) => { if(parseInt(q)>0) utilisees.add(rk+'|'+t); }))));
       const retirees = [...utilisees].filter(k => { const [rk,t] = k.split('|'); return !(lignes[rk] && lignes[rk].tailles[t]); });
       if(retirees.length){
-        showToast(`Impossible de retirer ${retirees.map(k=>{const [rk,t]=k.split('|'); return prodRefName(rk)+' '+t;}).slice(0,3).join(', ')} : des bons existent déjà dessus.`);
+        showToast(`Impossible de retirer ${retirees.map(k=>{const [rk,t]=k.split('|'); return prodRefName(rk)+' '+t;}).slice(0,3).join(', ')} : des quantités sont déjà saisies dessus.`);
         return;
       }
       list[f.editId] = {...list[f.editId], nom, ref, annee, client:f.client, lignes};
@@ -507,400 +860,4 @@ function prodParseImportText(text, client){
     matched[refKey][taille] = qty;
   });
   return {matched, errors};
-}
-
-// ============================================================
-// FICHE COMMANDE
-// ============================================================
-let prodFicheShowAnnules = false;
-function renderProdFiche(container, site){
-  const cmdId = prodNav[site].cmdId;
-  const cmd = getProdCommandes()[cmdId];
-  if(!cmd){ prodNav[site].view = 'list'; renderProdListe(container, site); return; }
-  const cum = prodCumuls(cmdId);
-  const s = prodSynthese(cmdId, null, cum);
-  const viol = prodViolations(cum);
-  const canEdit = prodCanEditSite(site);
-  const r = s.restes;
-  const tuile = (val, lbl, color, bold) => `<div class="kpi-mini" style="min-height:62px;${bold?'border-color:'+color+';':''}"><div class="kpi-mini-val" style="color:${val>0?color:'var(--ink-faint)'};">${val}</div><div class="kpi-mini-lbl">${lbl}</div></div>`;
-  const actions = site==='gadh'
-    ? (canEdit ? `<button class="btn btn-primary" style="width:100%;padding:10px;" onclick="prodOpenBon('gadh','retour','${cmdId}')">+ Bon de retour vers TEK-TREND</button>` : '')
-    : (canEdit ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
-        ${['coupe','controle','emballage','expedition'].map(et => `<button class="btn btn-ghost" style="padding:9px 4px;font-size:11.5px;border-color:${PROD_ETAPE_INFO[et].color};" onclick="prodOpenBon('tek','${et}','${cmdId}')">+ ${PROD_ETAPE_INFO[et].label}</button>`).join('')}
-      </div>
-      <button class="btn btn-ghost" style="width:100%;margin-top:6px;padding:7px;font-size:11.5px;" onclick="prodEditFromFiche('${cmdId}')">Modifier la commande</button>` : '');
-
-  const bons = prodBonsCommande(cmdId, true).filter(([id,b]) => prodFicheShowAnnules || !b.annule);
-  const nbAnnules = prodBonsCommande(cmdId, true).filter(([id,b]) => b.annule).length;
-
-  container.innerHTML = `
-    <style>.prod-table th,.prod-table td{padding:6px 2px !important;letter-spacing:0 !important;}.prod-table th{text-transform:none !important;font-size:10px !important;font-weight:800;}</style>
-    <button class="btn btn-ghost" style="padding:6px 10px;font-size:12px;margin-bottom:8px;" onclick="prodGo('${site}','list')">← Commandes</button>
-    <div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
-        <div><b style="font-size:15px;">${esc(cmd.nom)}</b><div style="font-size:11.5px;color:var(--ink-soft);">LOT ${esc(cmd.ref)} · ${esc(cmd.client||'—')} · ${cmd.annee}</div></div>
-        ${prodStatutBadge(s.statut)}
-      </div>
-      <div style="display:flex;align-items:center;gap:8px;margin-top:10px;">
-        <div style="flex:1;height:7px;background:var(--border-soft);border-radius:4px;overflow:hidden;"><div style="width:${s.pctProd}%;height:100%;background:#3B82F6;"></div></div>
-        <span style="font-size:11px;font-weight:800;width:118px;text-align:right;">Emballé ${s.embCap}/${s.total}</span>
-      </div>
-      <div style="display:flex;align-items:center;gap:8px;margin-top:5px;">
-        <div style="flex:1;height:7px;background:var(--border-soft);border-radius:4px;overflow:hidden;"><div style="width:${s.pctExp}%;height:100%;background:#10B981;"></div></div>
-        <span style="font-size:11px;font-weight:800;width:118px;text-align:right;">Expédié ${s.expCap}/${s.total}</span>
-      </div>
-    </div>
-
-    ${viol.length ? `
-    <div class="card" style="border:1.5px solid var(--bad);">
-      <b style="font-size:12.5px;color:var(--bad);">⚠️ ${viol.length} incohérence${viol.length>1?'s':''} à corriger</b>
-      <p style="font-size:11px;color:var(--ink-soft);margin:4px 0 6px;">Des quantités ont été saisies à une étape sans passer par l'étape précédente (saisies faites avant les bons). Enregistrez les bons manquants ou annulez le bon en cause.</p>
-      ${viol.slice(0,6).map(v => `<div style="font-size:11px;">• ${esc(prodRefName(v.rk))} ${v.t} : ${esc(v.msg)}</div>`).join('')}
-      ${viol.length>6 ? `<div style="font-size:11px;color:var(--ink-faint);">… et ${viol.length-6} autre(s)</div>` : ''}
-    </div>` : ''}
-
-    <div class="card">
-      <h3 style="margin:0 0 8px;font-size:13px;">Où sont les pièces</h3>
-      <div class="kpi-mini-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:6px;">
-        ${tuile(r.resteACouper,'Reste à couper','#F59E0B')}
-        ${tuile(r.chezGadh,'Chez GADH','#8E2A5B')}
-        ${tuile(r.aControler,'À contrôler','#3B82F6')}
-      </div>
-      <div class="kpi-mini-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:6px;">
-        ${tuile(r.aEmballer,'À emballer','#0EA5A4')}
-        ${tuile(r.pretAExpedier,'Prêt à expédier','#10B981', r.pretAExpedier>0)}
-        ${tuile(r.resteALivrer,'Reste à livrer','#DC2626')}
-      </div>
-      ${r.rebut>0 ? `<p style="font-size:11px;color:var(--bad);margin:2px 0 0;">Rebut (non conformes) : <b>${r.rebut}</b> pièce${r.rebut>1?'s':''}</p>` : ''}
-    </div>
-
-    ${actions ? `<div class="card">${actions}</div>` : ''}
-
-    ${Object.entries(cmd.lignes||{}).map(([rk,l]) => {
-      const sr = prodSynthese(cmdId, rk, cum);
-      const tailles = PROD_TAILLES.filter(t => l.tailles && l.tailles[t]);
-      let tot = {cmd:0, coupe:0, retour:0, controle:0, nc:0, emballage:0, expedition:0};
-      const rowsHtml = tailles.map(t => {
-        const q = prodCmdQty(cmd, rk, t), c = prodCell(cum, rk, t);
-        tot.cmd+=q; tot.coupe+=c.coupe; tot.retour+=c.retour; tot.controle+=c.controle; tot.nc+=c.nc; tot.emballage+=c.emballage; tot.expedition+=c.expedition;
-        const reste = Math.max(0, q - c.expedition);
-        return `<tr>
-          <td style="font-weight:800;">${t}</td><td>${q}</td><td>${c.coupe}</td><td>${c.retour}</td>
-          <td>${c.controle}${c.nc?`<span style="color:var(--bad);font-size:9.5px;"> −${c.nc}</span>`:''}</td>
-          <td>${c.emballage}</td><td>${c.expedition}</td>
-          <td style="font-weight:800;color:${reste>0?'var(--bad)':'var(--good)'};">${reste}</td></tr>`;
-      }).join('');
-      return `
-      <div class="card" style="padding:10px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
-          <b style="font-size:13px;">${esc(prodRefName(rk))}</b>${prodStatutBadge(sr.statut, true)}
-        </div>
-        <div style="overflow-x:auto;">
-          <table class="prod-table" style="width:100%;font-size:11px;border-collapse:collapse;text-align:center;">
-            <thead><tr style="color:var(--ink-faint);"><th style="text-align:left;">T.</th><th>Cmd</th><th>Coupé</th><th>Retour</th><th>Ctrl</th><th>Emb.</th><th>Exp.</th><th>Reste</th></tr></thead>
-            <tbody>${rowsHtml}</tbody>
-            <tfoot><tr style="font-weight:800;border-top:1.5px solid var(--border);"><td style="text-align:left;">Total</td><td>${tot.cmd}</td><td>${tot.coupe}</td><td>${tot.retour}</td><td>${tot.controle}${tot.nc?`<span style="color:var(--bad);font-size:9.5px;"> −${tot.nc}</span>`:''}</td><td>${tot.emballage}</td><td>${tot.expedition}</td><td>${Math.max(0,tot.cmd-tot.expedition)}</td></tr></tfoot>
-          </table>
-        </div>
-      </div>`;
-    }).join('')}
-
-    <div class="card">
-      <div class="flex-header" style="margin-bottom:6px;"><h3 style="margin:0;font-size:13px;">Historique des bons</h3>
-        ${nbAnnules ? `<button class="btn btn-ghost" style="padding:4px 8px;font-size:10.5px;" onclick="prodFicheShowAnnules=!prodFicheShowAnnules; prodRerender('${site}')">${prodFicheShowAnnules?'Masquer':'Voir'} les annulés (${nbAnnules})</button>` : ''}
-      </div>
-      ${bons.length===0 ? buildEmptyState("Aucun bon enregistré", canEdit ? "Utilisez les boutons ci-dessus pour enregistrer la première opération." : "") : bons.map(([id,b]) => {
-        const info = PROD_ETAPE_INFO[b.etape] || {label:b.etape, color:'#999', site:'tek'};
-        const canCancel = canEdit && !b.annule && info.site===site;
-        const detail = Object.entries(b.lignes||{}).map(([rk,ts]) => `${esc(prodRefName(rk))} : ${Object.entries(ts).map(([t,q])=>`${t} ${q}`).join(' · ')}`).join('<br>');
-        return `
-        <div class="session-row" style="flex-direction:column;align-items:stretch;gap:3px;${b.annule?'opacity:.5;':''}">
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">
-            <span style="font-size:10px;font-weight:800;color:#fff;background:${info.color};padding:2px 7px;border-radius:8px;">${info.label}</span>
-            <span style="font-size:11px;color:var(--ink-faint);">${(b.date||'').split('-').reverse().join('/')}</span>
-          </div>
-          <div style="font-size:12px;"><b>${prodBonTotal(b)} pcs</b>${b.etape==='controle' && prodBonNcTotal(b) ? ` <span style="color:var(--bad);">(dont ${prodBonNcTotal(b)} rebut)</span>` : ''}${b.reprise?' <span style="font-size:10px;color:var(--warn);font-weight:700;">REPRISE</span>':''}${b.annule?' <span style="font-size:10px;color:var(--bad);font-weight:800;">ANNULÉ</span>':''}</div>
-          <div style="font-size:10.5px;color:var(--ink-soft);line-height:1.5;">${detail}</div>
-          ${b.observation ? `<div style="font-size:10.5px;color:var(--ink-faint);font-style:italic;">${esc(b.observation)}</div>` : ''}
-          <div style="font-size:10px;color:var(--ink-faint);">Par ${esc(b.createdBy||'—')}${b.annule?` · annulé par ${esc(b.annulePar||'—')}`:''}</div>
-          ${canCancel ? `<button class="btn btn-ghost" style="align-self:flex-start;padding:4px 9px;font-size:10.5px;color:var(--bad);" onclick="prodAnnulerBon('${id}','${site}')">Annuler ce bon</button>` : ''}
-        </div>`;
-      }).join('')}
-    </div>
-  `;
-}
-window.prodEditFromFiche = (cmdId) => {
-  prodGo('tek','list');
-  if(typeof window.showEditProdCommandeForm === 'function') window.showEditProdCommandeForm(cmdId);
-};
-window.prodAnnulerBon = (bonId, site) => {
-  const bons = getProdBons();
-  const b = bons[bonId];
-  if(!b || b.annule) return;
-  // On refuse l'annulation si elle crée une incohérence nouvelle (les pièces ont déjà
-  // été utilisées par une étape suivante) ; les incohérences déjà présentes ne bloquent pas.
-  const avant = new Set(prodViolations(prodCumuls(b.commandeId)).map(prodViolationKey));
-  const nouvelles = prodViolations(prodCumuls(b.commandeId, bonId)).filter(v => !avant.has(prodViolationKey(v)));
-  if(nouvelles.length){
-    const v = nouvelles[0];
-    showToast(`Annulation impossible : ${prodRefName(v.rk)} ${v.t} — ${v.msg}. Annulez d'abord les bons des étapes suivantes.`);
-    return;
-  }
-  if(!confirm(`Annuler ce bon ${PROD_ETAPE_INFO[b.etape].label} de ${prodBonTotal(b)} pièces ?\n\nIl restera visible dans l'historique (barré), mais ne comptera plus dans les quantités.`)) return;
-  b.annule = true;
-  b.annulePar = currentUser.nom;
-  b.annuleLe = new Date().toISOString();
-  saveProdBons(bons);
-  showToast('Bon annulé');
-  prodRerender(site);
-};
-
-// ============================================================
-// SAISIE RAPIDE D'UN BON
-// ============================================================
-// 3 gestes : étape → commande (auto si une seule) → grille déjà remplie avec
-// le disponible → Valider. On ne touche qu'aux cases qui diffèrent.
-function prodBonEtapesPourSite(site){ return site==='gadh' ? ['retour'] : ['coupe','controle','emballage','expedition']; }
-function prodBonCommandesEligibles(etape){
-  return activeProdCommandes().filter(([id,c]) => {
-    const cum = prodCumuls(id);
-    if(etape==='coupe'){
-      const s = prodSynthese(id, null, cum);
-      return s.statut!=='EXPEDIEE' && s.restes.resteACouper>0;
-    }
-    return Object.values(cum).some(ts => Object.values(ts).some(cell => prodDisponible(etape, cell) > 0));
-  });
-}
-function prodInitBonState(site, etape, cmdId){
-  prodBon = {site, etape: etape||null, cmdId: null, date: getTodayISO(), observation: '', qty: {}, nc: {}};
-  if(prodBon.etape){
-    const elig = prodBonCommandesEligibles(prodBon.etape).map(([id])=>id);
-    if(cmdId && elig.includes(cmdId)) prodBon.cmdId = cmdId;
-    else if(!cmdId && elig.length===1) prodBon.cmdId = elig[0];
-    else if(cmdId){ prodBon.cmdId = null; prodBon.cmdNonEligible = cmdId; }
-  }
-  prodBonPrefill('dispo');
-}
-// mode 'dispo' = tout le disponible ; 'zero' = tout à zéro
-function prodBonPrefill(mode){
-  prodBon.qty = {}; prodBon.nc = {};
-  if(!prodBon.etape || !prodBon.cmdId) return;
-  const cmd = getProdCommandes()[prodBon.cmdId];
-  const cum = prodCumuls(prodBon.cmdId);
-  Object.entries(cmd.lignes||{}).forEach(([rk,l]) => Object.keys(l.tailles||{}).forEach(t => {
-    const c = prodCell(cum, rk, t);
-    const dispo = prodBon.etape==='coupe' ? Math.max(0, prodCmdQty(cmd,rk,t) - c.coupe) : Math.max(0, prodDisponible(prodBon.etape, c));
-    (prodBon.qty[rk] = prodBon.qty[rk] || {})[t] = mode==='zero' ? 0 : dispo;
-    if(prodBon.etape==='controle') (prodBon.nc[rk] = prodBon.nc[rk] || {})[t] = 0;
-  }));
-}
-// Vérifie le bon contre les cumuls À JOUR (un autre téléphone a pu enregistrer entre-temps).
-function prodBonCheck(){
-  const res = {total:0, totalNc:0, errors:[], cellErrors:{}};
-  if(!prodBon || !prodBon.cmdId) return res;
-  const cum = prodCumuls(prodBon.cmdId);
-  Object.entries(prodBon.qty).forEach(([rk,ts]) => Object.entries(ts).forEach(([t,raw]) => {
-    const q = raw==='' || raw==null ? 0 : parseInt(raw);
-    const k = rk+'|'+t;
-    if(isNaN(q) || q<0){ res.errors.push(`${prodRefName(rk)} ${t} : quantité invalide`); res.cellErrors[k]='q'; return; }
-    res.total += q;
-    if(prodBon.etape!=='coupe'){
-      const dispo = Math.max(0, prodDisponible(prodBon.etape, prodCell(cum, rk, t)));
-      if(q > dispo){ res.errors.push(`${prodRefName(rk)} ${t} : ${q} demandé, ${dispo} disponible`); res.cellErrors[k]='q'; }
-    }
-    if(prodBon.etape==='controle'){
-      const ncRaw = prodBon.nc[rk] && prodBon.nc[rk][t];
-      const n = ncRaw==='' || ncRaw==null ? 0 : parseInt(ncRaw);
-      if(isNaN(n) || n<0){ res.errors.push(`${prodRefName(rk)} ${t} : non conformes invalides`); res.cellErrors[k]='nc'; }
-      else if(n > q){ res.errors.push(`${prodRefName(rk)} ${t} : ${n} non conformes pour ${q} contrôlées`); res.cellErrors[k]='nc'; }
-      else res.totalNc += n;
-    }
-  }));
-  return res;
-}
-// Mise à jour visuelle SANS redessiner (le clavier et le focus restent en place).
-function prodBonRefresh(){
-  const chk = prodBonCheck();
-  document.querySelectorAll('#prod-bon-form-zone input.bon-q, #prod-bon-form-zone input.bon-nc').forEach(inp => {
-    const k = inp.dataset.rk+'|'+inp.dataset.t;
-    const bad = chk.cellErrors[k] === (inp.classList.contains('bon-nc') ? 'nc' : 'q');
-    inp.style.borderColor = bad ? 'var(--bad)' : 'var(--border)';
-    inp.style.background = bad ? '#FEF2F2' : '';
-  });
-  Object.keys(prodBon.qty).forEach(rk => {
-    const el = document.getElementById('bon-reftot-'+rk.replace(/[^a-zA-Z0-9]/g,'_'));
-    if(el) el.textContent = Object.values(prodBon.qty[rk]).reduce((s,v)=>s+(parseInt(v)||0),0) + ' pcs';
-  });
-  const tot = document.getElementById('bon-total');
-  if(tot) tot.textContent = prodBon.etape==='controle'
-    ? `${chk.total} contrôlées · ${chk.total - chk.totalNc} conformes · ${chk.totalNc} rebut`
-    : `${chk.total} pièces`;
-  const err = document.getElementById('bon-errors');
-  if(err) err.innerHTML = chk.errors.length ? chk.errors.slice(0,4).map(e=>`<div>• ${esc(e)}</div>`).join('') + (chk.errors.length>4?`<div>… et ${chk.errors.length-4} autre(s)</div>`:'') : '';
-  const btn = document.getElementById('bon-valider');
-  if(btn){ const ok = chk.errors.length===0 && chk.total>0; btn.disabled = !ok; btn.style.opacity = ok ? '1' : '.45'; }
-  return chk;
-}
-window.prodBonSet = (rk, t, field, val) => {
-  const target = field==='nc' ? prodBon.nc : prodBon.qty;
-  if(!target[rk]) target[rk] = {};
-  target[rk][t] = val;
-  prodBonRefresh();
-};
-window.prodBonChoisirEtape = (et) => { prodInitBonState(prodBon.site, et, prodBon.cmdId); prodRerender(prodBon.site); };
-window.prodBonChoisirCommande = (id) => { prodBon.cmdId = id || null; prodBon.cmdNonEligible = null; prodBonPrefill('dispo'); prodRerender(prodBon.site); };
-window.prodBonRemplir = (mode) => { prodBonPrefill(mode); prodRerender(prodBon.site); };
-window.prodBonValider = () => {
-  const chk = prodBonRefresh();
-  if(chk.errors.length || chk.total<=0){ showToast(chk.total<=0 ? 'Le bon est vide' : 'Corrigez les cases en rouge'); return; }
-  const lignes = {}, nc = {};
-  Object.entries(prodBon.qty).forEach(([rk,ts]) => Object.entries(ts).forEach(([t,raw]) => {
-    const q = parseInt(raw)||0;
-    if(q<=0) return;
-    (lignes[rk] = lignes[rk] || {})[t] = q;
-    if(prodBon.etape==='controle'){
-      const n = parseInt(prodBon.nc[rk] && prodBon.nc[rk][t])||0;
-      if(n>0) (nc[rk] = nc[rk] || {})[t] = n;
-    }
-  }));
-  if(!prodBon.date){ showToast('Indiquez la date du bon'); return; }
-  const bons = getProdBons();
-  const id = 'bon'+Date.now()+Math.floor(Math.random()*1000);
-  bons[id] = {
-    etape: prodBon.etape, commandeId: prodBon.cmdId, date: prodBon.date, lignes,
-    observation: (prodBon.observation||'').trim(),
-    createdBy: currentUser.nom, createdAt: new Date().toISOString()
-  };
-  if(prodBon.etape==='controle') bons[id].nc = nc;
-  saveProdBons(bons);
-  const total = prodBonTotal(bons[id]);
-  showToast(`${PROD_ETAPE_INFO[prodBon.etape].label} enregistré : ${total} pièces`);
-  // On reste sur la même étape/commande pour enchaîner ; la grille se remplit avec le nouveau disponible.
-  prodInitBonState(prodBon.site, prodBon.etape, prodBon.cmdId);
-  prodRerender(prodBon.site);
-};
-window.prodBonQuitter = () => {
-  const site = prodBon ? prodBon.site : 'tek';
-  // Après le dernier bon d'une étape, la commande n'est plus « éligible » : on revient quand même sur sa fiche.
-  const cmdId = prodBon && (prodBon.cmdId || prodBon.cmdNonEligible);
-  prodBon = null;
-  if(cmdId) prodGo(site, 'fiche', cmdId); else prodGo(site, 'list');
-};
-
-function renderProdBonForm(container, site){
-  if(!prodCanEditSite(site)){ container.innerHTML = `<div class="card">${buildEmptyState("Lecture seule", "Votre rôle ne permet pas d'enregistrer des bons.")}</div>`; return; }
-  if(!prodBon || prodBon.site!==site) prodInitBonState(site, site==='gadh' ? 'retour' : null, null);
-  const etapes = prodBonEtapesPourSite(site);
-  const elig = prodBon.etape ? prodBonCommandesEligibles(prodBon.etape) : [];
-  const cmd = prodBon.cmdId ? getProdCommandes()[prodBon.cmdId] : null;
-  const cum = cmd ? prodCumuls(prodBon.cmdId) : null;
-  const info = prodBon.etape ? PROD_ETAPE_INFO[prodBon.etape] : null;
-  const nonElig = prodBon.cmdNonEligible ? getProdCommandes()[prodBon.cmdNonEligible] : null;
-
-  let nbMasquees = 0;
-  const grille = !cmd ? '' : Object.entries(cmd.lignes||{}).map(([rk,l]) => {
-    // Les tailles où rien n'est disponible sont masquées : la grille ne montre que ce qui peut être saisi.
-    const tailles = PROD_TAILLES.filter(t => l.tailles && l.tailles[t]).filter(t => {
-      if(prodBon.etape==='coupe') return true;
-      const ok = prodDisponible(prodBon.etape, prodCell(cum, rk, t)) > 0;
-      if(!ok) nbMasquees++;
-      return ok;
-    });
-    if(tailles.length===0) return '';
-    const rows = tailles.map(t => {
-      const c = prodCell(cum, rk, t);
-      const qc = prodCmdQty(cmd, rk, t);
-      const dispo = prodBon.etape==='coupe' ? null : Math.max(0, prodDisponible(prodBon.etape, c));
-      const bloque = dispo!==null && dispo<=0;
-      const val = (prodBon.qty[rk] && prodBon.qty[rk][t]);
-      const aide = prodBon.etape==='coupe'
-        ? `cmd ${qc} · déjà ${c.coupe}`
-        : (bloque ? 'rien de disponible' : `/ ${dispo} dispo`);
-      return `
-        <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border-soft);">
-          <span style="width:40px;font-weight:800;font-size:13px;">${t}</span>
-          <input type="number" inputmode="numeric" enterkeyhint="next" min="0" class="bon-q" data-rk="${rk}" data-t="${t}" value="${bloque?0:(val==null?'':val)}" ${bloque?'disabled':''}
-            onfocus="this.select()" oninput="prodBonSet('${rk}','${t}','q',this.value)"
-            style="width:74px;padding:8px 6px;text-align:center;font-size:15px;font-weight:700;border:1.5px solid var(--border);border-radius:8px;${bloque?'opacity:.4;':''}">
-          ${prodBon.etape==='controle' ? `
-          <span style="font-size:10px;color:var(--bad);font-weight:800;">NC</span>
-          <input type="number" inputmode="numeric" enterkeyhint="next" min="0" class="bon-nc" data-rk="${rk}" data-t="${t}" value="${(prodBon.nc[rk] && prodBon.nc[rk][t]) || 0}" ${bloque?'disabled':''}
-            onfocus="this.select()" oninput="prodBonSet('${rk}','${t}','nc',this.value)"
-            style="width:54px;padding:8px 4px;text-align:center;font-size:14px;border:1.5px solid var(--border);border-radius:8px;${bloque?'opacity:.4;':''}">` : ''}
-          <span style="font-size:10.5px;color:var(--ink-faint);flex:1;text-align:right;">${aide}</span>
-        </div>`;
-    }).join('');
-    return `
-      <div class="card" style="padding:10px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-          <b style="font-size:13px;">${esc(prodRefName(rk))}</b>
-          <span id="bon-reftot-${rk.replace(/[^a-zA-Z0-9]/g,'_')}" style="font-size:11.5px;font-weight:800;color:var(--ink-soft);"></span>
-        </div>
-        ${rows}
-      </div>`;
-  }).join('');
-
-  container.innerHTML = `
-    <div id="prod-bon-form-zone">
-      <div class="card" style="padding:10px;">
-        <div style="font-size:11px;font-weight:700;color:var(--ink-faint);margin-bottom:6px;">1. ÉTAPE</div>
-        ${site==='gadh'
-          ? `<div style="font-weight:800;color:${PROD_ETAPE_INFO.retour.color};">Retour GADH → TEK-TREND (pièces assemblées)</div>`
-          : `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
-              ${etapes.map(et => `<button class="btn ${prodBon.etape===et?'btn-primary':'btn-ghost'}" style="padding:11px 4px;font-size:12px;${prodBon.etape===et?'background:'+PROD_ETAPE_INFO[et].color+';border-color:'+PROD_ETAPE_INFO[et].color+';':''}" onclick="prodBonChoisirEtape('${et}')">${PROD_ETAPE_INFO[et].label}</button>`).join('')}
-            </div>`}
-      </div>
-
-      ${prodBon.etape ? `
-      <div class="card" style="padding:10px;">
-        <div style="font-size:11px;font-weight:700;color:var(--ink-faint);margin-bottom:6px;">2. COMMANDE</div>
-        ${nonElig ? `<p style="font-size:11px;color:var(--warn);margin:0 0 6px;">${esc(prodCmdLabel(nonElig))} : rien n'est disponible pour l'étape ${info.label}.</p>` : ''}
-        ${elig.length===0
-          ? `<p style="font-size:12px;color:var(--ink-soft);margin:0;">Aucune commande n'a de pièces disponibles pour l'étape <b>${info.label}</b>.</p>`
-          : `<select onchange="prodBonChoisirCommande(this.value)" style="width:100%;">
-              <option value="">— Choisir —</option>
-              ${elig.map(([id,c]) => `<option value="${id}" ${prodBon.cmdId===id?'selected':''}>${esc(c.nom)} — ${esc(c.ref)} (${esc(c.client||'')})</option>`).join('')}
-            </select>`}
-      </div>` : ''}
-
-      ${cmd ? `
-      <div class="card" style="padding:10px;">
-        <div style="font-size:11px;font-weight:700;color:var(--ink-faint);margin-bottom:6px;">3. QUANTITÉS ${prodBon.etape==='controle' ? '(contrôlées + non conformes)' : ''}</div>
-        <p style="font-size:11px;color:var(--ink-soft);margin:0 0 8px;">${prodBon.etape==='coupe'
-          ? 'Pré-rempli avec le reste à couper. Vous pouvez couper plus que la commande (marge).'
-          : prodBon.etape==='controle'
-            ? 'Pré-rempli avec tout ce qui est à contrôler. Saisissez seulement les non conformes : ils partent au rebut.'
-            : 'Pré-rempli avec tout le disponible. Corrigez seulement les cases qui diffèrent.'}</p>
-        <div style="display:flex;gap:6px;margin-bottom:8px;">
-          <button class="btn btn-ghost" style="flex:1;padding:7px 4px;font-size:11.5px;" onclick="prodBonRemplir('dispo')">Tout le disponible</button>
-          <button class="btn btn-ghost" style="flex:1;padding:7px 4px;font-size:11.5px;" onclick="prodBonRemplir('zero')">Tout à zéro</button>
-        </div>
-        <div style="display:flex;gap:8px;">
-          <div class="field" style="flex:1;margin:0;"><label>Date</label><input type="date" value="${prodBon.date}" max="${getTodayISO()}" onchange="prodBon.date=this.value"></div>
-        </div>
-      </div>
-      ${grille}
-      ${nbMasquees ? `<p style="font-size:10.5px;color:var(--ink-faint);text-align:center;margin:0 0 8px;">${nbMasquees} taille${nbMasquees>1?'s':''} sans pièce disponible à cette étape (masquée${nbMasquees>1?'s':''})</p>` : ''}
-      <div class="card" style="padding:10px;position:sticky;bottom:78px;z-index:5;box-shadow:0 -4px 16px rgba(15,23,42,.10);">
-        <div class="field" style="margin:0 0 8px;"><input placeholder="Observation (optionnel)" value="${esc(prodBon.observation)}" oninput="prodBon.observation=this.value"></div>
-        <div id="bon-errors" style="font-size:11px;color:var(--bad);margin-bottom:6px;"></div>
-        <div style="display:flex;align-items:center;gap:8px;">
-          <div style="flex:1;font-size:12.5px;font-weight:800;" id="bon-total"></div>
-          <button class="btn btn-ghost" style="padding:10px 12px;" onclick="prodBonQuitter()">Fermer</button>
-          <button class="btn btn-primary" id="bon-valider" style="padding:10px 16px;" onclick="prodBonValider()">Valider</button>
-        </div>
-      </div>` : `
-      <div class="card" style="padding:10px;"><button class="btn btn-ghost" style="width:100%;" onclick="prodBonQuitter()">Fermer</button></div>`}
-    </div>
-  `;
-  // Touche « Suivant » du clavier : passe à la case suivante au lieu de valider le formulaire.
-  const zone = document.getElementById('prod-bon-form-zone');
-  zone.addEventListener('keydown', (e) => {
-    if(e.key!=='Enter' || e.target.tagName!=='INPUT' || e.target.type!=='number') return;
-    e.preventDefault();
-    const inputs = [...zone.querySelectorAll('input.bon-q:not([disabled]), input.bon-nc:not([disabled])')];
-    const i = inputs.indexOf(e.target);
-    if(i>=0 && i<inputs.length-1) inputs[i+1].focus(); else e.target.blur();
-  });
-  if(cmd) prodBonRefresh();
 }
