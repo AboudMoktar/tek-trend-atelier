@@ -1,7 +1,7 @@
 // TEK-TREND — Service Worker
 // Change ce numéro de version à chaque mise à jour du site pour forcer
 // les téléphones déjà installés à récupérer la nouvelle version.
-const CACHE_NAME = 'tek-trend-v14';
+const CACHE_NAME = 'tek-trend-v15';
 
 // Fichiers essentiels de l'application (mêmes dossier que sw.js)
 const APP_SHELL = [

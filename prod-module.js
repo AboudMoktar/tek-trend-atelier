@@ -170,7 +170,8 @@ const PROD_STATUTS = {
   PARTIEL:       {label:'Expédié en partie',      color:'#65A30D'},
   EXPEDIE:       {label:'Expédié',                color:'#15803D'},
   LIVRE_PARTIEL: {label:'Livré en partie',        color:'#0F766E'},
-  LIVRE:         {label:'Livré',                  color:'#1E3A8A'}
+  LIVRE:         {label:'Livré',                  color:'#1E3A8A'},
+  CLOTUREE:      {label:'Clôturée',               color:'#4B5563'}
 };
 // items = [{c, q}] : une taille, un modèle ou toute une commande.
 // Les fins d'étape (tout coupé, emballé, expédié, livré) se vérifient taille par taille,
@@ -223,6 +224,47 @@ function prodSynthese(cmdId, refFilter, cumOpt){
     pctLiv: total ? Math.min(100, Math.round(capLiv/total*100)) : 0
   };
 }
+// Une commande est clôturée si tout a été livré, OU si elle a été clôturée à la
+// main (cas d'un reste qui ne pourra jamais être livré : rebut définitif).
+function prodEstCloturee(cmdId, sOpt){
+  const cmd = getProdCommandes()[cmdId];
+  if(!cmd) return false;
+  if(cmd.cloturee) return true;
+  const s = sOpt || prodSynthese(cmdId);
+  return s.total>0 && s.restes.resteALivrer===0;
+}
+function prodStatutAffiche(cmdId, sOpt){
+  const s = sOpt || prodSynthese(cmdId);
+  return prodEstCloturee(cmdId, s) ? 'CLOTUREE' : s.statut;
+}
+window.prodCloturerCommande = (cmdId) => {
+  if(!canEditProdTek()) return;
+  const cmds = getProdCommandes();
+  const cmd = cmds[cmdId];
+  if(!cmd || cmd.cloturee) return;
+  const s = prodSynthese(cmdId);
+  const r = s.restes;
+  const msg = r.resteALivrer>0
+    ? `Clôturer cette commande alors qu'il reste ${r.resteALivrer} pièce(s) à livrer${r.rebut?` (dont ${r.rebut} au rebut, définitivement perdue(s))`:''} ?\n\nElle sortira des commandes en cours et passera en « Clôturée ». Vous pourrez la rouvrir ensuite si besoin.`
+    : `Clôturer cette commande ?`;
+  if(!confirm(msg)) return;
+  cmds[cmdId] = {...cmd, cloturee:true, dateCloture:getTodayISO(), clotureManuelle:true, cloturePar:currentUser.nom};
+  saveProdCommandes(cmds);
+  showToast('Commande clôturée');
+  prodGo('tek','fiche',cmdId);
+};
+window.prodRouvrirCommande = (cmdId) => {
+  if(!canEditProdTek()) return;
+  const cmds = getProdCommandes();
+  const cmd = cmds[cmdId];
+  if(!cmd || !cmd.cloturee) return;
+  if(!confirm('Rouvrir cette commande ? Elle redevient une commande en cours.')) return;
+  const { cloturee, dateCloture, clotureManuelle, cloturePar, ...reste } = cmd;
+  cmds[cmdId] = reste;
+  saveProdCommandes(cmds);
+  showToast('Commande rouverte');
+  prodGo('tek','fiche',cmdId);
+};
 function prodStatutBadge(statut, small){
   const s = PROD_STATUTS[statut] || PROD_STATUTS.TRAITEMENT;
   return `<span style="font-size:${small?'9.5':'10.5'}px;font-weight:800;color:#fff;background:${s.color};padding:3px 8px;border-radius:10px;white-space:nowrap;">${s.label}</span>`;
@@ -409,8 +451,8 @@ function prodPositionTexte(r){
 function renderProdListe(container, site){
   const canEdit = site==='tek' && canEditProdTek();
   const all = activeProdCommandes().map(([id,c]) => ({id, c, s: prodSynthese(id)}));
-  const nbEnCours = all.filter(x => x.s.statut!=='LIVRE').length;
-  const rows = all.filter(x => prodListFilter==='toutes' || (prodListFilter==='encours' ? x.s.statut!=='LIVRE' : x.s.statut==='LIVRE'));
+  const nbEnCours = all.filter(x => !prodEstCloturee(x.id, x.s)).length;
+  const rows = all.filter(x => prodListFilter==='toutes' || (prodListFilter==='encours' ? !prodEstCloturee(x.id, x.s) : prodEstCloturee(x.id, x.s)));
   container.innerHTML = `
     <div class="card">
       <div class="flex-header" style="margin-bottom:8px;"><h3 style="margin:0;font-size:14px;">Commandes</h3></div>
@@ -421,7 +463,7 @@ function renderProdListe(container, site){
       ${all.length ? `<button class="btn btn-ghost" style="width:100%;padding:8px 4px;font-size:12px;margin-bottom:8px;" onclick="prodOuvrirExport()">🖨️ Imprimer / Exporter (PDF, Excel)</button>` : ''}
       <div id="prod-cmd-form-zone"></div>
       <div style="display:flex;gap:6px;margin-bottom:6px;">
-        ${[['encours',`En cours (${nbEnCours})`],['livrees',`Livrées (${all.length-nbEnCours})`],['toutes','Toutes']].map(([k,l]) =>
+        ${[['encours',`En cours (${nbEnCours})`],['livrees',`Clôturées (${all.length-nbEnCours})`],['toutes','Toutes']].map(([k,l]) =>
           `<button class="btn ${prodListFilter===k?'btn-primary':'btn-ghost'}" style="flex:1;padding:6px 4px;font-size:11px;" onclick="prodListFilter='${k}'; prodRerender('${site}')">${l}</button>`).join('')}
       </div>
       ${rows.length===0 ? buildEmptyState(all.length===0 ? "Aucune commande" : "Aucune commande dans ce filtre") : rows.map(({id,c,s}) => `
@@ -431,7 +473,7 @@ function renderProdListe(container, site){
               <b style="font-size:13.5px;">${esc(c.ref)}</b> <span style="font-size:12px;color:var(--ink-soft);">${esc(c.nom)}</span>
               <div style="font-size:10.5px;color:var(--ink-faint);">${esc(c.client||'—')} · ${c.annee} · ${Object.keys(c.lignes||{}).length} modèle(s) · ${s.total} pcs</div>
             </div>
-            ${prodStatutBadge(s.statut, true)}
+            ${prodStatutBadge(prodStatutAffiche(id, s), true)}
           </div>
           ${prodBarre(s.pctPret, '#0D9488', 'Prêt')}
           ${prodBarre(s.pctExp, '#15803D', 'Expédié')}
@@ -484,7 +526,7 @@ function prodParcoursHTML(cmd, cum, site, cmdId, canEdit, r){
             ${saisissable ? `<button class="btn btn-primary" style="padding:8px 14px;font-size:12px;flex-shrink:0;background:${e.color};border-color:${e.color};" onclick="prodOuvrirSaisie('${site}','${cmdId}',null,'${e.etape}')">Saisir</button>` : ''}
           </div>
           ${ouvert && e.attente>0 ? `<div style="font-size:11px;background:var(--surface-2);border-radius:8px;padding:6px 8px;margin-top:6px;line-height:1.7;">${detail}</div>` : ''}
-          ${e.etape==='livraison' ? `<div style="font-size:11.5px;margin-top:6px;">Reste à livrer au client : <b style="color:${r.resteALivrer?'var(--bad)':'var(--good)'};">${r.resteALivrer}</b></div>` : ''}
+          ${e.etape==='livraison' ? `<div style="font-size:11.5px;margin-top:6px;">Reste à livrer au client : <b style="color:${r.resteALivrer?'var(--bad)':'var(--good)'};">${r.resteALivrer}</b></div>${cmd.cloturee && r.resteALivrer>0 ? `<div style="font-size:10.5px;color:var(--ink-faint);margin-top:2px;">Commande clôturée malgré ce reste (rebut compris) le ${(cmd.dateCloture||'').split('-').reverse().join('/')}.</div>` : ''}` : ''}
           ` : `<div style="font-size:11px;color:var(--ink-faint);margin-top:2px;">Rien reçu pour l'instant</div>`}
         </div>
       </div>`;
@@ -575,7 +617,7 @@ function renderProdFiche(container, site){
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
         <div><b style="font-size:16px;">${esc(cmd.ref)}</b><div style="font-size:11.5px;color:var(--ink-soft);">${esc(cmd.nom)} · ${esc(cmd.client||'—')} · ${cmd.annee}</div></div>
-        ${prodStatutBadge(s.statut)}
+        ${prodStatutBadge(prodStatutAffiche(cmdId, s))}
       </div>
       <div style="margin-top:10px;display:flex;flex-direction:column;gap:5px;">
         ${prodBarre(s.pctPret, '#0D9488', 'Prêt')}
@@ -587,7 +629,13 @@ function renderProdFiche(container, site){
         <button class="btn btn-ghost" style="flex:1;padding:7px 4px;font-size:11.5px;" onclick="prodExporterExcel(['${cmdId}'])">📊 Excel</button>
       </div>
       ${canEdit ? `<button class="btn btn-primary" style="width:100%;margin-top:8px;padding:10px;" onclick="prodOuvrirSaisie('${site}','${cmdId}')">+ Saisie du jour</button>` : ''}
-      ${site==='tek' && canEdit ? `<div style="display:flex;gap:6px;margin-top:6px;">
+      ${site==='tek' && canEdit ? `
+      ${cmd.cloturee ? `
+      <div style="margin-top:8px;padding:8px 10px;border-radius:9px;background:var(--surface-2);display:flex;justify-content:space-between;align-items:center;gap:6px;">
+        <span style="font-size:11px;color:var(--ink-soft);">Clôturée le ${(cmd.dateCloture||'').split('-').reverse().join('/')}${cmd.cloturePar?' par '+esc(cmd.cloturePar):''}</span>
+        <button class="btn btn-ghost" style="padding:6px 10px;font-size:11px;flex-shrink:0;" onclick="prodRouvrirCommande('${cmdId}')">Rouvrir</button>
+      </div>` : prodEstCloturee(cmdId, s) ? '' : `<button class="btn btn-ghost" style="width:100%;margin-top:8px;padding:9px;font-size:12px;color:#4B5563;border-color:#4B5563;" onclick="prodCloturerCommande('${cmdId}')">🗄️ Clôturer la commande</button>`}
+      <div style="display:flex;gap:6px;margin-top:6px;">
         <button class="btn btn-ghost" style="flex:1;padding:7px;font-size:11.5px;" onclick="prodEditFromFiche('${cmdId}')">Modifier la commande</button>
         <button class="btn btn-ghost" style="flex:1;padding:7px;font-size:11.5px;color:var(--bad);border-color:var(--bad);" onclick="prodSupprimerCommande('${cmdId}')">Supprimer la commande</button>
       </div>` : ''}
@@ -673,7 +721,7 @@ window.prodEditFromFiche = (cmdId) => {
 // SAISIE DU JOUR : date + étape + quantités du jour (par modèle et par taille)
 // ============================================================
 function prodCommandesSaisissables(){
-  return activeProdCommandes().filter(([id]) => prodSynthese(id).statut!=='LIVRE');
+  return activeProdCommandes().filter(([id]) => !prodEstCloturee(id));
 }
 function prodInitSaisie(site, cmdId, date, etape){
   const etapes = prodEtapesSite(site);
@@ -951,11 +999,11 @@ function prodDashDonnees(client){
       const cum = prodCumulsFrom(c, saisies);
       return {id, c, saisies, s: prodSynthese(id, null, cum), nbViol: prodViolations(cum).length};
     });
-  const enCours = lignes.filter(x => x.s.statut!=='LIVRE');
+  const enCours = lignes.filter(x => !prodEstCloturee(x.id, x.s));
   const tot = {commande:0, resteACouper:0, aLaGadh:0, enConfection:0, auControle:0, aEmballer:0, pretAExpedier:0, enLivraison:0, expedie:0, livre:0, resteALivrer:0, rebut:0};
   enCours.forEach(x => { tot.commande += x.s.total; Object.keys(x.s.restes).forEach(k => { tot[k] += x.s.restes[k]; }); });
   const parStatut = {};
-  lignes.forEach(x => { parStatut[x.s.statut] = (parStatut[x.s.statut]||0) + 1; });
+  lignes.forEach(x => { const st = prodStatutAffiche(x.id, x.s); parStatut[st] = (parStatut[st]||0) + 1; });
   const activite = {rebut:0}, activiteJour = {};
   PROD_ETAPES.forEach(e => { activite[e] = 0; activiteJour[e] = 0; });
   const recents = [];
@@ -1003,7 +1051,7 @@ function renderProdDashboard(container, site){
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
         <div>
           <div style="font-size:17px;font-weight:800;">📦 Commandes</div>
-          <div style="font-size:11.5px;color:rgba(255,255,255,.75);">${d.enCours.length} en cours · ${d.lignes.length - d.enCours.length} livrée${d.lignes.length-d.enCours.length>1?'s':''}</div>
+          <div style="font-size:11.5px;color:rgba(255,255,255,.75);">${d.enCours.length} en cours · ${d.lignes.length - d.enCours.length} clôturée${d.lignes.length-d.enCours.length>1?'s':''}</div>
         </div>
         <div style="text-align:right;">
           <div style="font-size:22px;font-weight:800;">${t.resteALivrer}</div>
@@ -1055,13 +1103,13 @@ function renderProdDashboard(container, site){
     <div class="card">
       <h3 style="margin:0 0 8px;font-size:13px;">Commandes en cours</h3>
       ${d.enCours.length===0 ? buildEmptyState("Toutes les commandes sont livrées") : d.enCours.map(x => {
-        const idx = prodFriseIndex(x.s.statut);
+        const idx = prodFriseIndex(x.s.statut); // frise = avancement réel, même si clôturée
         return `
         <div style="padding:9px 0;border-bottom:1px solid var(--border-soft);cursor:pointer;" onclick="prodGo('${site}','fiche','${x.id}')">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;">
             <div style="min-width:0;"><b style="font-size:13px;">${esc(x.c.ref)}</b> <span style="font-size:11.5px;color:var(--ink-soft);">${esc(x.c.nom)}</span>
               <div style="font-size:10.5px;color:var(--ink-faint);">${esc(x.c.client||'—')} · ${x.s.total} pcs · reste à livrer ${x.s.restes.resteALivrer}</div></div>
-            ${prodStatutBadge(x.s.statut, true)}
+            ${prodStatutBadge(prodStatutAffiche(x.id, x.s), true)}
           </div>
           <div style="display:flex;gap:3px;margin-top:8px;">
             ${PROD_FRISE.map((f,i) => `<div style="flex:1;text-align:center;">
@@ -1129,7 +1177,7 @@ function prodCarteResume(container, site){
       ${d.enCours.slice(0,3).map(x => `
         <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-top:1px solid var(--border-soft);">
           <b style="font-size:12px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(x.c.ref)} <span style="font-weight:500;color:var(--ink-faint);">${esc(x.c.client||'')}</span></b>
-          ${prodStatutBadge(x.s.statut, true)}
+          ${prodStatutBadge(prodStatutAffiche(x.id, x.s), true)}
           <span style="font-size:11px;font-weight:800;width:62px;text-align:right;">${site==='gadh' ? x.s.restes.aLaGadh+' pcs' : x.s.pctExp+'% exp.'}</span>
         </div>`).join('')}
       ${d.enCours.length>3 ? `<div style="font-size:11px;color:var(--ink-faint);padding-top:4px;">+ ${d.enCours.length-3} autre(s)</div>` : ''}
@@ -1953,7 +2001,7 @@ let prodExportSel = null;
 window.prodOuvrirExport = () => {
   const toutes = activeProdCommandes();
   if(!toutes.length){ showToast('Aucune commande à exporter'); return; }
-  if(!prodExportSel) prodExportSel = new Set(toutes.filter(([id]) => prodSynthese(id).statut!=='LIVRE').map(([id]) => id));
+  if(!prodExportSel) prodExportSel = new Set(toutes.filter(([id]) => !prodEstCloturee(id)).map(([id]) => id));
   const zone = document.getElementById('prod-cmd-form-zone');
   if(!zone) return;
   const sel = prodExportSel;
@@ -1972,7 +2020,7 @@ window.prodOuvrirExport = () => {
           <label style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--border-soft);cursor:pointer;">
             <input type="checkbox" ${sel.has(id)?'checked':''} onchange="prodExportCocher('${id}', this.checked)" style="width:18px;height:18px;">
             <span style="flex:1;min-width:0;"><b style="font-size:12.5px;">${esc(c.ref)}</b> <span style="font-size:11px;color:var(--ink-soft);">${esc(c.nom)} · ${esc(c.client||'')} · ${s.total} pcs</span></span>
-            ${prodStatutBadge(s.statut, true)}
+            ${prodStatutBadge(prodStatutAffiche(id, s), true)}
           </label>`; }).join('')}
       </div>
       <div id="prod-export-compte" style="font-size:11.5px;font-weight:800;margin:8px 0;">${sel.size} commande(s) sélectionnée(s)</div>
@@ -1986,7 +2034,7 @@ window.prodOuvrirExport = () => {
 window.prodExportCocher = (id, ok) => { if(ok) prodExportSel.add(id); else prodExportSel.delete(id); const c = document.getElementById('prod-export-compte'); if(c) c.textContent = `${prodExportSel.size} commande(s) sélectionnée(s)`; };
 window.prodExportChoix = (mode) => {
   const toutes = activeProdCommandes();
-  prodExportSel = new Set(mode==='aucune' ? [] : toutes.filter(([id]) => mode==='toutes' || prodSynthese(id).statut!=='LIVRE').map(([id]) => id));
+  prodExportSel = new Set(mode==='aucune' ? [] : toutes.filter(([id]) => mode==='toutes' || !prodEstCloturee(id)).map(([id]) => id));
   prodOuvrirExport();
 };
 window.prodFermerExport = () => { prodExportSel = null; const z = document.getElementById('prod-cmd-form-zone'); if(z) z.innerHTML = ''; };
