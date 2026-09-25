@@ -73,23 +73,33 @@ function prodRefIsUnique(ref, ignoreId){
 
 // --- Étapes (colonnes du tableau) ---
 // 'rebut' n'est pas une étape à part : il se saisit avec le contrôle (non conformes).
-const PROD_ETAPES = ['coupe','retour','confection','controle','emballage','expedition'];
+const PROD_ETAPES = ['coupe','retour','confection','controle','emballage','expedition','livraison'];
 const PROD_ETAPE_INFO = {
   coupe:      {label:'Coupe',        long:'Coupe (envoyé à la GADH)', col:'Coupé',  site:'tek',  amont:null},
   retour:     {label:'Retour GADH',  long:'Retour GADH → TEK-TREND',  col:'Retour', site:'gadh', amont:'coupe'},
   confection: {label:'Confection',   long:'Confection',               col:'Conf.',  site:'tek',  amont:'retour'},
   controle:   {label:'Contrôle',     long:'Contrôle (conformes)',     col:'Ctrl',   site:'tek',  amont:'confection'},
   emballage:  {label:'Emballage',    long:'Emballage',                col:'Emb.',   site:'tek',  amont:'controle'},
-  expedition: {label:'Expédition',   long:'Expédition',               col:'Exp.',   site:'tek',  amont:'emballage'}
+  expedition: {label:'Expédition',   long:'Expédition',               col:'Exp.',   site:'tek',  amont:'emballage'},
+  livraison:  {label:'Livraison',    long:'Livraison au client',      col:'Liv.',   site:'tek',  amont:'expedition'}
 };
+// Rebut (pièces non conformes) possible à CHAQUE étape. Clé de saisie par étape ;
+// le contrôle garde la clé historique 'rebut' pour ne rien perdre des saisies existantes.
+const PROD_REBUT_KEY = {coupe:'rebut_coupe', retour:'rebut_retour', confection:'rebut_confection', controle:'rebut',
+  emballage:'rebut_emballage', expedition:'rebut_expedition', livraison:'rebut_livraison'};
+function prodRebutKey(etape){ return PROD_REBUT_KEY[etape]; }
 function prodEtapesSite(site){ return PROD_ETAPES.filter(e => PROD_ETAPE_INFO[e].site===site); }
 
-// --- Saisies journalières : prod_saisies_<cmdId> = { 'AAAA-MM-JJ': { etape: { refKey: { taille: qte } } } } ---
-function getProdSaisies(cmdId){ return getJSON('prod_saisies_'+cmdId, {}); }
+// --- Saisies journalières : prod_saisies_<cmdId> = { 'AAAA-MM-JJ': { etape|rebutKey: { refKey: { taille: qte } } } } ---
+function getProdSaisies(cmdId){ return getJSON('prod_saisies_'+cmdId, {}) || {}; }
 function saveProdSaisies(cmdId, s){ setJSON('prod_saisies_'+cmdId, s); }
 
 // --- Cumuls à date, par référence/taille ---
-function prodEmptyCell(){ return {coupe:0, retour:0, confection:0, controle:0, rebut:0, emballage:0, expedition:0}; }
+function prodEmptyCell(){
+  const c = {};
+  PROD_ETAPES.forEach(e => { c[e] = 0; c[PROD_REBUT_KEY[e]] = 0; });
+  return c;
+}
 function prodCumulsFrom(cmd, saisies){
   const res = {};
   const cell = (rk,t) => { if(!res[rk]) res[rk] = {}; if(!res[rk][t]) res[rk][t] = prodEmptyCell(); return res[rk][t]; };
@@ -104,10 +114,12 @@ function prodCumulsFrom(cmd, saisies){
 }
 function prodCumuls(cmdId){ return prodCumulsFrom(getProdCommandes()[cmdId], getProdSaisies(cmdId)); }
 function prodCell(cum, rk, t){ return (cum[rk] && cum[rk][t]) || prodEmptyCell(); }
+function prodRebutEtape(etape, c){ return c[PROD_REBUT_KEY[etape]] || 0; }
+function prodRebutTotal(c){ return PROD_ETAPES.reduce((s,e) => s + prodRebutEtape(e, c), 0); }
 
-// Quantité déjà passée à une étape (le contrôle compte conformes + rebut)
-function prodSortieEtape(etape, c){ return etape==='controle' ? c.controle + c.rebut : c[etape]; }
-// Ce qui reste disponible pour l'étape (null = pas de plafond : la coupe)
+// Ce qui est sorti d'une étape : pièces passées + pièces mises au rebut à cette étape
+function prodSortieEtape(etape, c){ return c[etape] + prodRebutEtape(etape, c); }
+// Ce qui attend encore à l'étape (null = pas de plafond : la coupe)
 function prodDisponible(etape, c){
   const amont = PROD_ETAPE_INFO[etape].amont;
   if(!amont) return null;
@@ -115,27 +127,31 @@ function prodDisponible(etape, c){
 }
 // Où sont les pièces
 function prodRestes(c, q){
+  const att = (e) => Math.max(0, prodDisponible(e, c));
   return {
     resteACouper:  Math.max(0, q - c.coupe),
-    aLaGadh:       Math.max(0, c.coupe - c.retour),
-    enConfection:  Math.max(0, c.retour - c.confection),
-    auControle:    Math.max(0, c.confection - c.controle - c.rebut),
-    aEmballer:     Math.max(0, c.controle - c.emballage),
-    pretAExpedier: Math.max(0, c.emballage - c.expedition),
+    aLaGadh:       att('retour'),
+    enConfection:  att('confection'),
+    auControle:    att('controle'),
+    aEmballer:     att('emballage'),
+    pretAExpedier: att('expedition'),
+    enLivraison:   att('livraison'),
     expedie:       c.expedition,
-    resteALivrer:  Math.max(0, q - c.expedition),
-    rebut:         c.rebut
+    livre:         c.livraison,
+    resteALivrer:  Math.max(0, q - c.livraison),
+    rebut:         prodRebutTotal(c)
   };
 }
 // Incohérences : une étape qui dépasse la précédente
 function prodViolations(cum){
   const v = [];
   Object.entries(cum).forEach(([rk,ts]) => Object.entries(ts).forEach(([t,c]) => {
-    if(c.retour > c.coupe) v.push({rk,t,code:'retour', msg:`retour ${c.retour} > coupé ${c.coupe}`});
-    if(c.confection > c.retour) v.push({rk,t,code:'confection', msg:`confection ${c.confection} > retour ${c.retour}`});
-    if(c.controle + c.rebut > c.confection) v.push({rk,t,code:'controle', msg:`contrôle ${c.controle}${c.rebut?' + rebut '+c.rebut:''} > confection ${c.confection}`});
-    if(c.emballage > c.controle) v.push({rk,t,code:'emballage', msg:`emballé ${c.emballage} > conformes ${c.controle}`});
-    if(c.expedition > c.emballage) v.push({rk,t,code:'expedition', msg:`expédié ${c.expedition} > emballé ${c.emballage}`});
+    PROD_ETAPES.forEach(e => {
+      const amont = PROD_ETAPE_INFO[e].amont;
+      if(!amont) return;
+      const sortie = prodSortieEtape(e, c), rb = prodRebutEtape(e, c);
+      if(sortie > c[amont]) v.push({rk, t, code:e, msg:`${PROD_ETAPE_INFO[e].label.toLowerCase()} ${c[e]}${rb?' + rebut '+rb:''} > ${PROD_ETAPE_INFO[amont].col.toLowerCase().replace('.','')} ${c[amont]}`});
+    });
   }));
   return v;
 }
@@ -143,29 +159,33 @@ function prodViolationKey(v){ return v.rk+'|'+v.t+'|'+v.code; }
 
 // --- Statut automatique : l'étape la plus avancée atteinte ---
 const PROD_STATUTS = {
-  TRAITEMENT: {label:'En traitement',          color:'#9CA3AF'},
-  COUPE:      {label:'En coupe',               color:'#F59E0B'},
-  GADH:       {label:'À la GADH',              color:'#8E2A5B'},
-  RETOUR:     {label:'Retour à TEK-TREND',     color:'#7C3AED'},
-  CONFECTION: {label:'En cours de confection', color:'#2563EB'},
-  CONTROLE:   {label:'Contrôle',               color:'#0891B2'},
-  EMBALLAGE:  {label:'Emballage',              color:'#0D9488'},
-  PRET:       {label:'Prêt à expédier',        color:'#059669'},
-  PARTIEL:    {label:'Expédié en partie',      color:'#65A30D'},
-  EXPEDIE:    {label:'Expédié',                color:'#15803D'}
+  TRAITEMENT:    {label:'En traitement',          color:'#9CA3AF'},
+  COUPE:         {label:'En coupe',               color:'#F59E0B'},
+  GADH:          {label:'À la GADH',              color:'#8E2A5B'},
+  RETOUR:        {label:'Retour à TEK-TREND',     color:'#7C3AED'},
+  CONFECTION:    {label:'En cours de confection', color:'#2563EB'},
+  CONTROLE:      {label:'Contrôle',               color:'#0891B2'},
+  EMBALLAGE:     {label:'Emballage',              color:'#0D9488'},
+  PRET:          {label:'Prêt à expédier',        color:'#059669'},
+  PARTIEL:       {label:'Expédié en partie',      color:'#65A30D'},
+  EXPEDIE:       {label:'Expédié',                color:'#15803D'},
+  LIVRE_PARTIEL: {label:'Livré en partie',        color:'#0F766E'},
+  LIVRE:         {label:'Livré',                  color:'#1E3A8A'}
 };
 // items = [{c, q}] : une taille, un modèle ou toute une commande.
-// Les fins d'étape (tout coupé, tout emballé, tout expédié) se vérifient taille par
-// taille, plafonnées à la commande : un surplus sur une taille ne cache pas un manque ailleurs.
+// Les fins d'étape (tout coupé, emballé, expédié, livré) se vérifient taille par taille,
+// plafonnées à la commande : un surplus sur une taille ne cache pas un manque ailleurs.
 function prodStatut(items){
-  let total=0, capCoupe=0, capEmb=0, capExp=0;
-  const any = {coupe:0, retour:0, confection:0, controle:0, emballage:0, expedition:0};
+  let total=0, capCoupe=0, capEmb=0, capExp=0, capLiv=0;
+  const any = {}; PROD_ETAPES.forEach(e => { any[e] = 0; });
   items.forEach(({c,q}) => {
     total += q;
-    capCoupe += Math.min(c.coupe, q); capEmb += Math.min(c.emballage, q); capExp += Math.min(c.expedition, q);
-    any.coupe += c.coupe; any.retour += c.retour; any.confection += c.confection;
-    any.controle += c.controle + c.rebut; any.emballage += c.emballage; any.expedition += c.expedition;
+    capCoupe += Math.min(c.coupe, q); capEmb += Math.min(c.emballage, q);
+    capExp += Math.min(c.expedition, q); capLiv += Math.min(c.livraison, q);
+    PROD_ETAPES.forEach(e => { any[e] += prodSortieEtape(e, c); });
   });
+  if(total>0 && capLiv>=total) return 'LIVRE';
+  if(any.livraison>0) return 'LIVRE_PARTIEL';
   if(total>0 && capExp>=total) return 'EXPEDIE';
   if(any.expedition>0) return 'PARTIEL';
   if(total>0 && capEmb>=total) return 'PRET';
@@ -189,17 +209,18 @@ function prodSynthese(cmdId, refFilter, cumOpt){
   if(!cmd) return null;
   const cum = cumOpt || prodCumuls(cmdId);
   const items = prodItems(cmd, cum, refFilter);
-  const restes = {resteACouper:0, aLaGadh:0, enConfection:0, auControle:0, aEmballer:0, pretAExpedier:0, expedie:0, resteALivrer:0, rebut:0};
-  let total=0, capExp=0, capEmb=0;
+  const restes = {resteACouper:0, aLaGadh:0, enConfection:0, auControle:0, aEmballer:0, pretAExpedier:0, enLivraison:0, expedie:0, livre:0, resteALivrer:0, rebut:0};
+  let total=0, capExp=0, capEmb=0, capLiv=0;
   items.forEach(({c,q}) => {
-    total += q; capExp += Math.min(c.expedition, q); capEmb += Math.min(c.emballage, q);
+    total += q; capExp += Math.min(c.expedition, q); capEmb += Math.min(c.emballage, q); capLiv += Math.min(c.livraison, q);
     const r = prodRestes(c, q);
     Object.keys(restes).forEach(k => { restes[k] += r[k]; });
   });
   return {
     total, restes, statut: prodStatut(items),
     pctPret: total ? Math.min(100, Math.round(capEmb/total*100)) : 0,
-    pctExp: total ? Math.min(100, Math.round(capExp/total*100)) : 0
+    pctExp: total ? Math.min(100, Math.round(capExp/total*100)) : 0,
+    pctLiv: total ? Math.min(100, Math.round(capLiv/total*100)) : 0
   };
 }
 function prodStatutBadge(statut, small){
@@ -280,18 +301,13 @@ function prodMigrerAnciennesSaisies(){
 // --- Parcours d'une commande : pour chaque étape, ce qui a été REÇU de l'étape
 // précédente, ce qui est FAIT, et ce qui reste À PASSER vers l'étape suivante. ---
 const PROD_PARCOURS = [
-  {etape:'coupe',      titre:'Coupe',             recuLbl:'Commandé',          faitLbl:'Coupé',        attenteLbl:'À couper',        color:'#F59E0B',
-   recu:(c,q)=>q,              fait:c=>c.coupe},
-  {etape:'retour',     titre:'GADH (assemblage)', recuLbl:'Envoyé à la GADH',  faitLbl:'Retourné',     attenteLbl:'Chez la GADH',    color:'#8E2A5B',
-   recu:c=>c.coupe,            fait:c=>c.retour},
-  {etape:'confection', titre:'Confection',        recuLbl:'Retourné GADH',     faitLbl:'Confectionné', attenteLbl:'À confectionner', color:'#2563EB',
-   recu:c=>c.retour,           fait:c=>c.confection},
-  {etape:'controle',   titre:'Contrôle',          recuLbl:'Confectionné',      faitLbl:'Contrôlé',     attenteLbl:'À contrôler',     color:'#0891B2',
-   recu:c=>c.confection,       fait:c=>c.controle + c.rebut},
-  {etape:'emballage',  titre:'Emballage',         recuLbl:'Conformes',         faitLbl:'Emballé',      attenteLbl:'À emballer',      color:'#0D9488',
-   recu:c=>c.controle,         fait:c=>c.emballage},
-  {etape:'expedition', titre:'Expédition',        recuLbl:'Emballé',           faitLbl:'Expédié',      attenteLbl:'Prêt à expédier', color:'#15803D',
-   recu:c=>c.emballage,        fait:c=>c.expedition}
+  {etape:'coupe',      titre:'Coupe',             recuLbl:'Commandé',          faitLbl:'Coupé',        attenteLbl:'À couper',        color:'#F59E0B', recu:(c,q)=>q},
+  {etape:'retour',     titre:'GADH (assemblage)', recuLbl:'Envoyé à la GADH',  faitLbl:'Retourné',     attenteLbl:'Chez la GADH',    color:'#8E2A5B', recu:c=>c.coupe},
+  {etape:'confection', titre:'Confection',        recuLbl:'Retourné GADH',     faitLbl:'Confectionné', attenteLbl:'À confectionner', color:'#2563EB', recu:c=>c.retour},
+  {etape:'controle',   titre:'Contrôle',          recuLbl:'Confectionné',      faitLbl:'Conformes',    attenteLbl:'À contrôler',     color:'#0891B2', recu:c=>c.confection},
+  {etape:'emballage',  titre:'Emballage',         recuLbl:'Conformes',         faitLbl:'Emballé',      attenteLbl:'À emballer',      color:'#0D9488', recu:c=>c.controle},
+  {etape:'expedition', titre:'Expédition',        recuLbl:'Emballé',           faitLbl:'Expédié',      attenteLbl:'Prêt à expédier', color:'#15803D', recu:c=>c.emballage},
+  {etape:'livraison',  titre:'Livraison client',  recuLbl:'Expédié',           faitLbl:'Livré',        attenteLbl:'En livraison',    color:'#1E3A8A', recu:c=>c.expedition}
 ];
 const PROD_ETAT_ETAPE = {
   vide:    {label:'Pas encore',   icone:'○', color:'#9CA3AF'},
@@ -307,15 +323,16 @@ function prodParcours(cmd, cum, refFilter){
     let recu = 0, fait = 0, attente = 0, rebut = 0;
     const detail = {};
     items.forEach(({rk, t, q, c}) => {
-      const r = p.recu(c, q), f = p.fait(c), a = Math.max(0, r - f);
-      recu += r; fait += f; attente += a;
-      if(p.etape==='controle') rebut += c.rebut;
+      const r = p.recu(c, q), f = c[p.etape], rb = prodRebutEtape(p.etape, c);
+      // Coupe : les pièces rebutées à la coupe sont à recouper, elles ne soldent pas la commande.
+      const a = p.etape==='coupe' ? Math.max(0, r - f) : Math.max(0, r - f - rb);
+      recu += r; fait += f; attente += a; rebut += rb;
       if(a>0){ if(!detail[rk]) detail[rk] = []; detail[rk].push({t, a}); }
     });
     let etat;
     if(recu===0) etat = 'vide';
     else if(attente===0) etat = precedenteFinie ? 'fini' : 'ajour';
-    else if(fait===0) etat = 'attente';
+    else if(fait + rebut===0) etat = 'attente';
     else etat = 'encours';
     precedenteFinie = (etat==='fini');
     return {...p, recu, fait, attente, rebut, detail, etat};
@@ -385,13 +402,15 @@ function prodPositionTexte(r){
   if(r.auControle) parts.push(`Contrôle ${r.auControle}`);
   if(r.aEmballer) parts.push(`À emballer ${r.aEmballer}`);
   if(r.pretAExpedier) parts.push(`<b>Prêt ${r.pretAExpedier}</b>`);
+  if(r.enLivraison) parts.push(`En livraison ${r.enLivraison}`);
+  if(r.rebut) parts.push(`<span style="color:var(--bad);">Rebut ${r.rebut}</span>`);
   return parts.join(' · ');
 }
 function renderProdListe(container, site){
   const canEdit = site==='tek' && canEditProdTek();
   const all = activeProdCommandes().map(([id,c]) => ({id, c, s: prodSynthese(id)}));
-  const nbEnCours = all.filter(x => x.s.statut!=='EXPEDIE').length;
-  const rows = all.filter(x => prodListFilter==='toutes' || (prodListFilter==='encours' ? x.s.statut!=='EXPEDIE' : x.s.statut==='EXPEDIE'));
+  const nbEnCours = all.filter(x => x.s.statut!=='LIVRE').length;
+  const rows = all.filter(x => prodListFilter==='toutes' || (prodListFilter==='encours' ? x.s.statut!=='LIVRE' : x.s.statut==='LIVRE'));
   container.innerHTML = `
     <div class="card">
       <div class="flex-header" style="margin-bottom:8px;"><h3 style="margin:0;font-size:14px;">Commandes</h3></div>
@@ -399,9 +418,10 @@ function renderProdListe(container, site){
         <button class="btn btn-primary" style="flex:1;padding:8px 4px;font-size:12px;" onclick="showAddProdCommandeForm()">+ Nouvelle commande</button>
         <button class="btn btn-ghost" style="flex:1;padding:8px 4px;font-size:12px;" onclick="prodChoisirFichierExcel()">📥 Importer Excel</button>
       </div>` : ''}
+      ${all.length ? `<button class="btn btn-ghost" style="width:100%;padding:8px 4px;font-size:12px;margin-bottom:8px;" onclick="prodOuvrirExport()">🖨️ Imprimer / Exporter (PDF, Excel)</button>` : ''}
       <div id="prod-cmd-form-zone"></div>
       <div style="display:flex;gap:6px;margin-bottom:6px;">
-        ${[['encours',`En cours (${nbEnCours})`],['expediees',`Expédiées (${all.length-nbEnCours})`],['toutes','Toutes']].map(([k,l]) =>
+        ${[['encours',`En cours (${nbEnCours})`],['livrees',`Livrées (${all.length-nbEnCours})`],['toutes','Toutes']].map(([k,l]) =>
           `<button class="btn ${prodListFilter===k?'btn-primary':'btn-ghost'}" style="flex:1;padding:6px 4px;font-size:11px;" onclick="prodListFilter='${k}'; prodRerender('${site}')">${l}</button>`).join('')}
       </div>
       ${rows.length===0 ? buildEmptyState(all.length===0 ? "Aucune commande" : "Aucune commande dans ce filtre") : rows.map(({id,c,s}) => `
@@ -415,7 +435,8 @@ function renderProdListe(container, site){
           </div>
           ${prodBarre(s.pctPret, '#0D9488', 'Prêt')}
           ${prodBarre(s.pctExp, '#15803D', 'Expédié')}
-          <div style="font-size:10.5px;color:var(--ink-soft);">${prodPositionTexte(s.restes) || (s.statut==='EXPEDIE' ? 'Commande livrée' : 'Rien de commencé')}</div>
+          ${prodBarre(s.pctLiv, '#1E3A8A', 'Livré')}
+          <div style="font-size:10.5px;color:var(--ink-soft);">${prodPositionTexte(s.restes) || (s.statut==='LIVRE' ? 'Commande livrée' : 'Rien de commencé')}</div>
         </div>`).join('')}
     </div>
   `;
@@ -434,8 +455,9 @@ function prodParcoursHTML(cmd, cum, site, cmdId, canEdit, r){
     ${etapes.map((e, i) => {
       const etat = PROD_ETAT_ETAPE[e.etat];
       const actif = e.etat!=='vide';
-      const pct = e.recu>0 ? Math.min(100, Math.round(e.fait/e.recu*100)) : 0;
-      const saisissable = canEdit && PROD_ETAPE_INFO[e.etape].site===site && (e.attente>0 || e.etape==='coupe');
+      const pct = e.recu>0 ? Math.min(100, Math.round((e.fait + (e.etape==='coupe'?0:e.rebut))/e.recu*100)) : 0;
+      // Une étape terminée n'a plus rien à saisir (une correction se fait depuis « Saisies par date »).
+      const saisissable = canEdit && PROD_ETAPE_INFO[e.etape].site===site && e.etat!=='fini' && (e.attente>0 || e.etape==='coupe');
       const cle = cmdId+'|'+e.etape;
       const ouvert = !!prodParcoursOuvert[cle];
       const dernier = i===etapes.length-1;
@@ -452,7 +474,7 @@ function prodParcoursHTML(cmd, cum, site, cmdId, canEdit, r){
             <span style="font-size:10px;font-weight:800;color:${etat.color};white-space:nowrap;">${etat.label}</span>
           </div>
           ${actif ? `
-          <div style="font-size:11px;color:var(--ink-soft);margin-top:2px;">${e.recuLbl} <b>${e.recu}</b> · ${e.faitLbl} <b>${e.fait}</b>${e.rebut?` <span style="color:var(--bad);">(dont ${e.rebut} rebut)</span>`:''}</div>
+          <div style="font-size:11px;color:var(--ink-soft);margin-top:2px;">${e.recuLbl} <b>${e.recu}</b> · ${e.faitLbl} <b>${e.fait}</b>${e.rebut?` · <span style="color:var(--bad);">Rebut <b>${e.rebut}</b></span>`:''}</div>
           <div style="height:6px;background:var(--border-soft);border-radius:4px;overflow:hidden;margin:6px 0;"><div style="width:${pct}%;height:100%;background:${e.color};"></div></div>
           <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
             <div ${e.attente>0 ? `onclick="prodToggleParcours('${site}','${cle}')" style="cursor:pointer;"` : ''}>
@@ -462,7 +484,7 @@ function prodParcoursHTML(cmd, cum, site, cmdId, canEdit, r){
             ${saisissable ? `<button class="btn btn-primary" style="padding:8px 14px;font-size:12px;flex-shrink:0;background:${e.color};border-color:${e.color};" onclick="prodOuvrirSaisie('${site}','${cmdId}',null,'${e.etape}')">Saisir</button>` : ''}
           </div>
           ${ouvert && e.attente>0 ? `<div style="font-size:11px;background:var(--surface-2);border-radius:8px;padding:6px 8px;margin-top:6px;line-height:1.7;">${detail}</div>` : ''}
-          ${e.etape==='expedition' ? `<div style="font-size:11.5px;margin-top:6px;">Reste à livrer au client : <b style="color:${r.resteALivrer?'var(--bad)':'var(--good)'};">${r.resteALivrer}</b></div>` : ''}
+          ${e.etape==='livraison' ? `<div style="font-size:11.5px;margin-top:6px;">Reste à livrer au client : <b style="color:${r.resteALivrer?'var(--bad)':'var(--good)'};">${r.resteALivrer}</b></div>` : ''}
           ` : `<div style="font-size:11px;color:var(--ink-faint);margin-top:2px;">Rien reçu pour l'instant</div>`}
         </div>
       </div>`;
@@ -495,7 +517,7 @@ function renderProdFiche(container, site){
     const dot = (st) => `<span title="${PROD_STATUTS[st].label}" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${PROD_STATUTS[st].color};margin-right:3px;"></span>`;
     if(prodFicheMode==='attente'){
       // Ce qui attend entre chaque étape (reçu de l'étape précédente, pas encore passé)
-      const cols = [['resteACouper','À couper'],['aLaGadh','GADH'],['enConfection','À conf.'],['auControle','À ctrl'],['aEmballer','À emb.'],['pretAExpedier','Prêt'],['resteALivrer','Reste liv.']];
+      const cols = [['resteACouper','À couper'],['aLaGadh','GADH'],['enConfection','À conf.'],['auControle','À ctrl'],['aEmballer','À emb.'],['pretAExpedier','Prêt'],['enLivraison','En livr.'],['resteALivrer','Reste liv.']];
       const tot = {};
       entete = `<tr><th style="text-align:left;">Taille</th>${cols.map(([k,lbl])=>`<th>${lbl}</th>`).join('')}</tr>`;
       rows = tailles.map(t => {
@@ -507,19 +529,15 @@ function renderProdFiche(container, site){
       pied = `<tr><td style="text-align:left;">Total</td>${cols.map(([k]) => `<td>${tot[k]||0}</td>`).join('')}</tr>`;
     } else {
       const tot = {q:0, ...prodEmptyCell()};
-      entete = `<tr><th style="text-align:left;">Taille</th><th>Cmd</th><th>Coupé</th><th>Retour</th><th>Conf.</th><th>Ctrl</th><th>Emb.</th><th>Exp.</th></tr>`;
+      const cellule = (val, rb, fort) => `<td style="${fort?'font-weight:800;':''}">${val||''}${rb?`<div style="font-size:9px;color:var(--bad);line-height:1;font-weight:600;">−${rb}</div>`:''}</td>`;
+      entete = `<tr><th style="text-align:left;">Taille</th><th>Cmd</th>${PROD_ETAPES.map(e => `<th>${PROD_ETAPE_INFO[e].col}</th>`).join('')}</tr>`;
       rows = tailles.map(t => {
         const q = prodCmdQty(cmd, rk, t), c = prodCell(cum, rk, t);
         Object.keys(tot).forEach(k => { tot[k] += (k==='q' ? q : c[k]); });
         const st = prodStatut([{c,q}]); statutsVus.add(st);
-        return `<tr>
-          <td style="text-align:left;font-weight:800;white-space:nowrap;">${dot(st)}${t}</td>
-          <td style="color:var(--ink-soft);">${q}</td><td>${c.coupe||''}</td><td>${c.retour||''}</td><td>${c.confection||''}</td>
-          <td>${c.controle||''}${c.rebut?`<div style="font-size:9px;color:var(--bad);line-height:1;">−${c.rebut}</div>`:''}</td>
-          <td>${c.emballage||''}</td><td style="font-weight:800;">${c.expedition||''}</td></tr>`;
+        return `<tr><td style="text-align:left;font-weight:800;white-space:nowrap;">${dot(st)}${t}</td><td style="color:var(--ink-soft);">${q}</td>${PROD_ETAPES.map(e => cellule(c[e], prodRebutEtape(e,c), e==='livraison')).join('')}</tr>`;
       }).join('');
-      pied = `<tr><td style="text-align:left;">Total</td><td>${tot.q}</td><td>${tot.coupe}</td><td>${tot.retour}</td><td>${tot.confection}</td>
-            <td>${tot.controle}${tot.rebut?`<div style="font-size:9px;color:var(--bad);line-height:1;">−${tot.rebut}</div>`:''}</td><td>${tot.emballage}</td><td>${tot.expedition}</td></tr>`;
+      pied = `<tr><td style="text-align:left;">Total</td><td>${tot.q}</td>${PROD_ETAPES.map(e => cellule(tot[e]||0, prodRebutEtape(e,tot))).join('')}</tr>`;
     }
     return `
       <div class="card" style="padding:10px;">
@@ -534,9 +552,9 @@ function renderProdFiche(container, site){
   const dates = Object.keys(saisies).sort().reverse();
   const journal = dates.map(d => {
     const jour = saisies[d] || {};
-    const lignes = PROD_ETAPES.filter(e => jour[e]).map(e => {
-      let tot = 0; Object.values(jour[e]).forEach(ts => Object.values(ts).forEach(q => { tot += parseInt(q)||0; }));
-      let reb = 0; if(e==='controle' && jour.rebut) Object.values(jour.rebut).forEach(ts => Object.values(ts).forEach(q => { reb += parseInt(q)||0; }));
+    const lignes = PROD_ETAPES.filter(e => jour[e] || jour[prodRebutKey(e)]).map(e => {
+      let tot = 0; Object.values(jour[e]||{}).forEach(ts => Object.values(ts).forEach(q => { tot += parseInt(q)||0; }));
+      let reb = 0; Object.values(jour[prodRebutKey(e)]||{}).forEach(ts => Object.values(ts).forEach(q => { reb += parseInt(q)||0; }));
       const modifiable = canEdit && PROD_ETAPE_INFO[e].site===site;
       return `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;${modifiable?'cursor:pointer;':''}" ${modifiable?`onclick="prodOuvrirSaisie('${site}','${cmdId}','${d}','${e}')"`:''}>
         <span style="font-size:12px;">${PROD_ETAPE_INFO[e].label}</span>
@@ -562,8 +580,13 @@ function renderProdFiche(container, site){
       <div style="margin-top:10px;display:flex;flex-direction:column;gap:5px;">
         ${prodBarre(s.pctPret, '#0D9488', 'Prêt')}
         ${prodBarre(s.pctExp, '#15803D', 'Expédié')}
+        ${prodBarre(s.pctLiv, '#1E3A8A', 'Livré')}
       </div>
-      ${canEdit ? `<button class="btn btn-primary" style="width:100%;margin-top:10px;padding:10px;" onclick="prodOuvrirSaisie('${site}','${cmdId}')">+ Saisie du jour</button>` : ''}
+      <div style="display:flex;gap:6px;margin-top:10px;">
+        <button class="btn btn-ghost" style="flex:1;padding:7px 4px;font-size:11.5px;" onclick="prodExporterPdf(['${cmdId}'])">📄 PDF / Imprimer</button>
+        <button class="btn btn-ghost" style="flex:1;padding:7px 4px;font-size:11.5px;" onclick="prodExporterExcel(['${cmdId}'])">📊 Excel</button>
+      </div>
+      ${canEdit ? `<button class="btn btn-primary" style="width:100%;margin-top:8px;padding:10px;" onclick="prodOuvrirSaisie('${site}','${cmdId}')">+ Saisie du jour</button>` : ''}
       ${site==='tek' && canEdit ? `<div style="display:flex;gap:6px;margin-top:6px;">
         <button class="btn btn-ghost" style="flex:1;padding:7px;font-size:11.5px;" onclick="prodEditFromFiche('${cmdId}')">Modifier la commande</button>
         <button class="btn btn-ghost" style="flex:1;padding:7px;font-size:11.5px;color:var(--bad);border-color:var(--bad);" onclick="prodSupprimerCommande('${cmdId}')">Supprimer la commande</button>
@@ -581,7 +604,7 @@ function renderProdFiche(container, site){
     ${prodParcoursHTML(cmd, cum, site, cmdId, canEdit, r)}
 
     ${tables}
-    <p style="font-size:10.5px;color:var(--ink-faint);margin:-4px 4px 12px;line-height:1.7;">Pastille = statut de la taille : ${[...statutsVus].map(st => `<span style="white-space:nowrap;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${PROD_STATUTS[st].color};"></span> ${PROD_STATUTS[st].label}</span>`).join(' · ')}.${prodFicheMode==='cumul' ? ' En rouge sous Ctrl : le rebut.' : ' Chaque colonne = pièces qui attendent à cette étape.'}</p>
+    <p style="font-size:10.5px;color:var(--ink-faint);margin:-4px 4px 12px;line-height:1.7;">Pastille = statut de la taille : ${[...statutsVus].map(st => `<span style="white-space:nowrap;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${PROD_STATUTS[st].color};"></span> ${PROD_STATUTS[st].label}</span>`).join(' · ')}.${prodFicheMode==='cumul' ? ' En rouge sous une case : le rebut de cette étape.' : ' Chaque colonne = pièces qui attendent à cette étape.'}</p>
 
     <div class="card">
       <h3 style="margin:0 0 4px;font-size:13px;">Saisies par date</h3>
@@ -650,11 +673,11 @@ window.prodEditFromFiche = (cmdId) => {
 // SAISIE DU JOUR : date + étape + quantités du jour (par modèle et par taille)
 // ============================================================
 function prodCommandesSaisissables(){
-  return activeProdCommandes().filter(([id]) => prodSynthese(id).statut!=='EXPEDIE');
+  return activeProdCommandes().filter(([id]) => prodSynthese(id).statut!=='LIVRE');
 }
 function prodInitSaisie(site, cmdId, date, etape){
   const etapes = prodEtapesSite(site);
-  prodSaisie = {site, cmdId, date: date || getTodayISO(), etape: (etape && etapes.includes(etape)) ? etape : etapes[0], vals:{}, rebut:{}};
+  prodSaisie = {site, cmdId, date: date || getTodayISO(), etape: (etape && etapes.includes(etape)) ? etape : etapes[0], vals:{}, rebut:{}, rebutOuvert:{}};
   if(!prodSaisie.cmdId){
     const dispo = prodCommandesSaisissables();
     if(dispo.length===1) prodSaisie.cmdId = dispo[0][0];
@@ -668,7 +691,8 @@ function prodChargerJour(){
   const jour = getProdSaisies(prodSaisie.cmdId)[prodSaisie.date] || {};
   const copie = (src) => { const o = {}; Object.entries(src||{}).forEach(([rk,ts]) => { o[rk] = {...ts}; }); return o; };
   prodSaisie.vals = copie(jour[prodSaisie.etape]);
-  if(prodSaisie.etape==='controle') prodSaisie.rebut = copie(jour.rebut);
+  prodSaisie.rebut = copie(jour[prodRebutKey(prodSaisie.etape)]);
+  prodSaisie.rebutOuvert = {};
 }
 function prodSaisieNouvellesSaisies(){
   const saisies = getProdSaisies(prodSaisie.cmdId);
@@ -682,7 +706,8 @@ function prodSaisieNouvellesSaisies(){
   };
   const v = nettoie(prodSaisie.vals);
   if(v) jour[prodSaisie.etape] = v; else delete jour[prodSaisie.etape];
-  if(prodSaisie.etape==='controle'){ const rb = nettoie(prodSaisie.rebut); if(rb) jour.rebut = rb; else delete jour.rebut; }
+  const kRb = prodRebutKey(prodSaisie.etape), rb = nettoie(prodSaisie.rebut);
+  if(rb) jour[kRb] = rb; else delete jour[kRb];
   if(Object.keys(jour).length) saisies[prodSaisie.date] = jour; else delete saisies[prodSaisie.date];
   return saisies;
 }
@@ -699,7 +724,7 @@ function prodSaisieVerifier(){
     else if(label==='rebut') res.rebutJour += q; else res.totalJour += q;
   }));
   check(prodSaisie.vals, 'quantité');
-  if(prodSaisie.etape==='controle') check(prodSaisie.rebut, 'rebut');
+  check(prodSaisie.rebut, 'rebut');
   const avant = new Set(prodViolations(prodCumulsFrom(cmd, getProdSaisies(prodSaisie.cmdId))).map(prodViolationKey));
   prodViolations(prodCumulsFrom(cmd, prodSaisieNouvellesSaisies())).filter(v => !avant.has(prodViolationKey(v))).forEach(v => {
     res.erreurs.push(`${prodRefName(v.rk)} ${v.t} : ${v.msg}`);
@@ -723,7 +748,7 @@ function prodSaisieRafraichir(){
     }
   });
   const tot = document.getElementById('sj-total');
-  if(tot) tot.textContent = `${chk.totalJour} pcs ce jour${prodSaisie.etape==='controle' && chk.rebutJour ? ' + '+chk.rebutJour+' rebut' : ''}`;
+  if(tot) tot.textContent = `${chk.totalJour} pcs ce jour${chk.rebutJour ? ' + '+chk.rebutJour+' rebut' : ''}`;
   const err = document.getElementById('sj-erreurs');
   if(err) err.innerHTML = chk.erreurs.slice(0,4).map(e => `<div>• ${esc(e)}</div>`).join('') + (chk.erreurs.length>4 ? `<div>… et ${chk.erreurs.length-4} autre(s)</div>` : '');
   return chk;
@@ -737,6 +762,7 @@ window.prodSjSet = (quoi, rk, t, v) => {
 window.prodSjDate = (d) => { prodSaisie.date = d || getTodayISO(); prodChargerJour(); prodRerender(prodSaisie.site); };
 window.prodSjEtape = (e) => { prodSaisie.etape = e; prodChargerJour(); prodRerender(prodSaisie.site); };
 window.prodSjCommande = (id) => { prodSaisie.cmdId = id || null; prodChargerJour(); prodRerender(prodSaisie.site); };
+window.prodSjOuvrirRebut = (rk) => { if(!prodSaisie.rebutOuvert) prodSaisie.rebutOuvert = {}; prodSaisie.rebutOuvert[rk] = true; prodRerender(prodSaisie.site); };
 window.prodSjToutDispo = () => {
   const cmd = getProdCommandes()[prodSaisie.cmdId];
   const cum = prodCumulsFrom(cmd, getProdSaisies(prodSaisie.cmdId));
@@ -744,9 +770,10 @@ window.prodSjToutDispo = () => {
   Object.entries(cmd.lignes||{}).forEach(([rk,l]) => Object.keys(l.tailles||{}).forEach(t => {
     const c = prodCell(cum, rk, t);
     const deja = parseInt(jour[prodSaisie.etape] && jour[prodSaisie.etape][rk] && jour[prodSaisie.etape][rk][t])||0;
-    const rbDeja = prodSaisie.etape==='controle' ? (parseInt(jour.rebut && jour.rebut[rk] && jour.rebut[rk][t])||0) : 0;
+    const kRb = prodRebutKey(prodSaisie.etape);
+    const rbDeja = prodSaisie.etape==='coupe' ? 0 : (parseInt(jour[kRb] && jour[kRb][rk] && jour[kRb][rk][t])||0);
     const dispo = prodSaisie.etape==='coupe' ? Math.max(0, prodCmdQty(cmd,rk,t) - c.coupe) : Math.max(0, prodDisponible(prodSaisie.etape, c));
-    const rb = parseInt(prodSaisie.rebut[rk] && prodSaisie.rebut[rk][t])||0;
+    const rb = prodSaisie.etape==='coupe' ? 0 : (parseInt(prodSaisie.rebut[rk] && prodSaisie.rebut[rk][t])||0);
     const v = deja + rbDeja + dispo - rb;
     if(!prodSaisie.vals[rk]) prodSaisie.vals[rk] = {};
     prodSaisie.vals[rk][t] = v>0 ? v : '';
@@ -766,9 +793,10 @@ window.prodSjPasserTout = (rk, t) => {
   const c = prodCell(prodCumulsFrom(cmd, saisies), rk, t);
   const jour = saisies[prodSaisie.date] || {};
   const deja = parseInt(jour[prodSaisie.etape] && jour[prodSaisie.etape][rk] && jour[prodSaisie.etape][rk][t])||0;
-  const rbDeja = prodSaisie.etape==='controle' ? (parseInt(jour.rebut && jour.rebut[rk] && jour.rebut[rk][t])||0) : 0;
+  const kRb = prodRebutKey(prodSaisie.etape);
+  const rbDeja = prodSaisie.etape==='coupe' ? 0 : (parseInt(jour[kRb] && jour[kRb][rk] && jour[kRb][rk][t])||0);
   const dispo = prodSaisie.etape==='coupe' ? Math.max(0, prodCmdQty(cmd,rk,t) - c.coupe) : Math.max(0, prodDisponible(prodSaisie.etape, c));
-  const rb = parseInt(prodSaisie.rebut[rk] && prodSaisie.rebut[rk][t])||0;
+  const rb = prodSaisie.etape==='coupe' ? 0 : (parseInt(prodSaisie.rebut[rk] && prodSaisie.rebut[rk][t])||0);
   const v = Math.max(0, deja + rbDeja + dispo - rb);
   if(!prodSaisie.vals[rk]) prodSaisie.vals[rk] = {};
   prodSaisie.vals[rk][t] = v;
@@ -811,8 +839,9 @@ function renderProdSaisie(container, site){
         const src = quoi==='rebut' ? prodSaisie.rebut : prodSaisie.vals;
         const val = src[rk] && src[rk][t] !== undefined ? src[rk][t] : '';
         // Maximum de la journée = ce qui est déjà saisi ce jour + ce qui reste disponible
+        const kRbJ = prodRebutKey(prodSaisie.etape);
         const dejaJour = (parseInt(jour[prodSaisie.etape] && jour[prodSaisie.etape][rk] && jour[prodSaisie.etape][rk][t])||0)
-                       + (prodSaisie.etape==='controle' ? (parseInt(jour.rebut && jour.rebut[rk] && jour.rebut[rk][t])||0) : 0);
+                       + (prodSaisie.etape==='coupe' ? 0 : (parseInt(jour[kRbJ] && jour[kRbJ][rk] && jour[kRbJ][rk][t])||0));
         // Ce qui attend encore à cette étape (hors ce qui est déjà saisi ce jour-là)
         let aPasser, bloque = false;
         if(prodSaisie.etape==='coupe') aPasser = Math.max(0, prodCmdQty(cmd,rk,t) - c.coupe);
@@ -828,6 +857,8 @@ function renderProdSaisie(container, site){
           ${quoi==='vals' ? `<div style="font-size:9.5px;color:var(--ink-faint);margin-top:2px;white-space:nowrap;">${aide}</div>` : ''}
         </div>`;
       }).join('');
+      // Rebut : toujours visible au contrôle ; ailleurs sur demande, ou s'il y en a déjà ce jour-là
+      const voirRebut = prodSaisie.etape==='controle' || (prodSaisie.rebutOuvert||{})[rk] || Object.values(prodSaisie.rebut[rk]||{}).some(v => parseInt(v)>0);
       const attenteModele = tailles.reduce((sum,t) => { const c = prodCell(cum, rk, t); return sum + (prodSaisie.etape==='coupe' ? Math.max(0, prodCmdQty(cmd,rk,t) - c.coupe) : Math.max(0, prodDisponible(prodSaisie.etape, c))); }, 0);
       return `
         <div class="card" style="padding:10px;${attenteModele===0 && prodSaisie.etape!=='coupe' ? 'opacity:.6;' : ''}">
@@ -836,9 +867,11 @@ function renderProdSaisie(container, site){
             <span id="sj-tot-${rk.replace(/[^a-zA-Z0-9]/g,'_')}" style="font-size:11.5px;font-weight:800;color:var(--ink-soft);"></span>
           </div>
           <div style="font-size:10.5px;color:var(--ink-soft);margin-bottom:6px;">${attenteModele>0 ? `${prodSaisie.etape==='coupe'?'Reste à couper':'À passer'} : <b>${attenteModele} pcs</b>` : (prodSaisie.etape==='coupe' ? 'Tout est coupé' : 'Rien en attente à cette étape')}</div>
-          ${prodSaisie.etape==='controle' ? `<div style="font-size:10px;font-weight:800;color:var(--ink-faint);margin-bottom:2px;">CONFORMES</div>` : ''}
+          ${voirRebut ? `<div style="font-size:10px;font-weight:800;color:var(--ink-faint);margin-bottom:2px;">${prodSaisie.etape==='controle' ? 'CONFORMES' : 'PIÈCES PASSÉES'}</div>` : ''}
           <div style="display:flex;gap:4px;">${ligne('vals')}</div>
-          ${prodSaisie.etape==='controle' ? `<div style="font-size:10px;font-weight:800;color:var(--bad);margin:8px 0 2px;">REBUT (non conformes)</div><div style="display:flex;gap:4px;">${ligne('rebut')}</div>` : ''}
+          ${voirRebut
+            ? `<div style="font-size:10px;font-weight:800;color:var(--bad);margin:8px 0 2px;">REBUT (non conformes${prodSaisie.etape==='coupe' ? ', à recouper' : ''})</div><div style="display:flex;gap:4px;">${ligne('rebut')}</div>`
+            : `<button class="btn btn-ghost" style="margin-top:8px;padding:5px 9px;font-size:11px;color:var(--bad);border-color:var(--border);" onclick="prodSjOuvrirRebut('${rk}')">＋ Déclarer du rebut</button>`}
         </div>`;
     }).join('');
   }
@@ -895,13 +928,14 @@ const PROD_FLUX = [
   {k:'enConfection',  label:'En confection',   color:'#2563EB'},
   {k:'auControle',    label:'Au contrôle',     color:'#0891B2'},
   {k:'aEmballer',     label:'À emballer',      color:'#0D9488'},
-  {k:'pretAExpedier', label:'Prêt à expédier', color:'#059669'}
+  {k:'pretAExpedier', label:'Prêt à expédier', color:'#059669'},
+  {k:'enLivraison',   label:'En livraison',    color:'#1E3A8A'}
 ];
 // Ordre des statuts pour la frise d'avancement de chaque commande
 const PROD_FRISE = [
   {st:['COUPE'], label:'Coupe'}, {st:['GADH'], label:'GADH'}, {st:['RETOUR'], label:'Retour'},
   {st:['CONFECTION'], label:'Conf.'}, {st:['CONTROLE'], label:'Ctrl'}, {st:['EMBALLAGE'], label:'Emb.'},
-  {st:['PRET'], label:'Prêt'}, {st:['PARTIEL','EXPEDIE'], label:'Exp.'}
+  {st:['PRET'], label:'Prêt'}, {st:['PARTIEL','EXPEDIE'], label:'Exp.'}, {st:['LIVRE_PARTIEL','LIVRE'], label:'Livré'}
 ];
 function prodFriseIndex(statut){ return PROD_FRISE.findIndex(f => f.st.includes(statut)); }
 function prodJoursEntre(d1, d2){ return Math.round((new Date(d2+'T00:00:00') - new Date(d1+'T00:00:00')) / 86400000); }
@@ -917,13 +951,13 @@ function prodDashDonnees(client){
       const cum = prodCumulsFrom(c, saisies);
       return {id, c, saisies, s: prodSynthese(id, null, cum), nbViol: prodViolations(cum).length};
     });
-  const enCours = lignes.filter(x => x.s.statut!=='EXPEDIE');
-  const tot = {commande:0, resteACouper:0, aLaGadh:0, enConfection:0, auControle:0, aEmballer:0, pretAExpedier:0, expedie:0, resteALivrer:0, rebut:0};
+  const enCours = lignes.filter(x => x.s.statut!=='LIVRE');
+  const tot = {commande:0, resteACouper:0, aLaGadh:0, enConfection:0, auControle:0, aEmballer:0, pretAExpedier:0, enLivraison:0, expedie:0, livre:0, resteALivrer:0, rebut:0};
   enCours.forEach(x => { tot.commande += x.s.total; Object.keys(x.s.restes).forEach(k => { tot[k] += x.s.restes[k]; }); });
   const parStatut = {};
   lignes.forEach(x => { parStatut[x.s.statut] = (parStatut[x.s.statut]||0) + 1; });
-  const activite = {coupe:0, retour:0, confection:0, controle:0, emballage:0, expedition:0, rebut:0};
-  const activiteJour = {coupe:0, retour:0, confection:0, controle:0, emballage:0, expedition:0};
+  const activite = {rebut:0}, activiteJour = {};
+  PROD_ETAPES.forEach(e => { activite[e] = 0; activiteJour[e] = 0; });
   const recents = [];
   const alertes = [];
   lignes.forEach(x => {
@@ -934,9 +968,10 @@ function prodDashDonnees(client){
       if(!q) return;
       if(etape==='retour' && (!dernierRetour || date>dernierRetour)) dernierRetour = date;
       if(etape==='coupe' && (!premiereCoupe || date<premiereCoupe)) premiereCoupe = date;
-      if(date>=d7 && activite[etape]!==undefined) activite[etape] += q;
-      if(date===today && activiteJour[etape]!==undefined) activiteJour[etape] += q;
-      if(etape!=='rebut') recents.push({date, id:x.id, ref:x.c.ref, etape, q});
+      const estRebut = /^rebut/.test(etape);
+      if(date>=d7){ if(estRebut) activite.rebut += q; else if(activite[etape]!==undefined) activite[etape] += q; }
+      if(date===today && !estRebut && activiteJour[etape]!==undefined) activiteJour[etape] += q;
+      if(!estRebut) recents.push({date, id:x.id, ref:x.c.ref, etape, q});
     }));
     if(x.nbViol) alertes.push({niveau:'bad', id:x.id, txt:`${x.c.ref} : ${x.nbViol} incohérence${x.nbViol>1?'s':''} à corriger`});
     const r = x.s.restes;
@@ -968,7 +1003,7 @@ function renderProdDashboard(container, site){
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
         <div>
           <div style="font-size:17px;font-weight:800;">📦 Commandes</div>
-          <div style="font-size:11.5px;color:rgba(255,255,255,.75);">${d.enCours.length} en cours · ${d.lignes.length - d.enCours.length} expédiée${d.lignes.length-d.enCours.length>1?'s':''}</div>
+          <div style="font-size:11.5px;color:rgba(255,255,255,.75);">${d.enCours.length} en cours · ${d.lignes.length - d.enCours.length} livrée${d.lignes.length-d.enCours.length>1?'s':''}</div>
         </div>
         <div style="text-align:right;">
           <div style="font-size:22px;font-weight:800;">${t.resteALivrer}</div>
@@ -1005,7 +1040,7 @@ function renderProdDashboard(container, site){
           <b style="font-size:13px;color:${t[f.k]?f.color:'var(--ink-faint)'};">${t[f.k]}</b>
         </div>`).join('')}
       <div style="display:flex;justify-content:space-between;border-top:1px solid var(--border-soft);margin-top:6px;padding-top:6px;font-size:11.5px;">
-        <span>Expédié <b>${t.expedie}</b></span><span style="color:var(--bad);">Rebut <b>${t.rebut}</b></span>
+        <span>Expédié <b>${t.expedie}</b></span><span>Livré <b>${t.livre}</b></span><span style="color:var(--bad);">Rebut <b>${t.rebut}</b></span>
       </div>
     </div>
 
@@ -1019,7 +1054,7 @@ function renderProdDashboard(container, site){
 
     <div class="card">
       <h3 style="margin:0 0 8px;font-size:13px;">Commandes en cours</h3>
-      ${d.enCours.length===0 ? buildEmptyState("Toutes les commandes sont expédiées") : d.enCours.map(x => {
+      ${d.enCours.length===0 ? buildEmptyState("Toutes les commandes sont livrées") : d.enCours.map(x => {
         const idx = prodFriseIndex(x.s.statut);
         return `
         <div style="padding:9px 0;border-bottom:1px solid var(--border-soft);cursor:pointer;" onclick="prodGo('${site}','fiche','${x.id}')">
@@ -1034,7 +1069,7 @@ function renderProdDashboard(container, site){
               <div style="font-size:8.5px;color:${i===idx?PROD_STATUTS[x.s.statut].color:'var(--ink-faint)'};font-weight:${i===idx?'800':'500'};margin-top:2px;">${f.label}</div></div>`).join('')}
           </div>
           <div style="margin-top:6px;display:flex;flex-direction:column;gap:3px;">
-            ${prodBarre(x.s.pctPret, '#0D9488', 'Prêt')}${prodBarre(x.s.pctExp, '#15803D', 'Expédié')}
+            ${prodBarre(x.s.pctPret, '#0D9488', 'Prêt')}${prodBarre(x.s.pctExp, '#15803D', 'Expédié')}${prodBarre(x.s.pctLiv, '#1E3A8A', 'Livré')}
           </div>
         </div>`;
       }).join('')}
@@ -1227,7 +1262,8 @@ function prodReconnaitreTaille(x){
 }
 const PROD_COL_AVANCEMENT = [
   {etape:'coupe', motif:/COUP/}, {etape:'retour', motif:/ASSEMBL|RETOURN/}, {etape:'confection', motif:/CONFECTION/},
-  {etape:'controle', motif:/CONTROL/}, {etape:'emballage', motif:/EMBALL/}, {etape:'expedition', motif:/EXPED/}
+  {etape:'controle', motif:/CONTROL/}, {etape:'emballage', motif:/EMBALL/}, {etape:'expedition', motif:/EXPED/},
+  {etape:'livraison', motif:/LIVR/}, {etape:'rebut', motif:/REBUT/}
 ];
 
 // Analyse d'une feuille → commande (ou null si ce n'est pas une fiche de commande)
@@ -1327,7 +1363,7 @@ function renderProdImports(){
     if(imp.cree) return `<div class="card" style="border:1.5px solid var(--good);font-size:12.5px;">✓ Commande <b>${esc(imp.ref)}</b> créée.</div>`;
     const autorisees = prodRefsAllowedFor(imp.client).map(([k])=>k);
     const interdites = Object.keys(imp.lignes).filter(k => !autorisees.includes(k));
-    const labelsAv = {coupe:'coupé', retour:'retourné', confection:'confectionné', controle:'contrôlé', emballage:'emballé', expedition:'expédié'};
+    const labelsAv = {coupe:'coupé', retour:'retourné', confection:'confectionné', controle:'contrôlé', emballage:'emballé', expedition:'expédié', livraison:'livré', rebut:'rebut'};
     return `
     <div class="card" style="background:var(--surface-2);">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
@@ -1390,7 +1426,8 @@ window.prodImpCreer = (i) => {
       jour.confection = {};
       Object.entries(jour.controle).forEach(([rk,ts]) => Object.entries(ts).forEach(([t,q]) => {
         const ret = (jour.retour && jour.retour[rk] && jour.retour[rk][t]) || 0;
-        const v = Math.min(q, ret);
+        const rb = (jour.rebut && jour.rebut[rk] && jour.rebut[rk][t]) || 0;
+        const v = Math.min(q + rb, ret);
         if(v>0){ if(!jour.confection[rk]) jour.confection[rk] = {}; jour.confection[rk][t] = v; }
       }));
     }
@@ -1568,3 +1605,388 @@ function prodParseImportText(text, client){
   });
   return {matched, errors};
 }
+
+// ============================================================
+// EXPORT : fiche de commande en EXCEL (.xlsx) et en PDF (impression)
+// ============================================================
+// Reproduit la fiche « Flux d'une commande » : en-tête Commande / LOT-REF / ANNEE,
+// tableau Model · LIBELLE · Taille · FR · Total, puis les quantités de chaque étape.
+// Une commande seule, une sélection ou toutes : pour plusieurs commandes, une première
+// feuille « Cumul » additionne tout, puis une feuille par commande.
+
+// Modèles et libellés exactement comme dans la fiche de commande
+const PROD_EXPORT_REFS = [
+  ['PHARMA-HOMME','Noir',       'PHARMA-HOMME',          'PHARMA_HOMME COL V NOIR',            '595959'],
+  ['PHARMA-HOMME','Gris',       'PHARMA-HOMME',          'PHARMA_HOMME COL V GRIS',            'BFBFBF'],
+  ['PHARMA-HOMME','Sable',      'PHARMA-HOMME',          'PHARMA_HOMME COL V SABLE',           'FDE49B'],
+  ['PHARMA-FEMME CV','Noir',    'PHARMA-FEMME COL V',    'PHARMA_FEMME COL V NOIR',            '595959'],
+  ['PHARMA-FEMME CV','Rose',    'PHARMA-FEMME COL V',    'PHARMA_FEMME COL V ROSE POUDRE',     'FFABB5'],
+  ['PHARMA-FEMME CR','Noir',    'PHARMA-FEMME COL ROND', 'PHARMA_FEMME COL ROND NOIR',         '595959'],
+  ['PHARMA-FEMME CR','Rose',    'PHARMA-FEMME COL ROND', 'PHARMA_FEMME COL ROND ROSE POUDRE',  'FFABB5'],
+  ['SPORT','Homme',             'Sport-H-Re-Mi',         'Tee-shirt Sport homme noir',         '595959'],
+  ['SPORT','Femme',             'Sport-F-Re-Mi',         'Tee-shirt Sport femme noir',         '595959'],
+  ['GILET-NOIR','Homme',        'Gilet-H-Noir',          'Gilet homme noir',                   '595959'],
+  ['GILET-NOIR','Femme',        'Gilet-F-Noir',          'Gilet femme noir',                   '595959'],
+  ['LYNE-PRO','Homme',          'Pro Homme',             'LYNE PRO homme gris',                '808080'],
+  ['LYNE-PRO','Femme',          'Pro Femme',             'LYNE PRO femme gris',                '808080'],
+  ['LYNE-FLEX','Homme',         'Flex Homme',            'LYNE FLEX homme gris',               'BFBFBF'],
+  ['LYNE-FLEX','Femme',         'Flex Femme',            'LYNE FLEX femme gris',               'BFBFBF']
+].map(([f,v,model,libelle,fill]) => ({rk: prodRefKey(f,v), model, libelle, fill}));
+// Colonnes d'avancement (après FR et Total, séparées par une colonne étroite comme dans la fiche)
+const PROD_EXPORT_COLS = [
+  {k:'coupe',      titre:'Coupées/ envoyé à la Gadh'},
+  {k:'retour',     titre:'Assemblées/ retournées Tektrend'},
+  {k:'confection', titre:'Confectionnées'},
+  {k:'controle',   titre:'Contrôlées (Conforme)'},
+  {k:'emballage',  titre:'Emballées'},
+  {k:'expedition', titre:'Expédiées'},
+  {k:'livraison',  titre:'Livrées'},
+  {k:'rebut',      titre:'Rebut'}
+];
+
+// Données d'une fiche : une commande, ou le cumul de plusieurs (additionné modèle par modèle, taille par taille)
+function prodExportDonnees(cmdIds){
+  const cmds = getProdCommandes();
+  const ids = cmdIds.filter(id => cmds[id]);
+  const somme = {}; // rk -> t -> {fr, coupe, ..., rebut}
+  ids.forEach(id => {
+    const cmd = cmds[id], cum = prodCumuls(id);
+    Object.entries(cmd.lignes||{}).forEach(([rk,l]) => Object.entries(l.tailles||{}).forEach(([t,q]) => {
+      const c = prodCell(cum, rk, t);
+      if(!somme[rk]) somme[rk] = {};
+      if(!somme[rk][t]) somme[rk][t] = {fr:0, rebut:0};
+      const o = somme[rk][t];
+      o.fr += parseInt(q)||0;
+      PROD_EXPORT_COLS.forEach(col => { if(col.k!=='rebut') o[col.k] = (o[col.k]||0) + (c[col.k]||0); });
+      o.rebut += prodRebutTotal(c);
+    }));
+  });
+  // Regroupement par modèle, dans l'ordre de la fiche
+  const blocs = [];
+  const connus = PROD_EXPORT_REFS.map(x => x.rk);
+  const refsTriees = PROD_EXPORT_REFS.filter(x => somme[x.rk])
+    .concat(Object.keys(somme).filter(rk => !connus.includes(rk)).map(rk => ({rk, model: prodRefName(rk).split(' / ')[0], libelle: prodRefName(rk), fill:'FFFFFF'})));
+  refsTriees.forEach(ref => {
+    let bloc = blocs.find(b => b.model===ref.model);
+    if(!bloc){ bloc = {model: ref.model, libs: []}; blocs.push(bloc); }
+    bloc.libs.push({...ref, rows: PROD_TAILLES.filter(t => somme[ref.rk][t]).map(t => ({t, ...somme[ref.rk][t]}))});
+  });
+  const un = ids.length===1 ? cmds[ids[0]] : null;
+  const annees = [...new Set(ids.map(id => cmds[id].annee))].join(', ');
+  const clients = [...new Set(ids.map(id => cmds[id].client).filter(Boolean))].join(', ');
+  return {
+    ids, blocs,
+    nom: un ? un.nom : `Cumul (${ids.length} commandes)`,
+    ref: un ? un.ref : ids.map(id => cmds[id].ref).join(', '),
+    annee: annees, client: clients,
+    feuille: un ? un.ref : 'Cumul'
+  };
+}
+
+// ------------------------------------------------------------
+// Générateur XLSX minimal (zip non compressé, valide pour Excel et LibreOffice)
+// ------------------------------------------------------------
+const PROD_CRC_TABLE = (() => { const t = new Uint32Array(256); for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c = (c&1) ? (0xEDB88320 ^ (c>>>1)) : (c>>>1); t[n]=c>>>0; } return t; })();
+function prodCrc32(u8){ let c = 0xFFFFFFFF; for(let i=0;i<u8.length;i++) c = PROD_CRC_TABLE[(c ^ u8[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function prodZip(fichiers){ // [{nom, texte}]
+  const enc = new TextEncoder(), parts = [], central = [];
+  let offset = 0;
+  fichiers.forEach(f => {
+    const nom = enc.encode(f.nom), data = enc.encode(f.texte), crc = prodCrc32(data);
+    const h = new DataView(new ArrayBuffer(30));
+    h.setUint32(0,0x04034b50,true); h.setUint16(4,20,true); h.setUint16(6,0x0800,true); h.setUint16(8,0,true);
+    h.setUint16(10,0,true); h.setUint16(12,0x21,true); h.setUint32(14,crc,true); h.setUint32(18,data.length,true); h.setUint32(22,data.length,true);
+    h.setUint16(26,nom.length,true); h.setUint16(28,0,true);
+    parts.push(new Uint8Array(h.buffer), nom, data);
+    const cd = new DataView(new ArrayBuffer(46));
+    cd.setUint32(0,0x02014b50,true); cd.setUint16(4,20,true); cd.setUint16(6,20,true); cd.setUint16(8,0x0800,true); cd.setUint16(10,0,true);
+    cd.setUint16(12,0,true); cd.setUint16(14,0x21,true); cd.setUint32(16,crc,true); cd.setUint32(20,data.length,true); cd.setUint32(24,data.length,true);
+    cd.setUint16(28,nom.length,true); cd.setUint32(42,offset,true);
+    central.push(new Uint8Array(cd.buffer), nom);
+    offset += 30 + nom.length + data.length;
+  });
+  const tailleCd = central.reduce((s,p) => s + p.length, 0);
+  const fin = new DataView(new ArrayBuffer(22));
+  fin.setUint32(0,0x06054b50,true); fin.setUint16(8,fichiers.length,true); fin.setUint16(10,fichiers.length,true);
+  fin.setUint32(12,tailleCd,true); fin.setUint32(16,offset,true);
+  return new Blob([...parts, ...central, new Uint8Array(fin.buffer)], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+}
+function prodXmlEsc(v){ return String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function prodColLettre(i){ let s=''; i++; while(i>0){ const m=(i-1)%26; s=String.fromCharCode(65+m)+s; i=Math.floor((i-1)/26); } return s; }
+
+// Registre de styles : chaque combinaison police/fond/bordure/alignement devient un index de style Excel
+function prodStyles(){
+  const fonts = ['<font><sz val="10"/><name val="Arial"/></font>'], fills = ['<fill><patternFill patternType="none"/></fill>','<fill><patternFill patternType="gray125"/></fill>'];
+  const borders = ['<border><left/><right/><top/><bottom/><diagonal/></border>'], xfs = ['<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'];
+  const idx = (arr, x) => { let i = arr.indexOf(x); if(i<0){ arr.push(x); i = arr.length-1; } return i; };
+  const cache = {};
+  return {
+    get(st){
+      const cle = JSON.stringify(st);
+      if(cache[cle]!==undefined) return cache[cle];
+      const f = idx(fonts, `<font>${st.b?'<b/>':''}<sz val="${st.sz||10}"/><color rgb="FF${st.color||'000000'}"/><name val="Arial"/></font>`);
+      const fi = st.fill ? idx(fills, `<fill><patternFill patternType="solid"><fgColor rgb="FF${st.fill}"/><bgColor indexed="64"/></patternFill></fill>`) : 0;
+      const b = st.border ? idx(borders, `<border>${['left','right','top','bottom'].map(side => { const w = (st.border[side]||st.border.all); return w ? `<${side} style="${w}"><color rgb="FF000000"/></${side}>` : `<${side}/>`; }).join('')}<diagonal/></border>`) : 0;
+      const al = `<alignment horizontal="${st.h||'general'}" vertical="${st.v||'center'}"${st.wrap?' wrapText="1"':''}/>`;
+      const x = idx(xfs, `<xf numFmtId="0" fontId="${f}" fillId="${fi}" borderId="${b}" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1">${al}</xf>`);
+      cache[cle] = x;
+      return x;
+    },
+    xml(){
+      return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="${fonts.length}">${fonts.join('')}</fonts><fills count="${fills.length}">${fills.join('')}</fills><borders count="${borders.length}">${borders.join('')}</borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="${xfs.length}">${xfs.join('')}</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
+    }
+  };
+}
+// Une feuille au format de la fiche de commande
+function prodFeuilleXml(d, styles){
+  const lignes = {}; // r -> [xml cellules]
+  const hauteurs = {1:16.5, 2:16.5, 3:16.5, 4:4.5, 5:39};
+  const fusions = [];
+  const nbCols = 6 + PROD_EXPORT_COLS.length; // A..F puis les étapes
+  const derniere = prodColLettre(nbCols-1);
+  const cel = (col, r, val, st, formule) => {
+    const ref = prodColLettre(col) + r, s = styles.get(st);
+    let x;
+    if(formule) x = `<c r="${ref}" s="${s}"><f>${formule}</f><v>${val}</v></c>`;
+    else if(val===null || val===undefined || val==='') x = `<c r="${ref}" s="${s}"/>`;
+    else if(typeof val==='number') x = `<c r="${ref}" s="${s}"><v>${val}</v></c>`;
+    else x = `<c r="${ref}" s="${s}" t="inlineStr"><is><t xml:space="preserve">${prodXmlEsc(val)}</t></is></c>`;
+    (lignes[r] = lignes[r] || []).push({col, x});
+  };
+  const fusion = (c1, r1, c2, r2, st) => {
+    for(let r=r1;r<=r2;r++) for(let c=c1;c<=c2;c++) if(!(r===r1 && c===c1)) cel(c, r, '', st);
+    if(c1!==c2 || r1!==r2) fusions.push(`${prodColLettre(c1)}${r1}:${prodColLettre(c2)}${r2}`);
+  };
+  const bleu = '95B3D7', med = {all:'medium'};
+  // En-tête
+  cel(0,1,"Flux d'une commande",{b:1,sz:12,h:'center'}); fusion(0,1,nbCols-1,1,{b:1,sz:12,h:'center'});
+  const stCmd = {b:1,sz:12,fill:bleu,h:'center',wrap:1,border:med};
+  cel(0,2,`Commande: ${d.nom}`,stCmd); fusion(0,2,1,3,stCmd);
+  const stLot = {b:1,sz:11,color:'C00000',fill:bleu,h:'center',border:med}, stRef = {b:1,sz:12,color:'3F3151',fill:bleu,h:'center',wrap:1,border:med};
+  cel(2,2,'LOT/REF',stLot); fusion(2,2,7,2,stLot);
+  cel(2,3,d.ref,stRef); fusion(2,3,7,3,stRef);
+  const stAn = {b:1,sz:12,fill:bleu,h:'center',border:med};
+  cel(8,2,'ANNEE',stAn); fusion(8,2,9,2,stAn);
+  cel(8,3,d.annee,stAn); fusion(8,3,9,3,stAn);
+  if(d.client){ cel(10,2,'CLIENT',stAn); fusion(10,2,nbCols-1,2,stAn); cel(10,3,d.client,stAn); fusion(10,3,nbCols-1,3,stAn); }
+  // Ligne des titres de colonnes
+  const stTitre = {b:1,sz:10,color:'FFFFFF',fill:'244061',h:'center',wrap:1,border:{all:'thin'}};
+  ['Model','LIBELLE','Taille','FR','Total'].forEach((t,i) => cel(i,5,t,stTitre));
+  cel(5,5,'',{});
+  PROD_EXPORT_COLS.forEach((c,i) => cel(6+i,5,c.titre,{...stTitre, border:{all:'thin', left: i===0?'medium':'thin'}}));
+  // Données
+  let r = 6;
+  const debut = 6;
+  d.blocs.forEach(bloc => {
+    const r0 = r;
+    bloc.libs.forEach(lib => {
+      const l0 = r;
+      let totFr = 0;
+      lib.rows.forEach(row => {
+        cel(1, r, lib.libelle, {sz:10, fill:lib.fill, border:{all:'thin'}});
+        cel(2, r, row.t, {sz:11, h:'center', border:{all:'thin'}});
+        cel(3, r, row.fr, {sz:11, h:'center', border:{all:'thin'}});
+        cel(5, r, '', {});
+        PROD_EXPORT_COLS.forEach((c,i) => cel(6+i, r, row[c.k]||0, {sz:11, h:'center', color: c.k==='rebut' && row[c.k] ? 'C00000' : '000000', border:{all:'thin', left: i===0?'medium':'thin'}}));
+        totFr += row.fr;
+        r++;
+      });
+      const stTot = {b:1, sz:12, h:'center', border:{all:'thin'}};
+      cel(4, l0, totFr, stTot, `SUM(D${l0}:D${r-1})`);
+      fusion(4, l0, 4, r-1, stTot);
+    });
+    const stModel = {b:1, sz:11, h:'center', wrap:1, border:{all:'thin', left:'medium'}};
+    cel(0, r0, bloc.model, stModel);
+    fusion(0, r0, 0, r-1, stModel);
+  });
+  // Ligne des totaux
+  const fin = r - 1;
+  if(fin >= debut){
+    const tot = (k) => d.blocs.reduce((s,b) => s + b.libs.reduce((s2,l) => s2 + l.rows.reduce((s3,row) => s3 + (row[k]||0), 0), 0), 0);
+    const totFr = tot('fr');
+    cel(2, r, 'Total', {b:1, sz:10, h:'center'});
+    cel(3, r, totFr, {b:1, sz:10, h:'center'}, `SUM(D${debut}:D${fin})`);
+    cel(4, r, totFr, {b:1, sz:11, color:'632423', h:'center'}, `SUM(E${debut}:E${fin})`);
+    PROD_EXPORT_COLS.forEach((c,i) => { const L = prodColLettre(6+i); cel(6+i, r, tot(c.k), {b:1, sz:11, h:'center', color: c.k==='rebut' ? 'C00000' : '000000'}, `SUM(${L}${debut}:${L}${fin})`); });
+  }
+  const largeurs = [16.6, 42.1, 7.4, 6.5, 7.5, 1.6, 12, 13, 14.5, 12, 10.5, 10.5, 10.5, 9];
+  const rows = Object.keys(lignes).map(Number).sort((a,b)=>a-b).map(rr => {
+    const cs = lignes[rr].sort((a,b)=>a.col-b.col).map(c=>c.x).join('');
+    const h = hauteurs[rr] ? ` ht="${hauteurs[rr]}" customHeight="1"` : '';
+    return `<row r="${rr}"${h}>${cs}</row>`;
+  }).join('');
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:${derniere}${Math.max(r,5)}"/><sheetViews><sheetView workbookViewId="0"><pane ySplit="5" topLeftCell="A6" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/><cols>${largeurs.slice(0,nbCols).map((w,i)=>`<col min="${i+1}" max="${i+1}" width="${w}" customWidth="1"/>`).join('')}</cols><sheetData>${rows}</sheetData><mergeCells count="${fusions.length}">${fusions.map(f=>`<mergeCell ref="${f}"/>`).join('')}</mergeCells><pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/></worksheet>`;
+}
+function prodNomFeuille(n, pris){
+  let base = String(n).replace(/[\[\]\*\?\/\\:]/g,'-').slice(0,31) || 'Feuille';
+  let nom = base, i = 2;
+  while(pris.has(nom.toLowerCase())){ nom = base.slice(0,28) + ' ' + (i++); }
+  pris.add(nom.toLowerCase());
+  return nom;
+}
+// Classeur : 1 commande = 1 feuille ; plusieurs = feuille « Cumul » + une feuille par commande
+function prodExportXlsxBlob(cmdIds){
+  const styles = prodStyles();
+  const feuilles = [];
+  if(cmdIds.length>1) feuilles.push(prodExportDonnees(cmdIds));
+  cmdIds.forEach(id => feuilles.push(prodExportDonnees([id])));
+  const pris = new Set();
+  const noms = feuilles.map(f => prodNomFeuille(f.feuille, pris));
+  const xmlFeuilles = feuilles.map(f => prodFeuilleXml(f, styles));
+  const fichiers = [
+    {nom:'[Content_Types].xml', texte:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${feuilles.map((f,i)=>`<Override PartName="/xl/worksheets/sheet${i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}</Types>`},
+    {nom:'_rels/.rels', texte:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`},
+    {nom:'xl/workbook.xml', texte:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${noms.map((n,i)=>`<sheet name="${prodXmlEsc(n)}" sheetId="${i+1}" r:id="rId${i+1}"/>`).join('')}</sheets><calcPr calcId="191029" fullCalcOnLoad="1"/></workbook>`},
+    {nom:'xl/_rels/workbook.xml.rels', texte:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${noms.map((n,i)=>`<Relationship Id="rId${i+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i+1}.xml"/>`).join('')}<Relationship Id="rId${noms.length+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`}
+  ];
+  xmlFeuilles.forEach((x,i) => fichiers.push({nom:`xl/worksheets/sheet${i+1}.xml`, texte:x}));
+  fichiers.push({nom:'xl/styles.xml', texte: styles.xml()});
+  return prodZip(fichiers);
+}
+function prodNomFichier(cmdIds, ext){
+  const cmds = getProdCommandes();
+  const base = cmdIds.length===1 ? `Commande_${cmds[cmdIds[0]].ref}` : `Cumul_${cmdIds.length}_commandes`;
+  return `${base}_${getTodayISO()}.${ext}`.replace(/[^\w.\-]+/g,'_');
+}
+window.prodExporterExcel = (cmdIds) => {
+  if(!cmdIds || !cmdIds.length){ showToast('Sélectionnez au moins une commande'); return; }
+  try{
+    const blob = prodExportXlsxBlob(cmdIds);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = prodNomFichier(cmdIds, 'xlsx');
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    showToast(`Fichier Excel créé : ${a.download}`);
+  } catch(e){ console.error(e); showToast("Échec de l'export Excel"); }
+};
+
+// ------------------------------------------------------------
+// PDF : page d'impression au même format (Imprimer → Enregistrer au format PDF)
+// ------------------------------------------------------------
+function prodFeuilleHtml(d){
+  const cols = PROD_EXPORT_COLS;
+  const tot = (k) => d.blocs.reduce((s,b) => s + b.libs.reduce((s2,l) => s2 + l.rows.reduce((s3,row) => s3 + (row[k]||0), 0), 0), 0);
+  const corps = d.blocs.map(bloc => {
+    const nbBloc = bloc.libs.reduce((s,l) => s + l.rows.length, 0);
+    return bloc.libs.map((lib, li) => {
+      const totFr = lib.rows.reduce((s,row) => s + row.fr, 0);
+      return lib.rows.map((row, ri) => `<tr>
+        ${li===0 && ri===0 ? `<td class="pm" rowspan="${nbBloc}">${esc(bloc.model)}</td>` : ''}
+        <td class="pl" style="background:#${lib.fill};">${esc(lib.libelle)}</td>
+        <td>${row.t}</td><td>${row.fr}</td>
+        ${ri===0 ? `<td class="pt" rowspan="${lib.rows.length}">${totFr}</td>` : ''}
+        <td class="ps"></td>
+        ${cols.map((c,i) => `<td class="${i===0?'pg':''}${c.k==='rebut'&&row[c.k]?' pr':''}">${row[c.k]||0}</td>`).join('')}
+      </tr>`).join('');
+    }).join('');
+  }).join('');
+  return `
+  <div class="pfeuille">
+    <div class="ptitre">Flux d'une commande</div>
+    <table class="pentete"><tr>
+      <td class="pcmd" rowspan="2">Commande: ${esc(d.nom)}</td>
+      <td class="plot">LOT/REF</td><td class="pan">ANNEE</td>${d.client ? '<td class="pan">CLIENT</td>' : ''}
+    </tr><tr>
+      <td class="pref">${esc(d.ref)}</td><td class="pan">${esc(String(d.annee))}</td>${d.client ? `<td class="pan">${esc(d.client)}</td>` : ''}
+    </tr></table>
+    <table class="ptab">
+      <thead><tr><th>Model</th><th>LIBELLE</th><th>Taille</th><th>FR</th><th>Total</th><th class="ps"></th>${cols.map(c => `<th>${c.titre}</th>`).join('')}</tr></thead>
+      <tbody>${corps}</tbody>
+      <tfoot><tr><td></td><td></td><td><b>Total</b></td><td><b>${tot('fr')}</b></td><td class="ptt">${tot('fr')}</td><td class="ps"></td>${cols.map(c => `<td class="${c.k==='rebut'?'pr':''}"><b>${tot(c.k)}</b></td>`).join('')}</tr></tfoot>
+    </table>
+    <div class="ppied">Édité le ${getTodayISO().split('-').reverse().join('/')} · TEK-TREND</div>
+  </div>`;
+}
+window.prodExporterPdf = (cmdIds) => {
+  if(!cmdIds || !cmdIds.length){ showToast('Sélectionnez au moins une commande'); return; }
+  const feuilles = [];
+  if(cmdIds.length>1) feuilles.push(prodExportDonnees(cmdIds));
+  cmdIds.forEach(id => feuilles.push(prodExportDonnees([id])));
+  let zone = document.getElementById('prod-print-zone');
+  if(zone) zone.remove();
+  zone = document.createElement('div');
+  zone.id = 'prod-print-zone';
+  zone.innerHTML = `<style>
+    @page { size: A4 landscape; margin: 10mm; }
+    #prod-print-zone { display:none; font-family: Arial, Helvetica, sans-serif; color:#000; }
+    @media print {
+      body > *:not(#prod-print-zone) { display:none !important; }
+      body { background:#fff !important; padding:0 !important; margin:0 !important; }
+      #prod-print-zone { display:block; }
+    }
+    #prod-print-zone * { -webkit-print-color-adjust: exact; print-color-adjust: exact; box-sizing:border-box; }
+    #prod-print-zone .pfeuille { page-break-after: always; break-after: page; }
+    #prod-print-zone .pfeuille:last-child { page-break-after: auto; break-after: auto; }
+    #prod-print-zone .ptitre { text-align:center; font-weight:bold; font-size:12pt; border-bottom:2px solid #000; padding:2px 0 3px; margin-bottom:4px; }
+    #prod-print-zone table { border-collapse:collapse; width:100%; }
+    #prod-print-zone .pentete td { border:2px solid #000; background:#95B3D7; text-align:center; font-weight:bold; font-size:11pt; padding:2px 6px; }
+    #prod-print-zone .pentete .pcmd { width:38%; font-size:12pt; }
+    #prod-print-zone .pentete .plot { color:#C00000; }
+    #prod-print-zone .pentete .pref { color:#3F3151; font-size:12pt; }
+    #prod-print-zone .ptab { margin-top:6px; font-size:8.5pt; }
+    #prod-print-zone .ptab th { background:#244061 !important; color:#fff !important; font-weight:bold !important; border:1px solid #000 !important; padding:3px 2px !important; font-size:7.5pt !important; text-transform:none !important; letter-spacing:0 !important; text-align:center !important; vertical-align:middle; line-height:1.15; }
+    #prod-print-zone .ptab td { border:1px solid #000 !important; text-align:center; padding:1px 2px !important; font-size:8.5pt; line-height:1.2; letter-spacing:0; color:#000; }
+    #prod-print-zone td, #prod-print-zone th { text-transform:none !important; }
+    #prod-print-zone .ptab .pm { font-weight:bold; font-size:9.5pt; border-left:2px solid #000; }
+    #prod-print-zone .ptab .pl { text-align:left; white-space:nowrap; }
+    #prod-print-zone .ptab .pt { font-weight:bold; font-size:10pt; }
+    #prod-print-zone .ptab .ps { border:none; width:6px; background:#fff; padding:0; }
+    #prod-print-zone .ptab .pg { border-left:2px solid #000; }
+    #prod-print-zone .ptab .pr { color:#C00000; }
+    #prod-print-zone .ptab tfoot td { border:none; font-size:9pt; }
+    #prod-print-zone .ptab .ptt { color:#632423; font-weight:bold; }
+    #prod-print-zone .ppied { font-size:7.5pt; color:#555; text-align:right; margin-top:4px; }
+  </style>` + feuilles.map(prodFeuilleHtml).join('');
+  document.body.appendChild(zone);
+  // Le titre de la page sert de nom au fichier PDF enregistré : on le garde jusqu'à la fin de l'impression.
+  const titreAvant = document.title;
+  const nettoyer = () => { const z = document.getElementById('prod-print-zone'); if(z) z.remove(); document.title = titreAvant; window.removeEventListener('afterprint', nettoyer); };
+  window.addEventListener('afterprint', nettoyer);
+  document.title = prodNomFichier(cmdIds, 'pdf').replace(/\.pdf$/,'');
+  setTimeout(() => { window.print(); }, 150);
+};
+
+// ------------------------------------------------------------
+// Panneau d'export (liste des commandes) : une, plusieurs ou toutes
+// ------------------------------------------------------------
+let prodExportSel = null;
+window.prodOuvrirExport = () => {
+  const toutes = activeProdCommandes();
+  if(!toutes.length){ showToast('Aucune commande à exporter'); return; }
+  if(!prodExportSel) prodExportSel = new Set(toutes.filter(([id]) => prodSynthese(id).statut!=='LIVRE').map(([id]) => id));
+  const zone = document.getElementById('prod-cmd-form-zone');
+  if(!zone) return;
+  const sel = prodExportSel;
+  zone.innerHTML = `
+    <div class="card" style="background:var(--surface-2);">
+      <div class="flex-header" style="margin-bottom:6px;"><h3 style="margin:0;font-size:14px;">Imprimer / exporter</h3>
+        <button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;" onclick="prodFermerExport()">Fermer</button></div>
+      <p style="font-size:11px;color:var(--ink-soft);margin:0 0 8px;">Au format de la fiche de commande. Plusieurs commandes : une page « Cumul » qui additionne tout, puis une page par commande.</p>
+      <div style="display:flex;gap:6px;margin-bottom:6px;">
+        <button class="btn btn-ghost" style="flex:1;padding:6px 4px;font-size:11px;" onclick="prodExportChoix('toutes')">Toutes (${toutes.length})</button>
+        <button class="btn btn-ghost" style="flex:1;padding:6px 4px;font-size:11px;" onclick="prodExportChoix('encours')">En cours</button>
+        <button class="btn btn-ghost" style="flex:1;padding:6px 4px;font-size:11px;" onclick="prodExportChoix('aucune')">Aucune</button>
+      </div>
+      <div style="max-height:260px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;background:var(--surface);">
+        ${toutes.map(([id,c]) => { const s = prodSynthese(id); return `
+          <label style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--border-soft);cursor:pointer;">
+            <input type="checkbox" ${sel.has(id)?'checked':''} onchange="prodExportCocher('${id}', this.checked)" style="width:18px;height:18px;">
+            <span style="flex:1;min-width:0;"><b style="font-size:12.5px;">${esc(c.ref)}</b> <span style="font-size:11px;color:var(--ink-soft);">${esc(c.nom)} · ${esc(c.client||'')} · ${s.total} pcs</span></span>
+            ${prodStatutBadge(s.statut, true)}
+          </label>`; }).join('')}
+      </div>
+      <div id="prod-export-compte" style="font-size:11.5px;font-weight:800;margin:8px 0;">${sel.size} commande(s) sélectionnée(s)</div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-primary" style="flex:1;padding:10px 4px;" onclick="prodExporterPdf([...prodExportSel])">📄 PDF / Imprimer</button>
+        <button class="btn btn-primary" style="flex:1;padding:10px 4px;background:#1D6F42;border-color:#1D6F42;" onclick="prodExporterExcel([...prodExportSel])">📊 Excel</button>
+      </div>
+    </div>`;
+  zone.scrollIntoView({behavior:'smooth', block:'start'});
+};
+window.prodExportCocher = (id, ok) => { if(ok) prodExportSel.add(id); else prodExportSel.delete(id); const c = document.getElementById('prod-export-compte'); if(c) c.textContent = `${prodExportSel.size} commande(s) sélectionnée(s)`; };
+window.prodExportChoix = (mode) => {
+  const toutes = activeProdCommandes();
+  prodExportSel = new Set(mode==='aucune' ? [] : toutes.filter(([id]) => mode==='toutes' || prodSynthese(id).statut!=='LIVRE').map(([id]) => id));
+  prodOuvrirExport();
+};
+window.prodFermerExport = () => { prodExportSel = null; const z = document.getElementById('prod-cmd-form-zone'); if(z) z.innerHTML = ''; };
