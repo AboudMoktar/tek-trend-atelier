@@ -44,6 +44,24 @@ const CMD_REBUT_KEY = {coupe:'rebut_coupe', retour:'rebut_retour', confection:'r
   controle:'rebut_controle', emballage:'rebut_emballage', expedition:'rebut_expedition'};
 function cmdRebutKey(etape){ return CMD_REBUT_KEY[etape]; }
 
+// --- Marge de coupe (règle métier) ---
+// À la coupe, on coupe toujours un peu plus que la quantité commandée pour
+// absorber les pertes lors des étapes suivantes (confection, contrôle...).
+// Marge selon la quantité commandée (par référence/taille) :
+//   < 100 pièces        → + 5 pièces
+//   100 à 399 pièces    → +10 pièces
+//   400 pièces et plus  → +20 pièces
+// Exception : les références LYNE-PRO ajoutent toujours +3 pièces, quelle que
+// soit la quantité commandée (remplace la règle par palier ci-dessus).
+function cmdMargeCoupe(refKey, qteCommandee){
+  const q = parseInt(qteCommandee) || 0;
+  if(q <= 0) return 0;
+  if(String(refKey||'').startsWith('LYNE-PRO')) return 3;
+  if(q < 100) return 5;
+  if(q < 400) return 10;
+  return 20;
+}
+
 // --- Références produit : réutilise le catalogue du module Chaîne (lecture seule) ---
 function cmdRefName(rk){ return (typeof prodRefName==='function') ? prodRefName(rk) : rk; }
 function cmdActiveReferences(){ return (typeof activeProdReferences==='function') ? activeProdReferences() : []; }
@@ -321,8 +339,13 @@ window.cmdFormEnregistrer = () => {
 // CLÔTURE / RÉOUVERTURE / EXPÉDITION (sans statut « Livrée »)
 // ============================================================
 function canEditCmd(){ return currentUser && currentUser.role === 'admin'; }
+// L'archivage d'une commande n'est permis que depuis le module Commandes lui-même :
+// la GADH peut saisir la production (dont le Retour GADH) mais ne doit jamais pouvoir
+// archiver une commande depuis son propre module.
+function cmdPeutArchiver(){ return typeof activeModule === 'undefined' || activeModule !== 'gadh'; }
 window.cmdCloturerCommande = (cmdId) => {
   if(!canEditCmd()) return;
+  if(!cmdPeutArchiver()){ showToast("Archivage impossible depuis le module GADH — ouvrez le module Gestion des Commandes."); return; }
   const cmds = getCmdCommandes();
   const cmd = cmds[cmdId];
   if(!cmd || cmd.cloturee) return;
@@ -414,7 +437,7 @@ window.cmdExpEnregistrer = () => {
   const s = cmdSynthese(f.cmdId);
   showToast(`Expédition enregistrée : ${total} pièce(s)`);
   cmdExpForm = null;
-  if(s.restes.resteAExpedier===0){
+  if(s.restes.resteAExpedier===0 && cmdPeutArchiver()){
     // Tout est expédié : proposer l'archivage immédiat (pas obligatoire).
     cmdGo('fiche', f.cmdId);
     setTimeout(()=>{ if(confirm('Toutes les pièces ont été expédiées. Archiver la commande maintenant ?')) window.cmdCloturerCommande(f.cmdId); }, 150);
@@ -844,7 +867,7 @@ function renderCmdFiche(container, canEdit){
     ${canEdit ? `<div class="card" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
       ${!cloturee ? `<button class="btn btn-primary" style="flex:1;min-width:140px;" onclick="cmdOuvrirSaisie('${id}')">Saisir la production</button>` : ''}
       ${!cloturee && s.restes.aEmballer + s.restes.pretAExpedier + s.restes.expedie > 0 ? `<button class="btn btn-primary" style="flex:1;min-width:140px;background:var(--good);" onclick="cmdOuvrirExpedition('${id}')">Enregistrer une expédition</button>` : ''}
-      ${!cloturee ? `<button class="btn btn-warning" style="flex:1;min-width:140px;" onclick="cmdCloturerCommande('${id}')">Valider et archiver</button>` : ''}
+      ${!cloturee && cmdPeutArchiver() ? `<button class="btn btn-warning" style="flex:1;min-width:140px;" onclick="cmdCloturerCommande('${id}')">Valider et archiver</button>` : ''}
     </div>` : ''}
 
     ${expeditions.length ? `
@@ -973,6 +996,25 @@ function cmdChargerJourSaisie(){
   const copie = (src) => { const o = {}; Object.entries(src||{}).forEach(([rk,ts]) => { o[rk] = {...ts}; }); return o; };
   cmdSaisie.vals = copie(jour[cmdSaisie.etape]);
   cmdSaisie.rebut = copie(jour[cmdRebutKey(cmdSaisie.etape)]);
+  // Pré-remplissage automatique à la Coupe : quantité commandée + marge de coupe
+  // (règle métier ci-dessus), pour qu'il n'y ait plus qu'à vérifier et valider.
+  // On n'écrase JAMAIS une quantité déjà enregistrée ce jour-là pour cette étape.
+  if(cmdSaisie.etape === 'coupe'){
+    const cmd = getCmdCommandes()[cmdSaisie.cmdId];
+    if(cmd){
+      const cum = cmdCumulsFrom(cmd, getCmdSaisies(cmdSaisie.cmdId));
+      Object.entries(cmd.lignes||{}).forEach(([rk,l]) => Object.keys(l.tailles||{}).forEach(t => {
+        const dejaEnregistre = jour.coupe && jour.coupe[rk] && jour.coupe[rk][t] !== undefined;
+        if(dejaEnregistre) return;
+        const qteCmd = cmdCmdQty(cmd, rk, t);
+        if(qteCmd<=0) return;
+        const c = cmdCell(cum, rk, t);
+        const cible = qteCmd + cmdMargeCoupe(rk, qteCmd);
+        const suggestion = Math.max(0, cible - c.coupe);
+        if(suggestion>0){ if(!cmdSaisie.vals[rk]) cmdSaisie.vals[rk] = {}; cmdSaisie.vals[rk][t] = suggestion; }
+      }));
+    }
+  }
 }
 window.cmdOuvrirSaisie = (cmdId, date, etape) => { cmdInitSaisie(cmdId||null, date||getTodayISO(), etape||null); cmdGo('saisie'); };
 window.cmdSjDate = (d) => { cmdSaisie.date = d || getTodayISO(); cmdChargerJourSaisie(); cmdRerender(); };
@@ -1081,8 +1123,14 @@ function renderCmdSaisie(container, canEdit){
           <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:6px;">
             ${CMD_TAILLES.filter(t=>l.tailles[t]).map(t => {
               const c = cmdCell(cum, rk, t);
-              const dispo2 = cmdSaisie.etape==='coupe' ? Math.max(0, l.tailles[t] - c.coupe) : Math.max(0, cmdDisponible(cmdSaisie.etape, c));
-              return `<div><label style="font-size:9.5px;color:var(--ink-faint);">${t} (dispo ${dispo2})</label><input class="sj" data-quoi="vals" data-rk="${rk}" data-t="${t}" type="number" inputmode="numeric" min="0" value="${(cmdSaisie.vals[rk]&&cmdSaisie.vals[rk][t])||''}" oninput="cmdSjSet('vals','${rk}','${t}',this.value)" style="padding:6px;font-size:12px;"></div>`;
+              let labelTaille;
+              if(cmdSaisie.etape==='coupe'){
+                const marge = cmdMargeCoupe(rk, l.tailles[t]);
+                labelTaille = `${t} (cible ${l.tailles[t]+marge} = ${l.tailles[t]}+${marge})`;
+              } else {
+                labelTaille = `${t} (dispo ${Math.max(0, cmdDisponible(cmdSaisie.etape, c))})`;
+              }
+              return `<div><label style="font-size:9.5px;color:var(--ink-faint);">${labelTaille}</label><input class="sj" data-quoi="vals" data-rk="${rk}" data-t="${t}" type="number" inputmode="numeric" min="0" value="${(cmdSaisie.vals[rk]&&cmdSaisie.vals[rk][t])||''}" oninput="cmdSjSet('vals','${rk}','${t}',this.value)" style="padding:6px;font-size:12px;"></div>`;
             }).join('')}
           </div>
           <details style="margin-top:6px;"><summary style="font-size:10.5px;color:var(--warn);cursor:pointer;">Rebut à cette étape</summary>
