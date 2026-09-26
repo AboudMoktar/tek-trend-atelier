@@ -1252,11 +1252,31 @@ function renderCmdSaisie(container, canEdit){
       </div>
       ${Object.entries(cmd.lignes||{}).map(([rk,l]) => {
         const cum = cmdCumulsFrom(cmd, getCmdSaisies(cmdSaisie.cmdId));
+        // Cas particulier du Retour GADH : une taille déjà entièrement retournée
+        // (rien de disponible chez la GADH) ne doit plus être proposée à la saisie ;
+        // une taille partiellement retournée affiche le reste par rapport à la
+        // quantité reçue de Tek-Trend (coupe) ; et on affiche toujours, pour la
+        // référence entière, le cumul « retourné (assemblé) / reçu de Tek-Trend ».
+        const estRetour = cmdSaisie.etape === 'retour';
+        let taillesAffichees = CMD_TAILLES.filter(t=>l.tailles[t]);
+        let recuTotal = 0, faitTotal = 0;
+        if(estRetour){
+          taillesAffichees.forEach(t => { const c = cmdCell(cum, rk, t); recuTotal += c.coupe; faitTotal += c.retour; });
+          taillesAffichees = taillesAffichees.filter(t => Math.max(0, cmdDisponible('retour', cmdCell(cum, rk, t))) > 0);
+        }
+        if(estRetour && taillesAffichees.length===0){
+          return `
+          <div style="margin-top:8px;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);">
+            <b style="font-size:12px;">${esc(cmdRefName(rk))}</b>
+            <div style="font-size:11px;color:var(--good);margin-top:4px;">✓ Entièrement retourné — ${faitTotal} / ${recuTotal} reçu(s) de Tek-Trend</div>
+          </div>`;
+        }
         return `
         <div style="margin-top:8px;padding:8px;border:1px solid var(--border);border-radius:8px;">
           <b style="font-size:12px;">${esc(cmdRefName(rk))}</b>
+          ${estRetour ? `<div style="font-size:11px;color:var(--ink-soft);margin-top:2px;">Retourné (assemblé) : <b>${faitTotal}</b> / ${recuTotal} reçu(s) de Tek-Trend</div>` : ''}
           <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:6px;">
-            ${CMD_TAILLES.filter(t=>l.tailles[t]).map(t => {
+            ${taillesAffichees.map(t => {
               const c = cmdCell(cum, rk, t);
               // Le champ est déjà pré-rempli automatiquement (cmdChargerJourSaisie) avec la
               // bonne quantité à faire passer à cette étape : plus besoin d'afficher le
@@ -1265,6 +1285,9 @@ function renderCmdSaisie(container, canEdit){
               if(cmdSaisie.etape==='coupe'){
                 const marge = cmdMargeCoupe(rk, l.tailles[t]);
                 labelTaille = `${t} (cible ${l.tailles[t]+marge} = ${l.tailles[t]}+${marge})`;
+              } else if(estRetour){
+                const dispo = Math.max(0, cmdDisponible('retour', c));
+                labelTaille = `${t} (reste ${dispo} / ${c.coupe} reçus)`;
               } else {
                 labelTaille = t;
               }
@@ -1273,7 +1296,7 @@ function renderCmdSaisie(container, canEdit){
           </div>
           <details style="margin-top:6px;"><summary style="font-size:10.5px;color:var(--warn);cursor:pointer;">Rebut à cette étape</summary>
             <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:6px;">
-              ${CMD_TAILLES.filter(t=>l.tailles[t]).map(t => `<div><label style="font-size:9.5px;color:var(--ink-faint);">${t}</label><input class="sj" data-quoi="rebut" data-rk="${rk}" data-t="${t}" type="number" inputmode="numeric" min="0" value="${(cmdSaisie.rebut[rk]&&cmdSaisie.rebut[rk][t])||''}" oninput="cmdSjSet('rebut','${rk}','${t}',this.value)" style="padding:6px;font-size:12px;"></div>`).join('')}
+              ${taillesAffichees.map(t => `<div><label style="font-size:9.5px;color:var(--ink-faint);">${t}</label><input class="sj" data-quoi="rebut" data-rk="${rk}" data-t="${t}" type="number" inputmode="numeric" min="0" value="${(cmdSaisie.rebut[rk]&&cmdSaisie.rebut[rk][t])||''}" oninput="cmdSjSet('rebut','${rk}','${t}',this.value)" style="padding:6px;font-size:12px;"></div>`).join('')}
             </div>
           </details>
         </div>`;
