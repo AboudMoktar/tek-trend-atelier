@@ -67,6 +67,36 @@ function cmdRefName(rk){ return (typeof prodRefName==='function') ? prodRefName(
 function cmdActiveReferences(){ return (typeof activeProdReferences==='function') ? activeProdReferences() : []; }
 const CMD_TAILLES = (typeof PROD_TAILLES!=='undefined') ? PROD_TAILLES : ['XS','S','M','L','XL','XXL','XXXL'];
 
+// --- Restriction ALLOGA (même règle que l'ancien module Chaîne, confirmée par l'utilisateur) : ---
+// ALLOGA n'autorise que 2 références précises — PHARMA-HOMME / Noir (tailles S à XXXL, pas de XS)
+// et PHARMA-FEMME CV / Noir (tailles XS à XXL, pas de XXXL). NEOLYS n'a aucune restriction.
+const CMD_ALLOGA_REFS = (typeof PROD_ALLOGA_REFS!=='undefined') ? PROD_ALLOGA_REFS : ['PHARMA-HOMME__Noir','PHARMA-FEMME CV__Noir'];
+const CMD_ALLOGA_TAILLES = {
+  'PHARMA-HOMME__Noir':    ['S','M','L','XL','XXL','XXXL'],
+  'PHARMA-FEMME CV__Noir': ['XS','S','M','L','XL','XXL']
+};
+function cmdRefsAllowedFor(destination){
+  const all = cmdActiveReferences();
+  if(destination==='ALLOGA') return all.filter(([k]) => CMD_ALLOGA_REFS.includes(k));
+  return all;
+}
+function cmdTaillesAllowedFor(destination, refKey){
+  if(destination==='ALLOGA' && CMD_ALLOGA_TAILLES[refKey]) return CMD_ALLOGA_TAILLES[refKey];
+  return CMD_TAILLES;
+}
+// Utilisé à l'import Excel (les lignes viennent du fichier, pas de boutons filtrés) :
+// détecte toute référence/taille qui violerait la restriction ALLOGA ci-dessus.
+function cmdLignesInterdites(destination, lignes){
+  if(destination!=='ALLOGA') return [];
+  const pb = [];
+  Object.entries(lignes||{}).forEach(([rk,l]) => {
+    if(!CMD_ALLOGA_REFS.includes(rk)){ pb.push(`${cmdRefName(rk)} n'est pas autorisée pour ALLOGA`); return; }
+    const taillesOk = CMD_ALLOGA_TAILLES[rk] || [];
+    Object.keys(l.tailles||{}).forEach(t => { if(!taillesOk.includes(t)) pb.push(`${cmdRefName(rk)} taille ${t} n'est pas autorisée pour ALLOGA`); });
+  });
+  return pb;
+}
+
 // --- Commandes : cmd_commandes = { id: {numero, lot, destination, client, annee, mois,
 //      dateReception, lignes:{refKey:{tailles:{taille:qte}}}, cloturee, dateCloture,
 //      clotureManuelle, cloturePar, createdBy, createdAt, importee} } ---
@@ -298,6 +328,20 @@ window.showEditCmdForm = (id) => {
   renderCmdForm();
 };
 window.cmdFormSet = (field, val) => { if(cmdForm) cmdForm[field] = val; };
+// Changer la destination doit retirer du formulaire toute référence/taille qui n'est
+// plus autorisée (ex. passage à ALLOGA) — jamais l'inverse : on ne touche pas aux
+// commandes déjà enregistrées, seulement à la saisie en cours dans le formulaire.
+window.cmdFormSetDestination = (d) => {
+  if(!cmdForm) return;
+  cmdForm.destination = d;
+  const clesAutorisees = cmdRefsAllowedFor(d).map(([k]) => k);
+  cmdForm.refs = cmdForm.refs.filter(k => clesAutorisees.includes(k));
+  cmdForm.refs.forEach(k => {
+    const taillesAutorisees = cmdTaillesAllowedFor(d, k);
+    if(cmdForm.qty[k]) Object.keys(cmdForm.qty[k]).forEach(t => { if(!taillesAutorisees.includes(t)) delete cmdForm.qty[k][t]; });
+  });
+  renderCmdForm();
+};
 window.toggleCmdFormRef = (k) => {
   const i = cmdForm.refs.indexOf(k);
   if(i>=0) cmdForm.refs.splice(i,1); else cmdForm.refs.push(k);
@@ -569,6 +613,7 @@ function renderCmdImports(){
     if(imp.cree) return `<div class="card" style="border:1.5px solid var(--good);font-size:12.5px;">✓ Commande <b>${esc(imp.numeroApercu||imp.lot)}</b> créée.</div>`;
     const numero = cmdComposeNumero(imp.lot, imp.destination);
     const dejaExiste = !cmdNumeroIsUnique(numero);
+    const interdites = cmdLignesInterdites(imp.destination, imp.lignes);
     return `
     <div class="card" style="background:var(--surface-2);">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
@@ -585,6 +630,8 @@ function renderCmdImports(){
       <div class="field"><label>Date de réception</label><input type="date" value="${imp.dateReception}" max="${getTodayISO()}" onchange="cmdImpSet(${i},'dateReception',this.value)"></div>
       <div style="font-size:11px;font-weight:700;color:var(--ink-faint);margin:6px 0;">N° commande : ${esc(numero)} · ${Object.keys(imp.lignes).length} MODÈLE(S) · ${imp.total} PIÈCES</div>
       ${dejaExiste ? `<p style="font-size:11.5px;color:var(--bad);font-weight:700;margin:4px 0 8px;">⚠ Cette commande existe déjà — import bloqué pour éviter un doublon.</p>` : ''}
+      ${imp.destination==='ALLOGA' ? `<p style="font-size:10.5px;color:var(--warn);margin:4px 0 8px;">ALLOGA : seules PHARMA-HOMME / Noir (S à XXXL) et PHARMA-FEMME CV / Noir (XS à XXL) sont autorisées.</p>` : ''}
+      ${interdites.length ? `<p style="font-size:11.5px;color:var(--bad);font-weight:700;margin:4px 0 8px;">⚠ Import bloqué : ${esc(interdites[0])}${interdites.length>1?` (+${interdites.length-1} autre(s))`:''}. Choisissez NEOLYS ou corrigez le fichier.</p>` : ''}
       ${Object.entries(imp.lignes).map(([rk,l]) => `
         <div style="padding:5px 0;border-bottom:1px solid var(--border-soft);">
           <div style="display:flex;justify-content:space-between;"><b style="font-size:12px;">${esc(cmdRefName(rk))}</b><b style="font-size:12px;">${cmdLigneTotal(l)}</b></div>
@@ -592,7 +639,7 @@ function renderCmdImports(){
         </div>`).join('')}
       ${imp.ignorees.length ? `<details style="margin-top:8px;"><summary style="font-size:11px;color:var(--warn);cursor:pointer;">${imp.ignorees.length} ligne(s) ignorée(s)</summary><div style="font-size:10.5px;color:var(--ink-soft);margin-top:4px;line-height:1.5;">${imp.ignorees.slice(0,20).map(esc).join('<br>')}</div></details>` : ''}
       <div style="display:flex;gap:8px;margin-top:12px;">
-        <button class="btn btn-primary" style="flex:1;" ${dejaExiste?'disabled':''} onclick="cmdImpCreer(${i})">Créer la commande</button>
+        <button class="btn btn-primary" style="flex:1;" ${(dejaExiste||interdites.length)?'disabled':''} onclick="cmdImpCreer(${i})">Créer la commande</button>
         <button class="btn btn-ghost" onclick="cmdImpFermer()">Annuler</button>
       </div>
     </div>`;
@@ -607,6 +654,8 @@ window.cmdImpCreer = (i) => {
   if(!lot){ showToast('Le lot / numéro de commande est obligatoire'); return; }
   const numero = cmdComposeNumero(lot, imp.destination);
   if(!cmdNumeroIsUnique(numero)){ showToast(`La commande ${numero} existe déjà — une commande ne peut pas être importée deux fois`); return; }
+  const interdites = cmdLignesInterdites(imp.destination, imp.lignes);
+  if(interdites.length){ showToast(`ALLOGA n'autorise pas : ${interdites[0]}`); return; }
   const cmds = getCmdCommandes();
   const id = 'cmd'+Date.now()+Math.floor(Math.random()*1000);
   cmds[id] = {
@@ -897,13 +946,14 @@ function renderCmdForm(){
   const zone = document.getElementById('cmd-form-zone');
   if(!zone || !cmdForm) return;
   const f = cmdForm;
-  const refs = cmdActiveReferences();
+  const refs = cmdRefsAllowedFor(f.destination);
   zone.innerHTML = `
     <div class="card" style="background:var(--surface-2);">
       <h3 style="margin:0 0 8px;font-size:14px;">${f.editId?'Modifier la commande':'Nouvelle commande'}</h3>
       <div class="field"><label>Destination</label><div style="display:flex;gap:8px;">
-        ${CMD_DESTINATIONS.map(d => `<button class="btn ${f.destination===d?'btn-primary':'btn-ghost'}" style="flex:1;padding:8px;" onclick="cmdFormSet('destination','${d}');renderCmdForm();">${d}</button>`).join('')}
+        ${CMD_DESTINATIONS.map(d => `<button class="btn ${f.destination===d?'btn-primary':'btn-ghost'}" style="flex:1;padding:8px;" onclick="cmdFormSetDestination('${d}')">${d}</button>`).join('')}
       </div></div>
+      ${f.destination==='ALLOGA' ? `<p style="font-size:10.5px;color:var(--warn);margin:4px 0 8px;">ALLOGA : seules PHARMA-HOMME / Noir (tailles S à XXXL) et PHARMA-FEMME CV / Noir (tailles XS à XXL) sont autorisées.</p>` : ''}
       <div style="display:flex;gap:8px;">
         <div class="field" style="flex:1.4;"><label>Lot / N° commande PERCKO</label><input value="${esc(f.lot)}" oninput="cmdFormSet('lot',this.value)" placeholder="Ex : PK202610-1"></div>
         <div class="field" style="flex:1;"><label>Année</label><input type="number" inputmode="numeric" value="${f.annee}" oninput="cmdFormSet('annee',this.value)"></div>
@@ -922,7 +972,7 @@ function renderCmdForm(){
         <div style="margin-top:8px;padding:8px;border:1px solid var(--border);border-radius:8px;">
           <b style="font-size:12px;">${esc(cmdRefName(rk))}</b>
           <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:6px;">
-            ${CMD_TAILLES.map(t => `<div><label style="font-size:9.5px;color:var(--ink-faint);">${t}</label><input type="number" inputmode="numeric" min="0" value="${(f.qty[rk]&&f.qty[rk][t])||''}" oninput="cmdFormQty('${rk}','${t}',this.value)" style="padding:6px;font-size:12px;"></div>`).join('')}
+            ${cmdTaillesAllowedFor(f.destination, rk).map(t => `<div><label style="font-size:9.5px;color:var(--ink-faint);">${t}</label><input type="number" inputmode="numeric" min="0" value="${(f.qty[rk]&&f.qty[rk][t])||''}" oninput="cmdFormQty('${rk}','${t}',this.value)" style="padding:6px;font-size:12px;"></div>`).join('')}
           </div>
         </div>`).join('')}
       <div style="display:flex;gap:8px;margin-top:12px;">
