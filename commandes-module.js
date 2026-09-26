@@ -1031,8 +1031,16 @@ function renderCmdExpeditionForm(container, canEdit){
 // ============================================================
 let cmdSaisie = null; // {cmdId, date, etape, vals:{}, rebut:{}}
 function cmdCommandesSaisissables(){ return listCmdCommandes().filter(([id]) => !cmdEstCloturee(id)); }
+// Restriction GADH (règle confirmée par l'utilisateur, même logique que cmdPeutArchiver
+// ci-dessus) : le Retour GADH ne peut être saisi QUE depuis le module GADH, et c'est la
+// SEULE étape saisissable depuis ce contexte — les autres étapes (Coupe, Confection,
+// Contrôle, Emballage, Expédition) se saisissent depuis le module Gestion des Commandes.
+function cmdEnGadh(){ return typeof activeModule !== 'undefined' && activeModule === 'gadh'; }
+function cmdEtapesAutorisees(){ return cmdEnGadh() ? ['retour'] : CMD_ETAPES.filter(e => e !== 'retour'); }
 function cmdInitSaisie(cmdId, date, etape){
-  cmdSaisie = {cmdId: cmdId||null, date: date || getTodayISO(), etape: etape || CMD_ETAPES[0], vals:{}, rebut:{}};
+  const autorisees = cmdEtapesAutorisees();
+  const etapeOk = etape && autorisees.includes(etape) ? etape : autorisees[0];
+  cmdSaisie = {cmdId: cmdId||null, date: date || getTodayISO(), etape: etapeOk, vals:{}, rebut:{}};
   if(!cmdSaisie.cmdId){
     const dispo = cmdCommandesSaisissables();
     if(dispo.length===1) cmdSaisie.cmdId = dispo[0][0];
@@ -1074,7 +1082,7 @@ function cmdChargerJourSaisie(){
 }
 window.cmdOuvrirSaisie = (cmdId, date, etape) => { cmdInitSaisie(cmdId||null, date||getTodayISO(), etape||null); cmdGo('saisie'); };
 window.cmdSjDate = (d) => { cmdSaisie.date = d || getTodayISO(); cmdChargerJourSaisie(); cmdRerender(); };
-window.cmdSjEtape = (e) => { cmdSaisie.etape = e; cmdChargerJourSaisie(); cmdRerender(); };
+window.cmdSjEtape = (e) => { if(!cmdEtapesAutorisees().includes(e)) return; cmdSaisie.etape = e; cmdChargerJourSaisie(); cmdRerender(); };
 window.cmdSjCommande = (id) => { cmdSaisie.cmdId = id || null; cmdChargerJourSaisie(); cmdRerender(); };
 window.cmdSjSet = (quoi, rk, t, v) => {
   const cible = quoi==='rebut' ? cmdSaisie.rebut : cmdSaisie.vals;
@@ -1151,6 +1159,8 @@ window.cmdSjFermer = () => {
 function renderCmdSaisie(container, canEdit){
   if(!canEdit){ container.innerHTML = `<div class="card">${buildEmptyState('Lecture seule', "Votre rôle ne permet pas de saisir.")}</div>`; return; }
   if(!cmdSaisie) cmdInitSaisie(cmdNav.id||null, getTodayISO(), null);
+  const autorisees = cmdEtapesAutorisees();
+  if(!autorisees.includes(cmdSaisie.etape)){ cmdSaisie.etape = autorisees[0]; cmdChargerJourSaisie(); }
   const dispo = cmdCommandesSaisissables();
   const cmd = cmdSaisie.cmdId ? getCmdCommandes()[cmdSaisie.cmdId] : null;
   container.innerHTML = `
@@ -1167,9 +1177,10 @@ function renderCmdSaisie(container, canEdit){
         <div class="field" style="flex:1;"><label>Date</label><input type="date" value="${cmdSaisie.date}" max="${getTodayISO()}" onchange="cmdSjDate(this.value)"></div>
       </div>
       <div class="field"><label>Étape</label>
+        ${cmdEnGadh() ? `<div style="font-size:11.5px;color:var(--ink-soft);">Retour GADH — seule saisie autorisée depuis ce module.</div>` : `
         <div style="display:flex;flex-wrap:wrap;gap:6px;">
-          ${CMD_ETAPES.map(e => `<button class="btn ${cmdSaisie.etape===e?'btn-primary':'btn-ghost'}" style="padding:6px 9px;font-size:11px;" onclick="cmdSjEtape('${e}')">${CMD_ETAPE_INFO[e].label}</button>`).join('')}
-        </div>
+          ${autorisees.map(e => `<button class="btn ${cmdSaisie.etape===e?'btn-primary':'btn-ghost'}" style="padding:6px 9px;font-size:11px;" onclick="cmdSjEtape('${e}')">${CMD_ETAPE_INFO[e].label}</button>`).join('')}
+        </div>`}
       </div>
       ${Object.entries(cmd.lignes||{}).map(([rk,l]) => {
         const cum = cmdCumulsFrom(cmd, getCmdSaisies(cmdSaisie.cmdId));
