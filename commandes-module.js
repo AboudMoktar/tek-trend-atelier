@@ -996,24 +996,30 @@ function cmdChargerJourSaisie(){
   const copie = (src) => { const o = {}; Object.entries(src||{}).forEach(([rk,ts]) => { o[rk] = {...ts}; }); return o; };
   cmdSaisie.vals = copie(jour[cmdSaisie.etape]);
   cmdSaisie.rebut = copie(jour[cmdRebutKey(cmdSaisie.etape)]);
-  // Pré-remplissage automatique à la Coupe : quantité commandée + marge de coupe
-  // (règle métier ci-dessus), pour qu'il n'y ait plus qu'à vérifier et valider.
-  // On n'écrase JAMAIS une quantité déjà enregistrée ce jour-là pour cette étape.
-  if(cmdSaisie.etape === 'coupe'){
-    const cmd = getCmdCommandes()[cmdSaisie.cmdId];
-    if(cmd){
-      const cum = cmdCumulsFrom(cmd, getCmdSaisies(cmdSaisie.cmdId));
-      Object.entries(cmd.lignes||{}).forEach(([rk,l]) => Object.keys(l.tailles||{}).forEach(t => {
-        const dejaEnregistre = jour.coupe && jour.coupe[rk] && jour.coupe[rk][t] !== undefined;
-        if(dejaEnregistre) return;
+  // Pré-remplissage automatique, pour TOUTES les étapes : la quantité qui peut
+  // passer à cette étape est déjà calculée par l'application (marge de coupe à la
+  // Coupe, quantité disponible/« dispo » venant de l'étape précédente pour les
+  // suivantes) — il n'y a donc plus qu'à vérifier, rectifier si besoin, et valider,
+  // au lieu de retaper les quantités à la main. On n'écrase JAMAIS une quantité
+  // déjà enregistrée ce jour-là pour cette étape (dejaEnregistre ci-dessous).
+  const cmd = getCmdCommandes()[cmdSaisie.cmdId];
+  if(cmd){
+    const cum = cmdCumulsFrom(cmd, getCmdSaisies(cmdSaisie.cmdId));
+    Object.entries(cmd.lignes||{}).forEach(([rk,l]) => Object.keys(l.tailles||{}).forEach(t => {
+      const dejaEnregistre = jour[cmdSaisie.etape] && jour[cmdSaisie.etape][rk] && jour[cmdSaisie.etape][rk][t] !== undefined;
+      if(dejaEnregistre) return;
+      const c = cmdCell(cum, rk, t);
+      let suggestion;
+      if(cmdSaisie.etape === 'coupe'){
         const qteCmd = cmdCmdQty(cmd, rk, t);
         if(qteCmd<=0) return;
-        const c = cmdCell(cum, rk, t);
         const cible = qteCmd + cmdMargeCoupe(rk, qteCmd);
-        const suggestion = Math.max(0, cible - c.coupe);
-        if(suggestion>0){ if(!cmdSaisie.vals[rk]) cmdSaisie.vals[rk] = {}; cmdSaisie.vals[rk][t] = suggestion; }
-      }));
-    }
+        suggestion = Math.max(0, cible - c.coupe);
+      } else {
+        suggestion = Math.max(0, cmdDisponible(cmdSaisie.etape, c));
+      }
+      if(suggestion>0){ if(!cmdSaisie.vals[rk]) cmdSaisie.vals[rk] = {}; cmdSaisie.vals[rk][t] = suggestion; }
+    }));
   }
 }
 window.cmdOuvrirSaisie = (cmdId, date, etape) => { cmdInitSaisie(cmdId||null, date||getTodayISO(), etape||null); cmdGo('saisie'); };
