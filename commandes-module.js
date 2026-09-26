@@ -1190,12 +1190,15 @@ function renderCmdSaisie(container, canEdit){
           <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:6px;">
             ${CMD_TAILLES.filter(t=>l.tailles[t]).map(t => {
               const c = cmdCell(cum, rk, t);
+              // Le champ est déjà pré-rempli automatiquement (cmdChargerJourSaisie) avec la
+              // bonne quantité à faire passer à cette étape : plus besoin d'afficher le
+              // « dispo » à côté, il suffit de vérifier/rectifier la valeur proposée.
               let labelTaille;
               if(cmdSaisie.etape==='coupe'){
                 const marge = cmdMargeCoupe(rk, l.tailles[t]);
                 labelTaille = `${t} (cible ${l.tailles[t]+marge} = ${l.tailles[t]}+${marge})`;
               } else {
-                labelTaille = `${t} (dispo ${Math.max(0, cmdDisponible(cmdSaisie.etape, c))})`;
+                labelTaille = t;
               }
               return `<div><label style="font-size:9.5px;color:var(--ink-faint);">${labelTaille}</label><input class="sj" data-quoi="vals" data-rk="${rk}" data-t="${t}" type="number" inputmode="numeric" min="0" value="${(cmdSaisie.vals[rk]&&cmdSaisie.vals[rk][t])||''}" oninput="cmdSjSet('vals','${rk}','${t}',this.value)" style="padding:6px;font-size:12px;"></div>`;
             }).join('')}
