@@ -33,12 +33,17 @@ function getGadhAbsences(){ return getJSON('gadh_absences', {}); }
 function saveGadhAbsences(list){ setJSON('gadh_absences', list); }
 const GADH_ABSENCE_TYPES = { conge: {label:'Congé', cls:'excellent'}, maladie: {label:'Maladie', cls:'bad'} };
 
-// --- Données : Références / Cadences ---
-function getGadhReferences(){ return getJSON('gadh_references', {}); }
-function saveGadhReferences(list){ setJSON('gadh_references', list); }
-function activeGadhReferences(){
-  return Object.entries(getGadhReferences()).filter(([id,r])=>r.actif!==false).sort((a,b)=>(a[1].nom||'').localeCompare(b[1].nom||''));
-}
+// --- Données : Cadences par référence ---
+// RÉUTILISE le catalogue de références du module Commandes/Chaîne (même
+// référentiel que l'onglet CMD — GILET-NOIR, PHARMA-HOMME, etc.) plutôt qu'un
+// catalogue de références propre à GADH : la production de GADH doit
+// s'afficher avec les MÊMES références que celles vues dans Commandes.
+// gadh_cadences = { [refKey CMD] : cadence en pièces/heure }
+function getGadhCadences(){ return getJSON('gadh_cadences', {}); }
+function saveGadhCadences(map){ setJSON('gadh_cadences', map); }
+function gadhCadencePourRef(rk){ return parseFloat(getGadhCadences()[rk]) || 0; }
+function cmdRefsCatalogue(){ return (typeof cmdActiveReferences==='function') ? cmdActiveReferences() : []; }
+function gadhRefName(rk){ return (typeof cmdRefName==='function') ? cmdRefName(rk) : rk; }
 
 // --- Données : Plannings (horaires dynamiques par période) ---
 function getGadhPlannings(){ return getJSON('gadh_plannings', {}); }
@@ -73,89 +78,87 @@ function getGadhSlotsForDate(dateISO){
 }
 function isGadhWorkingDay(dateISO){ return getGadhSlotsForDate(dateISO).length > 0; }
 
-// --- Données : Production (par jour, par créneau horaire) ---
-// gadh_production_{date} = { "08:00 - 09:00": {refId, refNom, cadence}, ... }
-// La cadence est TOUJOURS enregistrée au moment de la saisie (jamais recalculée
-// après coup si la référence change de cadence plus tard). Chaque créneau sert
-// désormais UNIQUEMENT à planifier l'objectif (référence + cadence attendues) :
-// la quantité réelle n'est plus saisie à la main créneau par créneau (voir
-// cmdRetourGadhDuJour / gadhRepartitionReelParSlot ci-dessous).
-function getGadhProduction(dateISO){ return getJSON('gadh_production_'+dateISO, {}); }
-function saveGadhProduction(dateISO, data){ setJSON('gadh_production_'+dateISO, data); }
+// --- Production GADH : ENTIÈREMENT automatique, par référence (plus de saisie
+// manuelle du tout, ni par créneau ni par quantité). La quantité réelle vient
+// des pièces effectivement retournées à Tek-Trend après assemblage (étape
+// « Retour GADH » du module Commandes), avec les MÊMES références que l'onglet
+// CMD. Les créneaux horaires du planning servent uniquement à déterminer le
+// nombre d'heures travaillées ce jour-là (pour calculer l'objectif à partir de
+// la cadence/heure configurée par référence dans Paramètres) — il n'y a plus
+// d'affectation référence/quantité créneau par créneau.
 
-function gadhObjectifSlot(entry, slotMinutes){
-  if(!entry || !entry.cadence) return 0;
-  return Math.round(entry.cadence * (slotMinutes/60));
+// Nombre d'heures travaillées un jour donné, d'après le planning GADH.
+function gadhHeuresJour(dateISO){
+  return getGadhSlotsForDate(dateISO).reduce((s,sl)=>s+sl.minutes, 0) / 60;
 }
-// `reel` doit être fourni explicitement (voir gadhRepartitionReelParSlot) : le
-// module GADH ne connaît plus de quantité saisie à la main créneau par créneau.
-function gadhRendementSlot(entry, slotMinutes, reel){
-  const obj = gadhObjectifSlot(entry, slotMinutes);
-  if(obj<=0 || reel==null) return null; // pas encore planifié / pas encore commencé
-  return (reel/obj)*100;
+// Objectif (pièces) pour une référence sur un jour donné = cadence/heure ×
+// nombre d'heures travaillées ce jour-là. 0 si aucune cadence configurée.
+function gadhObjectifRef(rk, heuresJour){
+  const cad = gadhCadencePourRef(rk);
+  if(cad<=0) return 0;
+  return Math.round(cad * heuresJour);
 }
 
 // --- Lien dynamique avec le module Commandes ---
-// Le rendement de GADH n'est plus une saisie manuelle indépendante : c'est celui
-// des pièces réellement retournées à Tek-Trend après assemblage, c'est-à-dire
-// l'étape « Retour GADH » du module Commandes (toutes commandes confondues, ce
-// jour-là). Accès défensif : si le module Commandes n'est pas chargé, on renvoie 0
-// plutôt que de planter.
+// Le total du jour vient des pièces réellement retournées à Tek-Trend après
+// assemblage, c'est-à-dire l'étape « Retour GADH » du module Commandes (toutes
+// commandes confondues, ce jour-là). Accès défensif : si le module Commandes
+// n'est pas chargé, on renvoie un total vide plutôt que de planter.
 function cmdRetourGadhDuJour(dateISO){
-  if(typeof getCmdCommandes !== 'function' || typeof getCmdSaisies !== 'function') return 0;
-  let total = 0;
+  const parRef = cmdRetourGadhParRefDuJour(dateISO);
+  return Object.values(parRef).reduce((s,v)=>s+v, 0);
+}
+// Comme ci-dessus, mais détaillé par référence — c'est ce qui permet d'afficher
+// la production de GADH avec le MÊME référentiel que l'onglet CMD, sans aucune
+// saisie manuelle : { [refKey CMD] : quantité retournée ce jour-là }.
+function cmdRetourGadhParRefDuJour(dateISO){
+  const parRef = {};
+  if(typeof getCmdCommandes !== 'function' || typeof getCmdSaisies !== 'function') return parRef;
   Object.keys(getCmdCommandes()).forEach(cmdId => {
     const jour = getCmdSaisies(cmdId)[dateISO];
     const retour = jour && jour.retour;
     if(!retour) return;
-    Object.values(retour).forEach(tailles => {
-      Object.values(tailles||{}).forEach(q => { total += (parseInt(q)||0); });
+    Object.entries(retour).forEach(([rk, tailles]) => {
+      const q = Object.values(tailles||{}).reduce((s,v)=>s+(parseInt(v)||0), 0);
+      if(q>0) parRef[rk] = (parRef[rk]||0) + q;
     });
   });
-  return total;
+  return parRef;
 }
-// Répartition ESTIMÉE du total réel du jour (donnée exacte, issue de Commandes)
-// entre les créneaux horaires planifiés, au prorata de l'objectif de chacun —
-// aucune donnée d'heure précise n'existe côté Commandes (le retour GADH est
-// saisi au jour, pas au créneau), donc cette répartition par créneau reste une
-// estimation ; seul le total du jour (gadhDayTotals) est une valeur exacte.
-function gadhRepartitionReelParSlot(dateISO){
-  const totals = { slots: getGadhSlotsForDate(dateISO) };
-  const prod = getGadhProduction(dateISO);
-  const totalReel = cmdRetourGadhDuJour(dateISO);
-  const rep = {};
-  if(totalReel<=0) return rep;
-  const planifies = totals.slots.map(s => {
-    const e = prod[s.label];
-    return { label: s.label, obj: e ? gadhObjectifSlot(e, s.minutes) : 0 };
-  }).filter(x => x.obj>0);
-  const totalObj = planifies.reduce((s,x)=>s+x.obj, 0);
-  if(totalObj<=0) return rep; // rien de planifié : pas de base pour répartir
-  let alloue = 0;
-  planifies.forEach((x,i) => {
-    let part;
-    if(i === planifies.length-1) part = totalReel - alloue; // le dernier absorbe l'arrondi
-    else part = Math.round(totalReel * (x.obj/totalObj));
-    alloue += part;
-    rep[x.label] = Math.max(0, part);
-  });
-  return rep;
-}
-// Totaux (production, objectif) pour un jour entier. totalReel est désormais
-// EXACT (issu du module Commandes) ; totalObj reste calculé depuis les
-// créneaux planifiés (référence + cadence choisies dans l'onglet Production).
+// Totaux (production, objectif) pour un jour entier, par référence — tout est
+// exact et automatique, aucune estimation nécessaire (contrairement à l'ancien
+// système par créneau) puisque Commandes donne directement le détail par
+// référence.
 function gadhDayTotals(dateISO){
   const slots = getGadhSlotsForDate(dateISO);
-  const prod = getGadhProduction(dateISO);
-  let totalObj = 0, hasEntry = false;
-  slots.forEach(s => {
-    const e = prod[s.label];
-    if(e && e.refNom){ hasEntry = true; totalObj += gadhObjectifSlot(e, s.minutes); }
+  const heures = gadhHeuresJour(dateISO);
+  const parRef = cmdRetourGadhParRefDuJour(dateISO);
+  let totalReel = 0, totalObj = 0, hasEntry = false;
+  Object.entries(parRef).forEach(([rk,q]) => {
+    totalReel += q; hasEntry = true;
+    totalObj += gadhObjectifRef(rk, heures);
   });
-  const totalReel = cmdRetourGadhDuJour(dateISO);
-  if(totalReel>0) hasEntry = true;
   const rendement = totalObj>0 ? (totalReel/totalObj*100) : null;
-  return { totalReel, totalObj, rendement, hasEntry, slots };
+  return { totalReel, totalObj, rendement, hasEntry, slots, parRef, heures };
+}
+// Commandes en cours (vue GADH, pour le tableau de bord) : pièces déjà
+// retournées à Tek-Trend (cumul tous les jours, pas seulement le jour affiché)
+// par rapport au total reçu (commandé) de la commande — indépendant de la date
+// choisie sur le tableau de bord, c'est un état global d'avancement.
+function cmdCommandesEnCoursPourGadh(){
+  if(typeof listCmdCommandes!=='function' || typeof cmdCumuls!=='function' || typeof cmdCell!=='function' || typeof cmdEstCloturee!=='function') return [];
+  return listCmdCommandes()
+    .filter(([id]) => !cmdEstCloturee(id))
+    .map(([id, cmd]) => {
+      const cum = cmdCumuls(id);
+      let total = 0, retourFait = 0;
+      Object.entries(cmd.lignes||{}).forEach(([rk,l]) => Object.entries(l.tailles||{}).forEach(([t,q]) => {
+        total += parseInt(q)||0;
+        retourFait += cmdCell(cum, rk, t).retour||0;
+      }));
+      return {id, numero: cmd.numero, total, retourFait, pct: total>0 ? Math.min(100, Math.round(retourFait/total*100)) : 0};
+    })
+    .sort((a,b) => b.pct - a.pct);
 }
 
 // --- Résolution du statut du jour (RH/Pointage) ---
@@ -198,33 +201,23 @@ function renderGadhParametres(container){
     container.innerHTML = buildEmptyState("Accès réservé au Responsable", "Cette page n'est pas accessible avec votre rôle.");
     return;
   }
-  const refs = activeGadhReferences();
-  const refsInactives = Object.entries(getGadhReferences()).filter(([id,r])=>r.actif===false);
+  const refsCmd = cmdRefsCatalogue(); // même catalogue que l'onglet CMD — plus de liste de références séparée pour GADH
+  const cadences = getGadhCadences();
   const plannings = Object.entries(getGadhPlannings()).sort((a,b)=>b[1].dateDebut.localeCompare(a[1].dateDebut));
 
   container.innerHTML = `
     <div class="card">
-      <div class="flex-header" style="margin-bottom:10px;"><h3 style="margin:0;">Références &amp; cadences</h3>
-        <button class="btn btn-primary" style="padding:6px 12px;font-size:12px;" onclick="showAddGadhRefForm()">+ Ajouter</button>
-      </div>
-      <div id="gadh-ref-form-zone"></div>
-      ${refs.length===0 ? buildEmptyState("Aucune référence active") : refs.map(([id,r]) => `
+      <h3 style="margin:0 0 4px;">Cadence par référence</h3>
+      <p style="font-size:11.5px;color:var(--ink-soft);margin:0 0 10px;">Mêmes références que l'onglet CMD. Indiquez la cadence (pièces/heure) de chaque référence en production ; l'objectif et le rendement de l'onglet Production sont ensuite calculés automatiquement, sans aucune saisie.</p>
+      ${refsCmd.length===0 ? buildEmptyState("Aucune référence dans le catalogue Commandes") : refsCmd.map(([rk]) => `
         <div class="session-row">
-          <div><div style="font-weight:700;">${esc(r.nom)}</div><div style="font-size:11.5px;color:var(--ink-soft);">${r.cadence} pièces/heure</div></div>
-          <div style="display:flex;gap:6px;flex-shrink:0;">
-            <button class="btn btn-ghost" style="padding:6px 10px;font-size:12px;" onclick="showEditGadhRefForm('${id}')">Modifier</button>
-            <button class="btn btn-warning" style="padding:6px 10px;font-size:12px;" onclick="toggleGadhRefActive('${id}', false)">Désactiver</button>
+          <div style="flex:1;min-width:0;font-weight:700;font-size:12.5px;">${esc(gadhRefName(rk))}</div>
+          <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+            <input type="number" min="0" step="1" value="${cadences[rk]||''}" placeholder="0" style="width:72px;padding:7px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;" onchange="setGadhCadence('${rk}', this.value)">
+            <span style="font-size:11px;color:var(--ink-faint);">pièces/h</span>
           </div>
         </div>
       `).join('')}
-      ${refsInactives.length>0 ? `
-        <div style="font-size:11px;color:var(--ink-faint);font-weight:700;margin:12px 0 6px;">DÉSACTIVÉES</div>
-        ${refsInactives.map(([id,r]) => `
-          <div class="session-row"><div><div style="font-weight:700;color:var(--ink-faint);">${esc(r.nom)}</div><div style="font-size:11px;color:var(--ink-faint);">${r.cadence} pièces/heure</div></div>
-            <button class="btn btn-ghost" style="padding:6px 10px;font-size:12px;" onclick="toggleGadhRefActive('${id}', true)">Réactiver</button>
-          </div>
-        `).join('')}
-      ` : ''}
     </div>
 
     <div class="card">
@@ -245,44 +238,12 @@ function renderGadhParametres(container){
     </div>
   `;
 
-  window.showAddGadhRefForm = () => renderGadhRefForm('add', null);
-  window.showEditGadhRefForm = (id) => renderGadhRefForm('edit', id);
-  function renderGadhRefForm(mode, id){
-    const r = mode==='edit' ? getGadhReferences()[id] : {nom:'', cadence:''};
-    const zone = document.getElementById('gadh-ref-form-zone');
-    zone.innerHTML = `
-      <div class="card" style="background:var(--surface-2);">
-        <h3 style="margin-top:0;">${mode==='add'?'Nouvelle référence':'Modifier la référence'}</h3>
-        <div class="field"><label>Nom / Modèle</label><input id="gr-nom" value="${esc(r.nom)}" placeholder="Ex : MODÈLE A"></div>
-        <div class="field"><label>Cadence (pièces/heure)</label><input type="number" id="gr-cadence" value="${r.cadence||''}" min="0" step="1" placeholder="Ex : 80"></div>
-        <div style="display:flex;gap:8px;">
-          <button class="btn btn-primary" onclick="saveGadhRefForm('${mode}','${id||''}')">Enregistrer</button>
-          <button class="btn btn-ghost" onclick="document.getElementById('gadh-ref-form-zone').innerHTML=''">Annuler</button>
-        </div>
-      </div>
-    `;
-  }
-  window.saveGadhRefForm = (mode, id) => {
-    const nom = document.getElementById('gr-nom').value.trim();
-    const cadence = parseFloat(document.getElementById('gr-cadence').value);
-    if(!nom){ showToast('Le nom de la référence est obligatoire'); return; }
-    if(isNaN(cadence) || cadence<=0){ showToast('Cadence invalide'); return; }
-    const list = getGadhReferences();
-    if(mode==='add'){
-      const newId = 'gr'+Date.now()+Math.floor(Math.random()*1000);
-      list[newId] = {nom, cadence, actif:true};
-    } else {
-      list[id] = {...list[id], nom, cadence};
-    }
-    saveGadhReferences(list);
-    showToast('Référence enregistrée');
-    nav('gadh-parametres');
-  };
-  window.toggleGadhRefActive = (id, actif) => {
-    const list = getGadhReferences();
-    list[id] = {...list[id], actif};
-    saveGadhReferences(list);
-    nav('gadh-parametres');
+  window.setGadhCadence = (rk, val) => {
+    const n = parseFloat(val);
+    const map = getGadhCadences();
+    if(!val || isNaN(n) || n<=0) delete map[rk]; else map[rk] = n;
+    saveGadhCadences(map);
+    showToast('Cadence enregistrée');
   };
 
   window.showAddGadhPlanningForm = () => {
@@ -630,19 +591,19 @@ window.deleteGadhAbsence = (id) => {
 };
 
 // ============================================================
-// PRODUCTION (saisie horaire par référence)
+// PRODUCTION (entièrement automatique, par référence)
 // ============================================================
 let gadhProdDate = null;
 function renderGadhProduction(container){
   if(!gadhProdDate) gadhProdDate = getTodayISO();
   const date = gadhProdDate;
-  const canEdit = canEditGadh();
-  const slots = getGadhSlotsForDate(date);
-  const prod = getGadhProduction(date);
-  const refs = activeGadhReferences();
   const totals = gadhDayTotals(date);
-  const repartition = gadhRepartitionReelParSlot(date);
   const dateNav = (delta) => { const d=new Date(date+'T00:00:00'); d.setDate(d.getDate()+delta); return toISODateLocal(d); };
+  // Références à afficher : celles produites ce jour-là + celles ayant une
+  // cadence configurée (même sans production, pour rester visibles).
+  const clesConfigurees = Object.keys(getGadhCadences()).filter(rk => gadhCadencePourRef(rk)>0);
+  const cles = Array.from(new Set([...Object.keys(totals.parRef), ...clesConfigurees]))
+    .sort((a,b) => gadhRefName(a).localeCompare(gadhRefName(b)));
 
   container.innerHTML = `
     <div class="card" style="padding:10px 12px;">
@@ -652,51 +613,31 @@ function renderGadhProduction(container){
         <button class="btn btn-ghost" style="padding:9px 11px;" onclick="gadhProdDate='${dateNav(1)}'; nav('gadh-production')" ${date>=getTodayISO()?'disabled':''}>›</button>
       </div>
     </div>
-    ${slots.length===0 ? `<div class="card">${buildEmptyState("Jour non travaillé", "Aucun horaire n'est programmé ce jour-là.")}</div>` : `
+    ${totals.slots.length===0 ? `<div class="card">${buildEmptyState("Jour non travaillé", "Aucun horaire n'est programmé ce jour-là.")}</div>` : `
     <div class="kpi-mini-grid" style="grid-template-columns:repeat(3,1fr);">
       <div class="kpi-mini tint-blue"><div class="kpi-mini-val">${totals.totalReel}</div><div class="kpi-mini-lbl">Production</div></div>
       <div class="kpi-mini"><div class="kpi-mini-val">${totals.totalObj}</div><div class="kpi-mini-lbl">Objectif</div></div>
       <div class="kpi-mini ${totals.rendement!=null && totals.rendement>=100?'tint-green':''}"><div class="kpi-mini-val">${totals.rendement!=null?Math.round(totals.rendement)+'%':'—'}</div><div class="kpi-mini-lbl">Rendement</div></div>
     </div>
-    <p style="font-size:10.5px;color:var(--ink-faint);margin:6px 2px 8px;">La production est automatique : elle vient des pièces réellement retournées à Tek-Trend (module Commandes → Retour GADH). La répartition par créneau ci-dessous est une estimation selon l'objectif planifié ; le total du jour, lui, est exact.</p>
+    <p style="font-size:10.5px;color:var(--ink-faint);margin:6px 2px 8px;">Entièrement automatique, aucune saisie : les quantités viennent des pièces réellement retournées à Tek-Trend (module Commandes → Retour GADH), avec les mêmes références que l'onglet CMD. La cadence par heure de chaque référence se configure dans Paramètres.</p>
     <div class="card" style="padding:4px 12px;">
-      ${slots.map(s => {
-        const e = prod[s.label] || {};
-        const obj = e.cadence ? gadhObjectifSlot(e, s.minutes) : null;
-        const reelEstime = totals.totalReel>0 ? (repartition[s.label]||0) : null;
-        const rend = gadhRendementSlot(e, s.minutes, reelEstime);
+      ${cles.length===0 ? buildEmptyState("Aucune production ce jour-là") : cles.map(rk => {
+        const qte = totals.parRef[rk] || 0;
+        const cad = gadhCadencePourRef(rk);
+        const obj = gadhObjectifRef(rk, totals.heures);
+        const rend = obj>0 ? (qte/obj*100) : null;
         return `
-        <div class="session-row" style="flex-direction:column;align-items:stretch;gap:6px;padding:9px 0;">
+        <div class="session-row" style="flex-direction:column;align-items:stretch;gap:2px;padding:9px 0;">
           <div style="display:flex;justify-content:space-between;align-items:center;">
-            <b style="font-size:13px;">${s.label}</b>
-            ${rend!=null ? `<span class="hour-rend ${rend>=100?'good':(rend>=80?'warn':'bad')}" style="font-size:11px;">${Math.round(rend)}%</span>` : (obj!=null?'':'<span style="font-size:10.5px;color:var(--ink-faint);">Pas encore commencé</span>')}
+            <b style="font-size:13px;">${esc(gadhRefName(rk))}</b>
+            ${rend!=null ? `<span class="hour-rend ${rend>=100?'good':(rend>=80?'warn':'bad')}" style="font-size:11px;">${Math.round(rend)}%</span>` : ''}
           </div>
-          ${canEdit ? `
-          <div style="display:flex;gap:8px;">
-            <select style="flex:1.4;" onchange="setGadhProdRef('${s.label}', this.value)">
-              <option value="">Référence…</option>
-              ${refs.map(([id,r])=>`<option value="${id}" ${e.refId===id?'selected':''}>${esc(r.nom)} (${r.cadence}/h)</option>`).join('')}
-            </select>
-          </div>
-          ${e.refNom ? `<div style="font-size:10.5px;color:var(--ink-soft);">${esc(e.refNom)} · Objectif ${obj||0} pièces (cadence ${e.cadence}/h) · Réel estimé ${reelEstime||0} pièces</div>` : ''}
-          ` : `
-          ${e.refNom ? `<div style="font-size:11.5px;color:var(--ink-soft);">${esc(e.refNom)} — ${reelEstime||0} / ${obj||0} pièces (estimé)</div>` : `<div style="font-size:11px;color:var(--ink-faint);">Non planifié</div>`}
-          `}
+          <div style="font-size:11px;color:var(--ink-soft);">${qte} / ${obj||'—'} pièces${cad?` · cadence ${cad}/h`:' · cadence non configurée (Paramètres)'}</div>
         </div>`;
       }).join('')}
     </div>
     `}
   `;
-
-  window.setGadhProdRef = (slotLabel, refId) => {
-    const prod = getGadhProduction(date);
-    const ref = refId ? getGadhReferences()[refId] : null;
-    prod[slotLabel] = {...(prod[slotLabel]||{}), refId: refId||null, refNom: ref?ref.nom:null, cadence: ref?ref.cadence:null};
-    saveGadhProduction(date, prod);
-    nav('gadh-production');
-  };
-  // setGadhProdQty a été retiré : la quantité réelle n'est plus saisie à la
-  // main, elle vient automatiquement du module Commandes (Retour GADH).
 }
 
 // ============================================================
@@ -766,26 +707,28 @@ function gadhWeekChart(days){
     ${bars}<polyline points="${pts}" fill="none" stroke="#10B981" stroke-width="2"/>${dots}${labels}
   </svg>`;
 }
-// Rythme à l'heure actuelle : compare la production réelle à l'objectif des
-// créneaux ENTIÈREMENT écoulés (pas de calcul proportionnel à la minute en
-// cours). Uniquement pertinent pour la journée en cours.
+// Rythme à l'heure actuelle : compare le total réel du jour (cumul déjà
+// enregistré côté Commandes → Retour GADH, mis à jour au fil de la journée) à
+// l'objectif proportionnel au temps déjà écoulé dans les créneaux du jour —
+// plus besoin d'une affectation référence par créneau, puisque le réel comme
+// l'objectif sont désormais calculés au niveau du jour entier. Uniquement
+// pertinent pour la journée en cours.
 function gadhComputeRhythm(dateISO){
   if(dateISO !== getTodayISO()) return null;
-  const slots = getGadhSlotsForDate(dateISO);
-  if(slots.length===0) return null;
-  const prod = getGadhProduction(dateISO);
-  const repartition = gadhRepartitionReelParSlot(dateISO);
+  const totals = gadhDayTotals(dateISO);
+  if(totals.slots.length===0 || totals.totalObj<=0) return null;
   const now = new Date();
   const nowMin = now.getHours()*60 + now.getMinutes();
-  let elapsedObj = 0, reelSoFar = 0;
-  slots.forEach(s => {
-    if(nowMin >= s.end){
-      const e = prod[s.label];
-      if(e && e.cadence){ elapsedObj += gadhObjectifSlot(e, s.minutes); reelSoFar += (repartition[s.label]||0); }
-    }
+  let elapsedMin = 0, totalMin = 0;
+  totals.slots.forEach(s => {
+    totalMin += s.minutes;
+    if(nowMin >= s.end) elapsedMin += s.minutes;
+    else if(nowMin > s.start) elapsedMin += Math.min(s.minutes, nowMin - s.start);
   });
+  if(elapsedMin<=0 || totalMin<=0) return null;
+  const elapsedObj = totals.totalObj * (elapsedMin/totalMin);
   if(elapsedObj<=0) return null;
-  const pct = reelSoFar/elapsedObj*100;
+  const pct = totals.totalReel/elapsedObj*100;
   let label, color;
   if(pct>=100){ label='En avance'; color='#5FE0A6'; }
   else if(pct>=80){ label='Bon'; color='#FFC067'; }
@@ -809,24 +752,28 @@ function renderGadhDashboard(container){
   const nonRenseignes = resolved.filter(x=>x.r.source===null);
   const alertes = [];
   if(!isGadhWorkingDay(date)) alertes.push("Ce jour n'est pas travaillé selon le planning actuel.");
-  if(activeGadhReferences().length===0) alertes.push("Aucune référence/cadence n'est configurée — allez dans Paramètres.");
+  if(Object.keys(getGadhCadences()).length===0) alertes.push("Aucune cadence n'est configurée — allez dans Paramètres.");
   if(nonRenseignes.length>0) alertes.push(nonRenseignes.length+" salarié(s) non renseigné(s).");
 
-  // Production par modèle (ce jour) — répartition estimée du total réel (exact,
-  // issu de Commandes → Retour GADH) au prorata de l'objectif planifié par créneau.
-  const prod = getGadhProduction(date);
-  const repartition = gadhRepartitionReelParSlot(date);
-  const parRef = {};
-  totals.slots.forEach(s => { const e = prod[s.label]; const q = repartition[s.label]||0; if(e && e.refNom && q>0){ parRef[e.refNom] = (parRef[e.refNom]||0) + q; } });
-  const totalRefQty = Object.values(parRef).reduce((s,v)=>s+v,0) || 1;
-  const refRanking = Object.entries(parRef).sort((a,b)=>b[1]-a[1]);
+  // Production par modèle (ce jour) — EXACTE, directement depuis Commandes → Retour
+  // GADH par référence (plus besoin d'estimation, contrairement à l'ancien système
+  // par créneau, puisque Commandes donne déjà le détail par référence).
+  const refRanking = Object.entries(totals.parRef).map(([rk,q]) => [gadhRefName(rk), q]).sort((a,b)=>b[1]-a[1]);
+  const totalRefQty = Object.values(totals.parRef).reduce((s,v)=>s+v,0) || 1;
   const refColors = ['#3B82F6','#EC4899','#10B981','#6B7280','#F59E0B','#8B5CF6','#06B6D4'];
 
-  // Qualité des créneaux (Bon >=80% / Moyen 60-79% / Faible <60%) parmi les créneaux planifiés
+  // Qualité par référence (Bon >=80% / Moyen 60-79% / Faible <60%), parmi les
+  // références ayant une cadence configurée (donc un objectif calculable).
   let bon=0, moyen=0, faible=0;
-  if(totals.totalReel>0){
-    totals.slots.forEach(s => { const e=prod[s.label]; if(!e || !e.refNom) return; const r=gadhRendementSlot(e,s.minutes,repartition[s.label]||0); if(r==null) return; if(r>=80) bon++; else if(r>=60) moyen++; else faible++; });
-  }
+  Object.entries(totals.parRef).forEach(([rk,q]) => {
+    const obj = gadhObjectifRef(rk, totals.heures);
+    if(obj<=0) return;
+    const r = q/obj*100;
+    if(r>=80) bon++; else if(r>=60) moyen++; else faible++;
+  });
+
+  // Commandes en cours (avancement global du Retour GADH, tous les jours confondus)
+  const commandesEnCours = cmdCommandesEnCoursPourGadh();
 
   // Evolution des 6 derniers jours
   const chartDays = [];
@@ -920,15 +867,25 @@ function renderGadhDashboard(container){
       <h3 style="margin:0 0 10px;font-size:13px;">⏱️ Taux de rendement</h3>
       ${gadhDonutMulti([{value:bon||0.0001,color:'#10B981'},{value:moyen,color:'#F59E0B'},{value:faible,color:'#EF4444'}], (totals.rendement!=null?Math.round(totals.rendement):0)+'%', 'Rendement', 150)}
       <div style="display:flex;justify-content:center;gap:14px;margin-top:10px;font-size:10.5px;">
-        <span style="color:#10B981;font-weight:700;">● Bon (≥80%)<br><span style="color:var(--ink-faint);font-weight:600;">${bon} créneau${bon>1?'x':''}</span></span>
-        <span style="color:#F59E0B;font-weight:700;">● Moyen (60-79%)<br><span style="color:var(--ink-faint);font-weight:600;">${moyen} créneau${moyen>1?'x':''}</span></span>
-        <span style="color:#EF4444;font-weight:700;">● Faible (&lt;60%)<br><span style="color:var(--ink-faint);font-weight:600;">${faible} créneau${faible>1?'x':''}</span></span>
+        <span style="color:#10B981;font-weight:700;">● Bon (≥80%)<br><span style="color:var(--ink-faint);font-weight:600;">${bon} référence${bon>1?'s':''}</span></span>
+        <span style="color:#F59E0B;font-weight:700;">● Moyen (60-79%)<br><span style="color:var(--ink-faint);font-weight:600;">${moyen} référence${moyen>1?'s':''}</span></span>
+        <span style="color:#EF4444;font-weight:700;">● Faible (&lt;60%)<br><span style="color:var(--ink-faint);font-weight:600;">${faible} référence${faible>1?'s':''}</span></span>
       </div>
+    </div>
+
+    <div class="card">
+      <h3 style="margin:0 0 10px;font-size:13px;">📦 Commandes en cours — pièces produites / total reçu</h3>
+      ${commandesEnCours.length===0 ? buildEmptyState("Aucune commande en cours") : commandesEnCours.map(c => `
+        <div style="margin-bottom:8px;">
+          <div style="display:flex;justify-content:space-between;font-size:12px;"><b>${esc(c.numero)}</b><span style="color:var(--ink-soft);">${c.retourFait} / ${c.total}</span></div>
+          <div style="height:7px;background:var(--border-soft);border-radius:4px;overflow:hidden;margin-top:3px;"><div style="width:${c.pct}%;height:100%;background:${c.pct>=100?'#10B981':'#3B82F6'};"></div></div>
+        </div>
+      `).join('')}
     </div>
 
     <div class="kpi-mini-grid" style="grid-template-columns:repeat(2,1fr);">
       <div class="kpi-mini" style="cursor:pointer;text-align:left;padding:12px;" onclick="nav('gadh-production')">
-        <div style="font-weight:800;font-size:12.5px;">📝 Nouvelle saisie</div><div style="font-size:10.5px;color:var(--ink-faint);">Enregistrer une production</div>
+        <div style="font-weight:800;font-size:12.5px;">🏭 Production</div><div style="font-size:10.5px;color:var(--ink-faint);">Voir la production du jour</div>
       </div>
       <div class="kpi-mini" style="cursor:pointer;text-align:left;padding:12px;" onclick="nav('gadh-historique')">
         <div style="font-weight:800;font-size:12.5px;">🕐 Historique</div><div style="font-size:10.5px;color:var(--ink-faint);">Voir les productions passées</div>
@@ -967,15 +924,13 @@ function renderGadhHistorique(container){
         <div class="kpi"><div class="label">Rendement</div><div class="value">${totals.rendement!=null?Math.round(totals.rendement)+'%':'—'}</div></div>
       </div>
       ${(() => {
-        const prod = getGadhProduction(date);
-        const repartition = gadhRepartitionReelParSlot(date);
-        const withEntry = totals.slots.filter(s=>prod[s.label] && prod[s.label].refNom);
-        if(withEntry.length===0) return buildEmptyState("Aucune saisie ce jour-là");
-        return withEntry.map(s => {
-          const e = prod[s.label]; const obj = gadhObjectifSlot(e, s.minutes);
-          const q = totals.totalReel>0 ? (repartition[s.label]||0) : null;
-          const rend = gadhRendementSlot(e, s.minutes, q);
-          return `<div class="session-row"><div><b style="font-size:12.5px;">${s.label}</b><div style="font-size:11px;color:var(--ink-soft);">${esc(e.refNom)}</div></div><div style="text-align:right;"><div style="font-weight:700;">${q||0} / ${obj}</div>${rend!=null?`<div style="font-size:11px;color:var(--ink-soft);">${Math.round(rend)}%</div>`:''}</div></div>`;
+        const cles = Object.keys(totals.parRef);
+        if(cles.length===0) return buildEmptyState("Aucune production ce jour-là");
+        return cles.sort((a,b)=>gadhRefName(a).localeCompare(gadhRefName(b))).map(rk => {
+          const q = totals.parRef[rk];
+          const obj = gadhObjectifRef(rk, totals.heures);
+          const rend = obj>0 ? (q/obj*100) : null;
+          return `<div class="session-row"><div><b style="font-size:12.5px;">${esc(gadhRefName(rk))}</b></div><div style="text-align:right;"><div style="font-weight:700;">${q} / ${obj||'—'}</div>${rend!=null?`<div style="font-size:11px;color:var(--ink-soft);">${Math.round(rend)}%</div>`:''}</div></div>`;
         }).join('');
       })()}
       `}
