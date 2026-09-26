@@ -1077,7 +1077,7 @@ function navItems(){
     const items = [
       {tab:'gadh-dashboard', label:'Dashboard', icon:ICONS.dashboard, show:true},
       {tab:'gadh-production', label:'Production', icon:ICONS.saisie, show:true},
-      {tab:'gadh-prodchain', label:'Chaîne', icon:ICONS.prodchain, show:true},
+      {tab:'commandes-home', label:'CMD', icon:ICONS.prodchain, show:(typeof canAccessCommandes==='function' && canAccessCommandes())},
       {tab:'gadh-rh', label:'RH', icon:ICONS.idBadge, show:true},
       {tab:'gadh-historique', label:'Historique', icon:ICONS.historique, show:true},
       {tab:'gadh-stats', label:'Stats', icon:ICONS.stats, show:true},
@@ -1090,7 +1090,7 @@ function navItems(){
     {tab:'saisie', label:'Saisie', icon:ICONS.saisie, show:canSaisie(currentUser.role), onclick:"saisieDate = getTodayISO(); nav('saisie')"},
     {tab:'historique', label:'Historique', icon:ICONS.historique, show:true},
     {tab:'stats', label:'Stats', icon:ICONS.stats, show:true},
-    {tab:'prodchain', label:'Chaîne', icon:ICONS.prodchain, show:true},
+    {tab:'commandes-home', label:'CMD', icon:ICONS.prodchain, show:(typeof canAccessCommandes==='function' && canAccessCommandes())},
     {tab:'messages', label:'Messages', icon:ICONS.messages, show:true},
     {tab:'params', label:'Params', icon:ICONS.params, show:currentUser.role==='admin'},
     {tab:'sessions', label:'Sessions', icon:ICONS.sessions, show:true}
