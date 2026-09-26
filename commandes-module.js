@@ -306,6 +306,23 @@ function cmdParcours(cmd, cum, refFilter){
     return {...p, recu, fait, attente, rebut, detail, etat};
   });
 }
+// Étape « en cours » d'une commande : la première étape (dans l'ordre du
+// parcours coupe → retour → confection → contrôle → emballage → expédition),
+// parmi celles saisissables depuis le contexte actuel (Commandes ou GADH —
+// voir cmdEtapesAutorisees), où des pièces sont en attente d'y passer. Permet
+// d'ouvrir directement la bonne étape de saisie (au lieu de toujours proposer
+// la Coupe par défaut) et d'afficher le statut réellement actionnable sur la
+// fiche, même si les quantités avancent de façon partielle référence par
+// référence / taille par taille (jamais un seul bloc atomique).
+function cmdEtapeCourante(cmdId, cumOpt){
+  const cmd = getCmdCommandes()[cmdId];
+  if(!cmd) return null;
+  const cum = cumOpt || cmdCumuls(cmdId);
+  const parcours = cmdParcours(cmd, cum);
+  const autorisees = cmdEtapesAutorisees();
+  const p = parcours.find(p => autorisees.includes(p.etape) && p.attente > 0);
+  return p ? p.etape : null;
+}
 
 // ============================================================
 // CRÉATION / MODIFICATION MANUELLE D'UNE COMMANDE
@@ -417,6 +434,26 @@ window.cmdRouvrirCommande = (cmdId) => {
   cmdLog(cmdId, 'Commande réouverte');
   showToast('Commande réouverte');
   cmdGo('fiche', cmdId);
+};
+// Suppression DÉFINITIVE d'une commande (différent de l'archivage, qui reste
+// consultable) : retire la commande et toutes ses données associées (saisies
+// journalières, historique, expéditions). Irréversible — double confirmation
+// obligatoire. Comme pour l'archivage, interdit depuis le module GADH.
+window.cmdSupprimerDefinitivement = (cmdId) => {
+  if(!canEditCmd()) return;
+  if(!cmdPeutArchiver()){ showToast("Suppression impossible depuis le module GADH — ouvrez le module Gestion des Commandes."); return; }
+  const cmds = getCmdCommandes();
+  const cmd = cmds[cmdId];
+  if(!cmd) return;
+  if(!confirm(`Supprimer DÉFINITIVEMENT la commande ${cmd.numero} ?\n\nToutes ses données (saisies de production, historique, expéditions) seront perdues pour toujours. Ce n'est pas un archivage : la commande disparaîtra complètement et ne pourra pas être rouverte.`)) return;
+  if(!confirm(`Dernière confirmation — supprimer ${cmd.numero} pour toujours ?`)) return;
+  delete cmds[cmdId];
+  saveCmdCommandes(cmds);
+  saveCmdSaisies(cmdId, {});
+  saveCmdExpeditions(cmdId, []);
+  saveCmdHistorique(cmdId, []);
+  showToast(`Commande ${cmd.numero} supprimée définitivement`);
+  cmdGo('list');
 };
 
 // --- Formulaire d'expédition (date/heure/quantité/cartons/transporteur/BL/observation) ---
@@ -861,6 +898,12 @@ function renderCmdFiche(container, canEdit){
   const violations = cmdViolations(cum);
   const histo = getCmdHistorique(id).slice().sort((a,b)=>b.ts-a.ts);
   const expeditions = getCmdExpeditions(id).slice().sort((a,b)=>b.ts-a.ts);
+  // Étape « en cours » (dans le contexte actuel — Commandes ou GADH) : c'est
+  // elle qu'on met en avant pour que l'ouverture de la fiche montre tout de
+  // suite le statut réel et permette de valider directement vers l'étape
+  // suivante, quantités déjà pré-remplies (rectifiables en cas de partialité).
+  const etapeCourante = !cloturee ? cmdEtapeCourante(id, cum) : null;
+  const pcCourante = etapeCourante ? parcours.find(p => p.etape===etapeCourante) : null;
 
   container.innerHTML = `
     <div class="flex-header">
@@ -886,6 +929,17 @@ function renderCmdFiche(container, canEdit){
         ${canEdit ? `<button class="btn btn-ghost" style="margin-top:6px;padding:6px 10px;font-size:11.5px;" onclick="cmdRouvrirCommande('${id}')">Rouvrir la commande</button>` : ''}
       </div>` : ''}
     </div>
+
+    ${canEdit && !cloturee && etapeCourante ? `<div class="card" style="margin-top:10px;border:1.5px solid ${pcCourante.color};">
+      <div style="font-size:10.5px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.03em;">Étape en cours</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:2px;">
+        <b style="font-size:16px;">${pcCourante.titre}</b>
+        <span style="font-size:11.5px;color:var(--ink-soft);">${pcCourante.attente} pièce(s) en attente</span>
+      </div>
+      <button class="btn btn-primary" style="width:100%;margin-top:10px;" onclick="cmdOuvrirSaisie('${id}', null, '${etapeCourante}')">Valider → ${pcCourante.titre}</button>
+    </div>` : (canEdit && !cloturee ? `<div class="card" style="margin-top:10px;background:var(--surface-2);">
+      <div style="font-size:11.5px;color:var(--ink-soft);">✓ Rien en attente pour l'instant sur les étapes de ce module.</div>
+    </div>` : '')}
 
     ${violations.length ? `<div class="card" style="border:1.5px solid var(--bad);background:#FEF2F2;">
       <b style="color:var(--bad);font-size:12.5px;">⚠ ${violations.length} incohérence(s) de quantité</b>
@@ -935,6 +989,10 @@ function renderCmdFiche(container, canEdit){
       ${histo.length===0 ? `<div style="font-size:12px;color:var(--ink-faint);">Aucun événement enregistré.</div>` :
         histo.map(h => `<div style="padding:5px 0;border-bottom:1px solid var(--border-soft);font-size:11.5px;"><b>${cmdDateHeureFR(h.ts)}</b> — ${esc(h.msg)}${h.user?` <span style="color:var(--ink-faint);">(${esc(h.user)})</span>`:''}</div>`).join('')}
     </div>
+
+    ${canEdit && cmdPeutArchiver() ? `<div class="card" style="margin-top:10px;text-align:center;">
+      <button class="btn btn-ghost" style="color:var(--bad);font-size:11.5px;padding:8px 10px;" onclick="cmdSupprimerDefinitivement('${id}')">🗑 Supprimer définitivement cette commande</button>
+    </div>` : ''}
     <div id="cmd-form-zone"></div>
   `;
 }
@@ -1039,12 +1097,17 @@ function cmdEnGadh(){ return typeof activeModule !== 'undefined' && activeModule
 function cmdEtapesAutorisees(){ return cmdEnGadh() ? ['retour'] : CMD_ETAPES.filter(e => e !== 'retour'); }
 function cmdInitSaisie(cmdId, date, etape){
   const autorisees = cmdEtapesAutorisees();
-  const etapeOk = etape && autorisees.includes(etape) ? etape : autorisees[0];
-  cmdSaisie = {cmdId: cmdId||null, date: date || getTodayISO(), etape: etapeOk, vals:{}, rebut:{}};
+  cmdSaisie = {cmdId: cmdId||null, date: date || getTodayISO(), etape: 'coupe', vals:{}, rebut:{}};
   if(!cmdSaisie.cmdId){
     const dispo = cmdCommandesSaisissables();
     if(dispo.length===1) cmdSaisie.cmdId = dispo[0][0];
   }
+  // Par défaut, on ouvre directement sur l'étape « en cours » de la commande
+  // (première étape avec des pièces en attente) plutôt que de toujours revenir
+  // à la Coupe — c'est ce qui permet, en ouvrant une commande, de voir tout de
+  // suite son statut réel et de valider vers l'étape suivante.
+  cmdSaisie.etape = (etape && autorisees.includes(etape)) ? etape
+    : (cmdSaisie.cmdId && cmdEtapeCourante(cmdSaisie.cmdId)) || autorisees[0];
   cmdChargerJourSaisie();
 }
 function cmdChargerJourSaisie(){
@@ -1083,7 +1146,12 @@ function cmdChargerJourSaisie(){
 window.cmdOuvrirSaisie = (cmdId, date, etape) => { cmdInitSaisie(cmdId||null, date||getTodayISO(), etape||null); cmdGo('saisie'); };
 window.cmdSjDate = (d) => { cmdSaisie.date = d || getTodayISO(); cmdChargerJourSaisie(); cmdRerender(); };
 window.cmdSjEtape = (e) => { if(!cmdEtapesAutorisees().includes(e)) return; cmdSaisie.etape = e; cmdChargerJourSaisie(); cmdRerender(); };
-window.cmdSjCommande = (id) => { cmdSaisie.cmdId = id || null; cmdChargerJourSaisie(); cmdRerender(); };
+window.cmdSjCommande = (id) => {
+  cmdSaisie.cmdId = id || null;
+  if(cmdSaisie.cmdId) cmdSaisie.etape = cmdEtapeCourante(cmdSaisie.cmdId) || cmdEtapesAutorisees()[0];
+  cmdChargerJourSaisie();
+  cmdRerender();
+};
 window.cmdSjSet = (quoi, rk, t, v) => {
   const cible = quoi==='rebut' ? cmdSaisie.rebut : cmdSaisie.vals;
   if(!cible[rk]) cible[rk] = {};
