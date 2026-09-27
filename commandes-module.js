@@ -840,12 +840,16 @@ function renderCmdList(container, canEdit){
       <button class="btn btn-ghost" style="flex:1;" onclick="cmdChoisirFichierExcel()">Importer Excel</button>
     </div>
     <div id="cmd-form-zone"></div>` : ''}
+    <button class="btn btn-ghost" style="width:100%;padding:9px 4px;font-size:12.5px;margin-bottom:10px;" onclick="cmdOuvrirRapports()">📄 Rapports PDF / 📊 Excel</button>
+    <div id="cmd-rapport-zone"></div>
     <div class="card" style="padding:8px;display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
       ${filtres.map(f => `<button class="btn ${cmdListFilter===f.k?'btn-primary':'btn-ghost'}" style="padding:6px 10px;font-size:11.5px;" onclick="cmdSetFiltre('${f.k}')">${f.l}</button>`).join('')}
     </div>
     ${rows.length===0 ? `<div class="card">${buildEmptyState('Aucune commande', "Aucune commande ne correspond à ce filtre.")}</div>` :
       rows.sort((a,b)=>(b.cmd.createdAt||0)-(a.cmd.createdAt||0)).map(r => cmdCarte(r.id, r.cmd, r.s)).join('')}
   `;
+  // Le panneau de rapports reste ouvert si on change de filtre.
+  if(cmdRapportSel) cmdAfficherRapports();
 }
 
 // ============================================================
@@ -965,6 +969,10 @@ function renderCmdFiche(container, canEdit){
           <div style="display:flex;justify-content:space-between;"><b style="font-size:12.5px;">${esc(cmdRefName(rk))}</b><b style="font-size:12.5px;">${cmdLigneTotal(l)}</b></div>
           <div style="font-size:10.5px;color:var(--ink-soft);">${CMD_TAILLES.filter(t=>l.tailles[t]).map(t=>`${t} ${l.tailles[t]}`).join(' · ')}</div>
         </div>`).join('')}
+    </div>
+    <div class="card" style="display:flex;gap:8px;margin-top:10px;">
+      <button class="btn btn-ghost" style="flex:1;padding:8px 4px;font-size:12px;" onclick="cmdExporterPdf(['${id}'])">📄 Rapport PDF</button>
+      <button class="btn btn-ghost" style="flex:1;padding:8px 4px;font-size:12px;" onclick="cmdExporterExcel(['${id}'])">📊 Rapport Excel</button>
     </div>
 
     ${canEdit ? `<div class="card" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
@@ -1314,3 +1322,306 @@ function renderCmdSaisie(container, canEdit){
   `;
   if(cmd) cmdSaisieRafraichir();
 }
+
+// ============================================================
+// RAPPORTS PDF / EXCEL (toutes, en cours, archivées ou sélection)
+// ============================================================
+// Deux niveaux : une Synthèse (une ligne par commande) et le Détail (une ligne
+// par commande × référence × taille), avec toutes les quantités du parcours.
+// Fonctionne hors connexion et sans bibliothèque : réutilise le générateur XLSX
+// (prodZip / prodStyles) et le principe d'impression PDF du module Chaîne.
+// Les chiffres sont EXACTEMENT ceux de l'application (mêmes fonctions de calcul).
+const CMD_RAPPORT_COLS = [
+  {k:'commande',   titre:'Qté commandée'},
+  {k:'cible',      titre:'Cible coupe (+ marge)'},
+  {k:'coupe',      titre:'Coupées / envoyées GADH'},
+  {k:'retour',     titre:'Assemblées / retournées Tek-Trend'},
+  {k:'confection', titre:'Confectionnées'},
+  {k:'controle',   titre:'Contrôlées (conformes)'},
+  {k:'emballage',  titre:'Emballées'},
+  {k:'expedition', titre:'Expédiées'},
+  {k:'rebut',      titre:'Rebut'},
+  {k:'reste',      titre:'Reste à expédier'}
+];
+function cmdRapportDateFR(iso){ return iso ? String(iso).split('-').reverse().join('/') : ''; }
+function cmdRapportVals(q, c, rk){
+  return {
+    commande: q, cible: q>0 ? q + cmdMargeCoupe(rk, q) : 0,
+    coupe: c.coupe, retour: c.retour, confection: c.confection, controle: c.controle,
+    emballage: c.emballage, expedition: c.expedition,
+    rebut: cmdRebutTotal(c), reste: cmdRestes(c, q).resteAExpedier
+  };
+}
+function cmdRapportLibelle(rk){
+  const ref = (typeof PROD_EXPORT_REFS!=='undefined') ? PROD_EXPORT_REFS.find(x => x.rk===rk) : null;
+  return ref ? ref.libelle : cmdRefName(rk);
+}
+function cmdRapportOrdreRefs(rks){
+  const ordre = (typeof PROD_EXPORT_REFS!=='undefined') ? PROD_EXPORT_REFS.map(x => x.rk) : [];
+  const pos = rk => { const i = ordre.indexOf(rk); return i<0 ? 999 : i; };
+  return rks.slice().sort((a,b) => pos(a)-pos(b) || cmdRefName(a).localeCompare(cmdRefName(b)));
+}
+function cmdRapportDonnees(cmdIds){
+  const cmds = getCmdCommandes();
+  const zero = () => { const o = {}; CMD_RAPPORT_COLS.forEach(c => { o[c.k] = 0; }); return o; };
+  const ajoute = (a, b) => CMD_RAPPORT_COLS.forEach(c => { a[c.k] += b[c.k]||0; });
+  const commandes = cmdIds.filter(id => cmds[id]).map(id => {
+    const cmd = cmds[id], cum = cmdCumuls(id), s = cmdSynthese(id, null, cum);
+    const lignes = [], tot = zero();
+    cmdRapportOrdreRefs(Object.keys(cmd.lignes||{})).forEach(rk => {
+      const l = cmd.lignes[rk];
+      CMD_TAILLES.filter(t => l.tailles && l.tailles[t]).forEach(t => {
+        const v = cmdRapportVals(parseInt(l.tailles[t])||0, cmdCell(cum, rk, t), rk);
+        ajoute(tot, v);
+        lignes.push({rk, ref: cmdRefName(rk), libelle: cmdRapportLibelle(rk), t, ...v});
+      });
+    });
+    const statut = cmdStatutAffiche(id, s);
+    return {id, cmd, lignes, tot, statut, statutLabel: (CMD_STATUTS[statut]||CMD_STATUTS.A_TRAITER).label, pctExp: s.pctExp};
+  }).sort((a,b) => String(a.cmd.dateReception||'').localeCompare(String(b.cmd.dateReception||'')) || String(a.cmd.numero).localeCompare(String(b.cmd.numero)));
+  const total = zero();
+  commandes.forEach(c => ajoute(total, c.tot));
+  return {commandes, total};
+}
+// Titre / nom de fichier selon ce qui est exporté (toutes, en cours, archivées, une, sélection)
+function cmdRapportTitre(cmdIds){
+  const toutes = listCmdCommandes().map(([id]) => id);
+  const enCours = toutes.filter(id => !cmdEstCloturee(id));
+  const archivees = toutes.filter(id => cmdEstCloturee(id));
+  const pareil = (a) => a.length===cmdIds.length && a.every(id => cmdIds.includes(id));
+  if(cmdIds.length===1){ const c = getCmdCommandes()[cmdIds[0]]; const n = c ? c.numero : ''; return {titre:`Commande ${n}`, fichier:`Commande_${n}`}; }
+  if(pareil(toutes)) return {titre:'Toutes les commandes', fichier:'Rapport_toutes_commandes'};
+  if(pareil(enCours)) return {titre:'Commandes en cours', fichier:'Rapport_commandes_en_cours'};
+  if(pareil(archivees)) return {titre:'Commandes archivées', fichier:'Rapport_commandes_archivees'};
+  return {titre:`Sélection de ${cmdIds.length} commandes`, fichier:`Rapport_${cmdIds.length}_commandes`};
+}
+function cmdRapportNomFichier(cmdIds, ext){
+  return `${cmdRapportTitre(cmdIds).fichier}_${getTodayISO()}.${ext}`.replace(/[^\w.\-]+/g,'_');
+}
+function cmdRapportSousTitre(d){
+  return `TEK-TREND · ${d.commandes.length} commande(s) · édité le ${cmdDateHeureFR(Date.now())}${currentUser && currentUser.nom ? ' par '+currentUser.nom : ''}`;
+}
+
+// --- Excel : une feuille tableau (titre, sous-titre, en-têtes, lignes, total en formules) ---
+function cmdFeuilleTableauXml(opt, styles){
+  const L = prodColLettre;
+  const nb = opt.entetes.length, derniere = L(nb-1);
+  const lignesXml = [];
+  const cell = (col, r, val, st, formule) => {
+    const ref = L(col) + r, s = styles.get(st);
+    if(formule) return `<c r="${ref}" s="${s}"><f>${formule}</f><v>${val}</v></c>`;
+    if(val===null || val===undefined || val==='') return `<c r="${ref}" s="${s}"/>`;
+    if(typeof val==='number') return `<c r="${ref}" s="${s}"><v>${val}</v></c>`;
+    return `<c r="${ref}" s="${s}" t="inlineStr"><is><t xml:space="preserve">${prodXmlEsc(val)}</t></is></c>`;
+  };
+  const bord = {all:'thin'};
+  lignesXml.push(`<row r="1" ht="22" customHeight="1">${cell(0,1,opt.titre,{b:1,sz:14,color:'1F3864'})}</row>`);
+  lignesXml.push(`<row r="2">${cell(0,2,opt.sousTitre,{sz:9,color:'595959'})}</row>`);
+  lignesXml.push(`<row r="4" ht="42" customHeight="1">${opt.entetes.map((e,i) => cell(i,4,e.t,{b:1,sz:10,color:'FFFFFF',fill:'244061',h:'center',wrap:1,border:bord})).join('')}</row>`);
+  const debut = 5;
+  opt.lignes.forEach((vals, li) => {
+    const r = debut + li, fill = opt.fonds ? opt.fonds[li] : null;
+    lignesXml.push(`<row r="${r}">${vals.map((v,i) => {
+      const e = opt.entetes[i];
+      const st = e.num
+        ? {sz:10, h:'center', border:bord, fill, b: e.gras?1:0, color: (e.k==='rebut' && v>0) ? 'C00000' : '000000'}
+        : {sz:10, border:bord, fill};
+      return cell(i, r, v, st);
+    }).join('')}</row>`);
+  });
+  const fin = debut + opt.lignes.length - 1;
+  let derniereLigne = Math.max(4, fin);
+  if(opt.lignes.length){
+    const r = fin + 1;
+    derniereLigne = r;
+    const stTot = {b:1, sz:10, fill:'D9E1F2', h:'center', border:bord};
+    lignesXml.push(`<row r="${r}">${opt.entetes.map((e,i) => {
+      if(i===0) return cell(0, r, 'TOTAL', {...stTot, h:'left'});
+      if(!e.num || e.sansTotal) return cell(i, r, '', stTot);
+      const somme = opt.lignes.reduce((s,vals) => s + (parseFloat(vals[i])||0), 0);
+      return cell(i, r, somme, {...stTot, color: (e.k==='rebut' && somme>0) ? 'C00000' : '000000'}, `SUM(${L(i)}${debut}:${L(i)}${fin})`);
+    }).join('')}</row>`);
+  }
+  const filtre = opt.lignes.length ? `<autoFilter ref="A4:${derniere}${fin}"/>` : '';
+  return {
+    filtre: opt.lignes.length ? `$A$4:$${derniere}$${fin}` : null,
+    xml: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:${derniere}${derniereLigne}"/><sheetViews><sheetView workbookViewId="0"><pane ySplit="4" topLeftCell="A5" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/><cols>${opt.entetes.map((e,i)=>`<col min="${i+1}" max="${i+1}" width="${e.w||12}" customWidth="1"/>`).join('')}</cols><sheetData>${lignesXml.join('')}</sheetData>${filtre}<mergeCells count="2"><mergeCell ref="A1:${derniere}1"/><mergeCell ref="A2:${derniere}2"/></mergeCells><pageMargins left="0.3" right="0.3" top="0.4" bottom="0.4" header="0.2" footer="0.2"/><pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/></worksheet>`
+  };
+}
+function cmdRapportXlsxBlob(cmdIds){
+  const d = cmdRapportDonnees(cmdIds), info = cmdRapportTitre(cmdIds), sous = cmdRapportSousTitre(d);
+  const styles = prodStyles();
+  const colsNum = CMD_RAPPORT_COLS.map(c => ({t:c.titre, w:12.5, num:true, k:c.k, gras: c.k==='commande' || c.k==='expedition'}));
+  const synthese = cmdFeuilleTableauXml({
+    titre: `Rapport des commandes — ${info.titre} — Synthèse`, sousTitre: sous,
+    entetes: [{t:'N° commande',w:24},{t:'Lot',w:14},{t:'Destination',w:11},{t:'Client',w:10},{t:'Mois',w:15},{t:'Réception',w:11},{t:'Statut',w:19}, ...colsNum, {t:'% expédié',w:10,num:true,sansTotal:true}],
+    lignes: d.commandes.map(c => [c.cmd.numero, c.cmd.lot||'', c.cmd.destination||'', c.cmd.client||'PERCKO', cmdMoisLabel(c.cmd.mois), cmdRapportDateFR(c.cmd.dateReception), c.statutLabel, ...CMD_RAPPORT_COLS.map(k => c.tot[k.k]), c.pctExp])
+  }, styles);
+  const lignesDetail = [], fonds = [];
+  d.commandes.forEach((c, ci) => c.lignes.forEach(l => {
+    lignesDetail.push([c.cmd.numero, c.cmd.destination||'', c.statutLabel, l.ref, l.libelle, l.t, ...CMD_RAPPORT_COLS.map(k => l[k.k])]);
+    fonds.push(ci%2 ? 'F2F2F2' : null);
+  }));
+  const detail = cmdFeuilleTableauXml({
+    titre: `Rapport des commandes — ${info.titre} — Détail par référence et taille`, sousTitre: sous,
+    entetes: [{t:'N° commande',w:24},{t:'Destination',w:11},{t:'Statut',w:19},{t:'Référence',w:24},{t:'Libellé',w:34},{t:'Taille',w:7}, ...colsNum],
+    lignes: lignesDetail, fonds
+  }, styles);
+  const feuilles = [{nom:'Synthèse', f:synthese}, {nom:'Détail', f:detail}];
+  const noms = feuilles.map(x => x.nom);
+  const defNoms = feuilles.map((x,i) => x.f.filtre ? `<definedName name="_xlnm._FilterDatabase" localSheetId="${i}" hidden="1">'${x.nom}'!${x.f.filtre}</definedName>` : '').join('');
+  const fichiers = [
+    {nom:'[Content_Types].xml', texte:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${feuilles.map((f,i)=>`<Override PartName="/xl/worksheets/sheet${i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}</Types>`},
+    {nom:'_rels/.rels', texte:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`},
+    {nom:'xl/workbook.xml', texte:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${noms.map((n,i)=>`<sheet name="${prodXmlEsc(n)}" sheetId="${i+1}" r:id="rId${i+1}"/>`).join('')}</sheets>${defNoms ? `<definedNames>${defNoms}</definedNames>` : ''}<calcPr calcId="191029" fullCalcOnLoad="1"/></workbook>`},
+    {nom:'xl/_rels/workbook.xml.rels', texte:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${noms.map((n,i)=>`<Relationship Id="rId${i+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i+1}.xml"/>`).join('')}<Relationship Id="rId${noms.length+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`}
+  ];
+  feuilles.forEach((x,i) => fichiers.push({nom:`xl/worksheets/sheet${i+1}.xml`, texte:x.f.xml}));
+  fichiers.push({nom:'xl/styles.xml', texte: styles.xml()});
+  return prodZip(fichiers);
+}
+function cmdRapportPret(cmdIds){
+  if(!cmdIds || !cmdIds.length){ showToast('Sélectionnez au moins une commande'); return false; }
+  if(typeof prodZip!=='function' || typeof prodStyles!=='function'){ showToast("Export indisponible (module Chaîne non chargé)"); return false; }
+  return true;
+}
+window.cmdExporterExcel = (cmdIds) => {
+  if(!cmdRapportPret(cmdIds)) return;
+  try{
+    const blob = cmdRapportXlsxBlob(cmdIds);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = cmdRapportNomFichier(cmdIds, 'xlsx');
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    showToast(`Fichier Excel créé : ${a.download}`);
+  } catch(e){ console.error(e); showToast("Échec de l'export Excel"); }
+};
+
+// --- PDF : page d'impression (Imprimer → Enregistrer au format PDF), A4 paysage ---
+function cmdRapportHtml(cmdIds){
+  const d = cmdRapportDonnees(cmdIds), info = cmdRapportTitre(cmdIds);
+  const cols = CMD_RAPPORT_COLS;
+  const nums = (o) => cols.map(c => `<td class="${c.k==='rebut'&&o[c.k]?'rr':''}${c.k==='commande'||c.k==='expedition'?' rg':''}">${o[c.k]||0}</td>`).join('');
+  const thNums = cols.map(c => `<th>${c.titre}</th>`).join('');
+  const synthese = d.commandes.length>1 ? `
+    <h3>Synthèse par commande</h3>
+    <table class="rtab">
+      <colgroup><col style="width:12%"><col style="width:6%"><col style="width:7%"><col style="width:10%">${cols.map(()=>'<col style="width:6%">').join('')}<col style="width:5%"></colgroup>
+      <thead><tr><th>N° commande</th><th>Dest.</th><th>Réception</th><th>Statut</th>${thNums}<th>% exp.</th></tr></thead>
+      <tbody>${d.commandes.map(c => `<tr><td class="rl"><b>${esc(c.cmd.numero)}</b></td><td>${esc(c.cmd.destination||'')}</td><td>${cmdRapportDateFR(c.cmd.dateReception)}</td><td class="rl">${esc(c.statutLabel)}</td>${nums(c.tot)}<td>${c.pctExp}%</td></tr>`).join('')}</tbody>
+      <tfoot><tr><td class="rl" colspan="4">TOTAL</td>${nums(d.total)}<td></td></tr></tfoot>
+    </table>` : '';
+  const detail = d.commandes.map(c => `
+    <div class="rbloc">
+      <div class="rbloc-t"><b>${esc(c.cmd.numero)}</b> · ${esc(c.cmd.destination||'')} · ${esc(c.cmd.client||'PERCKO')} · ${cmdMoisLabel(c.cmd.mois)} · réception ${cmdRapportDateFR(c.cmd.dateReception)} · <b>${esc(c.statutLabel)}</b> · ${c.pctExp}% expédié</div>
+      <table class="rtab">
+        <colgroup><col style="width:18%"><col style="width:5%">${cols.map(()=>'<col style="width:7.7%">').join('')}</colgroup>
+        <thead><tr><th>Référence</th><th>Taille</th>${thNums}</tr></thead>
+        <tbody>${c.lignes.map(l => `<tr><td class="rl">${esc(l.ref)}</td><td>${l.t}</td>${nums(l)}</tr>`).join('')}</tbody>
+        <tfoot><tr><td class="rl" colspan="2">Total ${esc(c.cmd.numero)}</td>${nums(c.tot)}</tr></tfoot>
+      </table>
+    </div>`).join('');
+  return `
+    <div class="rtitre">Rapport des commandes — ${esc(info.titre)}</div>
+    <div class="rsous">${esc(cmdRapportSousTitre(d))}</div>
+    ${synthese}
+    <h3>Détail par référence et taille</h3>
+    ${detail || '<p>Aucune commande.</p>'}`;
+}
+window.cmdExporterPdf = (cmdIds) => {
+  if(!cmdIds || !cmdIds.length){ showToast('Sélectionnez au moins une commande'); return; }
+  let zone = document.getElementById('cmd-print-zone');
+  if(zone) zone.remove();
+  zone = document.createElement('div');
+  zone.id = 'cmd-print-zone';
+  zone.innerHTML = `<style>
+    @page { size: A4 landscape; margin: 9mm; }
+    #cmd-print-zone { display:none; font-family: Arial, Helvetica, sans-serif; color:#000; }
+    @media print {
+      body > *:not(#cmd-print-zone) { display:none !important; }
+      html, body { background:#fff !important; padding:0 !important; margin:0 !important; }
+      #cmd-print-zone { display:block; }
+    }
+    #cmd-print-zone * { -webkit-print-color-adjust: exact; print-color-adjust: exact; box-sizing:border-box; text-transform:none !important; letter-spacing:0 !important; }
+    #cmd-print-zone .rtitre { font-size:14pt; font-weight:bold; color:#1F3864; border-bottom:2px solid #1F3864; padding-bottom:3px; }
+    #cmd-print-zone .rsous { font-size:8pt; color:#555; margin:3px 0 8px; }
+    #cmd-print-zone h3 { font-size:10.5pt; margin:10px 0 4px; color:#1F3864; }
+    #cmd-print-zone table { border-collapse:collapse; width:100%; table-layout:fixed; }
+    #cmd-print-zone thead { display:table-header-group; }
+    #cmd-print-zone tr { break-inside:avoid; page-break-inside:avoid; }
+    #cmd-print-zone .rtab th { background:#244061 !important; color:#fff !important; font-weight:bold; border:1px solid #000; padding:3px 2px; font-size:7pt; text-align:center; vertical-align:middle; line-height:1.15; overflow-wrap:anywhere; }
+    #cmd-print-zone .rtab td { border:1px solid #000; text-align:center; padding:2px 3px; font-size:8pt; line-height:1.2; color:#000; }
+    #cmd-print-zone .rtab .rl { text-align:left; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    #cmd-print-zone .rtab .rg { font-weight:bold; }
+    #cmd-print-zone .rtab .rr { color:#C00000; font-weight:bold; }
+    #cmd-print-zone .rtab tfoot td { background:#D9E1F2; font-weight:bold; }
+    #cmd-print-zone .rbloc { margin-bottom:9px; }
+    #cmd-print-zone .rbloc-t { font-size:8.5pt; background:#EEF2F8; border:1px solid #000; border-bottom:none; padding:3px 5px; break-after:avoid; page-break-after:avoid; }
+  </style>` + cmdRapportHtml(cmdIds);
+  document.body.appendChild(zone);
+  // Le titre de la page sert de nom au fichier PDF enregistré.
+  const titreAvant = document.title;
+  const nettoyer = () => { const z = document.getElementById('cmd-print-zone'); if(z) z.remove(); document.title = titreAvant; window.removeEventListener('afterprint', nettoyer); };
+  window.addEventListener('afterprint', nettoyer);
+  document.title = cmdRapportNomFichier(cmdIds, 'pdf').replace(/\.pdf$/,'');
+  setTimeout(() => { window.print(); }, 150);
+};
+
+// --- Panneau de choix (liste des commandes) : toutes, en cours, archivées ou sélection ---
+let cmdRapportSel = null;
+window.cmdOuvrirRapports = () => {
+  const toutes = listCmdCommandes();
+  if(!toutes.length){ showToast('Aucune commande à exporter'); return; }
+  if(!cmdRapportSel){
+    const enCours = toutes.filter(([id]) => !cmdEstCloturee(id)).map(([id]) => id);
+    cmdRapportSel = new Set(enCours.length ? enCours : toutes.map(([id]) => id));
+  }
+  cmdAfficherRapports();
+  const zone = document.getElementById('cmd-rapport-zone');
+  if(zone) zone.scrollIntoView({behavior:'smooth', block:'start'});
+};
+function cmdAfficherRapports(){
+  const zone = document.getElementById('cmd-rapport-zone');
+  if(!zone || !cmdRapportSel) return;
+  const toutes = listCmdCommandes();
+  const rows = toutes.map(([id,c]) => ({id, c, s: cmdSynthese(id)}));
+  const nbEnCours = rows.filter(r => !cmdEstCloturee(r.id, r.s)).length;
+  const sel = cmdRapportSel;
+  zone.innerHTML = `
+    <div class="card" style="background:var(--surface-2);margin-bottom:10px;">
+      <div class="flex-header" style="margin-bottom:6px;"><h3 style="margin:0;font-size:14px;">Rapports PDF / Excel</h3>
+        <button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;" onclick="cmdFermerRapports()">Fermer</button></div>
+      <p style="font-size:11px;color:var(--ink-soft);margin:0 0 8px;">Synthèse (une ligne par commande) + détail par référence et taille : commandé, cible coupe, coupé, retour GADH, confection, contrôle, emballé, expédié, rebut, reste à expédier.</p>
+      <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap;">
+        <button class="btn btn-ghost" style="flex:1;padding:6px 4px;font-size:11px;" onclick="cmdRapportChoix('toutes')">Toutes (${rows.length})</button>
+        <button class="btn btn-ghost" style="flex:1;padding:6px 4px;font-size:11px;" onclick="cmdRapportChoix('encours')">En cours (${nbEnCours})</button>
+        <button class="btn btn-ghost" style="flex:1;padding:6px 4px;font-size:11px;" onclick="cmdRapportChoix('archivees')">Archivées (${rows.length-nbEnCours})</button>
+        <button class="btn btn-ghost" style="flex:1;padding:6px 4px;font-size:11px;" onclick="cmdRapportChoix('aucune')">Aucune</button>
+      </div>
+      <div style="max-height:260px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;background:var(--surface);">
+        ${rows.map(r => `
+          <label style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--border-soft);cursor:pointer;">
+            <input type="checkbox" class="cmd-rapport-chk" data-id="${r.id}" ${sel.has(r.id)?'checked':''} onchange="cmdRapportCocher('${r.id}', this.checked)" style="width:18px;height:18px;">
+            <span style="flex:1;min-width:0;"><b style="font-size:12.5px;">${esc(r.c.numero)}</b> <span style="font-size:11px;color:var(--ink-soft);">${esc(r.c.destination||'')} · ${cmdQteCommandee(r.c)} pcs</span></span>
+            ${cmdStatutBadge(cmdStatutAffiche(r.id, r.s), true)}
+          </label>`).join('')}
+      </div>
+      <div id="cmd-rapport-compte" style="font-size:11.5px;font-weight:800;margin:8px 0;">${sel.size} commande(s) sélectionnée(s)</div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-primary" style="flex:1;padding:10px 4px;" onclick="cmdExporterPdf([...cmdRapportSel])">📄 PDF</button>
+        <button class="btn btn-primary" style="flex:1;padding:10px 4px;background:#1D6F42;border-color:#1D6F42;" onclick="cmdExporterExcel([...cmdRapportSel])">📊 Excel</button>
+      </div>
+    </div>`;
+}
+window.cmdRapportCocher = (id, ok) => {
+  if(!cmdRapportSel) return;
+  if(ok) cmdRapportSel.add(id); else cmdRapportSel.delete(id);
+  const c = document.getElementById('cmd-rapport-compte');
+  if(c) c.textContent = `${cmdRapportSel.size} commande(s) sélectionnée(s)`;
+};
+window.cmdRapportChoix = (mode) => {
+  const toutes = listCmdCommandes();
+  cmdRapportSel = new Set(mode==='aucune' ? [] : toutes.filter(([id]) => mode==='toutes' || (mode==='encours' ? !cmdEstCloturee(id) : cmdEstCloturee(id))).map(([id]) => id));
+  cmdAfficherRapports();
+};
+window.cmdFermerRapports = () => { cmdRapportSel = null; const z = document.getElementById('cmd-rapport-zone'); if(z) z.innerHTML = ''; };
