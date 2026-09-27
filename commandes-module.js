@@ -970,10 +970,10 @@ function renderCmdFiche(container, canEdit){
           <div style="font-size:10.5px;color:var(--ink-soft);">${CMD_TAILLES.filter(t=>l.tailles[t]).map(t=>`${t} ${l.tailles[t]}`).join(' · ')}</div>
         </div>`).join('')}
     </div>
-    <div class="card" style="display:flex;gap:8px;margin-top:10px;">
+    ${cmdEnGadh() && cloturee ? '' : `<div class="card" style="display:flex;gap:8px;margin-top:10px;">
       <button class="btn btn-ghost" style="flex:1;padding:8px 4px;font-size:12px;" onclick="cmdExporterPdf(['${id}'])">📄 Rapport PDF</button>
       <button class="btn btn-ghost" style="flex:1;padding:8px 4px;font-size:12px;" onclick="cmdExporterExcel(['${id}'])">📊 Rapport Excel</button>
-    </div>
+    </div>`}
 
     ${canEdit ? `<div class="card" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
       ${!cloturee ? `<button class="btn btn-primary" style="flex:1;min-width:140px;" onclick="cmdOuvrirSaisie('${id}')">Saisir la production</button>` : ''}
@@ -1480,12 +1480,23 @@ function cmdRapportXlsxBlob(cmdIds){
   fichiers.push({nom:'xl/styles.xml', texte: styles.xml()});
   return prodZip(fichiers);
 }
+// Depuis le module GADH, les rapports ne portent QUE sur les commandes en cours
+// (jamais les archivées), quelle que soit la façon dont l'export est lancé.
+function cmdRapportIdsAutorises(cmdIds){
+  const ids = (cmdIds||[]).filter(id => getCmdCommandes()[id]);
+  return cmdEnGadh() ? ids.filter(id => !cmdEstCloturee(id)) : ids;
+}
+function cmdRapportListe(){
+  const toutes = listCmdCommandes();
+  return cmdEnGadh() ? toutes.filter(([id]) => !cmdEstCloturee(id)) : toutes;
+}
 function cmdRapportPret(cmdIds){
-  if(!cmdIds || !cmdIds.length){ showToast('Sélectionnez au moins une commande'); return false; }
+  if(!cmdIds || !cmdIds.length){ showToast(cmdEnGadh() ? 'Aucune commande en cours à exporter' : 'Sélectionnez au moins une commande'); return false; }
   if(typeof prodZip!=='function' || typeof prodStyles!=='function'){ showToast("Export indisponible (module Chaîne non chargé)"); return false; }
   return true;
 }
 window.cmdExporterExcel = (cmdIds) => {
+  cmdIds = cmdRapportIdsAutorises(cmdIds);
   if(!cmdRapportPret(cmdIds)) return;
   try{
     const blob = cmdRapportXlsxBlob(cmdIds);
@@ -1529,7 +1540,8 @@ function cmdRapportHtml(cmdIds){
     ${detail || '<p>Aucune commande.</p>'}`;
 }
 window.cmdExporterPdf = (cmdIds) => {
-  if(!cmdIds || !cmdIds.length){ showToast('Sélectionnez au moins une commande'); return; }
+  cmdIds = cmdRapportIdsAutorises(cmdIds);
+  if(!cmdIds.length){ showToast(cmdEnGadh() ? 'Aucune commande en cours à exporter' : 'Sélectionnez au moins une commande'); return; }
   let zone = document.getElementById('cmd-print-zone');
   if(zone) zone.remove();
   zone = document.createElement('div');
@@ -1570,8 +1582,8 @@ window.cmdExporterPdf = (cmdIds) => {
 // --- Panneau de choix (liste des commandes) : toutes, en cours, archivées ou sélection ---
 let cmdRapportSel = null;
 window.cmdOuvrirRapports = () => {
-  const toutes = listCmdCommandes();
-  if(!toutes.length){ showToast('Aucune commande à exporter'); return; }
+  const toutes = cmdRapportListe();
+  if(!toutes.length){ showToast(cmdEnGadh() ? 'Aucune commande en cours à exporter' : 'Aucune commande à exporter'); return; }
   if(!cmdRapportSel){
     const enCours = toutes.filter(([id]) => !cmdEstCloturee(id)).map(([id]) => id);
     cmdRapportSel = new Set(enCours.length ? enCours : toutes.map(([id]) => id));
@@ -1583,9 +1595,10 @@ window.cmdOuvrirRapports = () => {
 function cmdAfficherRapports(){
   const zone = document.getElementById('cmd-rapport-zone');
   if(!zone || !cmdRapportSel) return;
-  const toutes = listCmdCommandes();
+  const toutes = cmdRapportListe();
   const rows = toutes.map(([id,c]) => ({id, c, s: cmdSynthese(id)}));
   const nbEnCours = rows.filter(r => !cmdEstCloturee(r.id, r.s)).length;
+  const gadh = cmdEnGadh();
   const sel = cmdRapportSel;
   zone.innerHTML = `
     <div class="card" style="background:var(--surface-2);margin-bottom:10px;">
@@ -1593,9 +1606,9 @@ function cmdAfficherRapports(){
         <button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;" onclick="cmdFermerRapports()">Fermer</button></div>
       <p style="font-size:11px;color:var(--ink-soft);margin:0 0 8px;">Synthèse (une ligne par commande) + détail par référence et taille : commandé, cible coupe, coupé, retour GADH, confection, contrôle, emballé, expédié, rebut, reste à expédier.</p>
       <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap;">
-        <button class="btn btn-ghost" style="flex:1;padding:6px 4px;font-size:11px;" onclick="cmdRapportChoix('toutes')">Toutes (${rows.length})</button>
-        <button class="btn btn-ghost" style="flex:1;padding:6px 4px;font-size:11px;" onclick="cmdRapportChoix('encours')">En cours (${nbEnCours})</button>
-        <button class="btn btn-ghost" style="flex:1;padding:6px 4px;font-size:11px;" onclick="cmdRapportChoix('archivees')">Archivées (${rows.length-nbEnCours})</button>
+        ${gadh ? '' : `<button class="btn btn-ghost" style="flex:1;padding:6px 4px;font-size:11px;" onclick="cmdRapportChoix('toutes')">Toutes (${rows.length})</button>`}
+        <button class="btn btn-ghost" style="flex:1;padding:6px 4px;font-size:11px;" onclick="cmdRapportChoix('encours')">${gadh ? 'Toutes les commandes en cours' : 'En cours'} (${nbEnCours})</button>
+        ${gadh ? '' : `<button class="btn btn-ghost" style="flex:1;padding:6px 4px;font-size:11px;" onclick="cmdRapportChoix('archivees')">Archivées (${rows.length-nbEnCours})</button>`}
         <button class="btn btn-ghost" style="flex:1;padding:6px 4px;font-size:11px;" onclick="cmdRapportChoix('aucune')">Aucune</button>
       </div>
       <div style="max-height:260px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;background:var(--surface);">
@@ -1620,7 +1633,8 @@ window.cmdRapportCocher = (id, ok) => {
   if(c) c.textContent = `${cmdRapportSel.size} commande(s) sélectionnée(s)`;
 };
 window.cmdRapportChoix = (mode) => {
-  const toutes = listCmdCommandes();
+  const toutes = cmdRapportListe();
+  if(cmdEnGadh() && mode!=='aucune') mode = 'encours';
   cmdRapportSel = new Set(mode==='aucune' ? [] : toutes.filter(([id]) => mode==='toutes' || (mode==='encours' ? !cmdEstCloturee(id) : cmdEstCloturee(id))).map(([id]) => id));
   cmdAfficherRapports();
 };
