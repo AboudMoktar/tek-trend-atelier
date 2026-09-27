@@ -462,12 +462,28 @@ window.cmdOuvrirExpedition = (cmdId) => {
   const now = new Date();
   cmdExpForm = {
     cmdId, date: getTodayISO(), heure: String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0'),
-    qty:{}, cartons:'', transporteur:'', bl:'', observation:''
+    qty:{}, cartons:'', transporteur:'', bl:'', observation:'', poidsNet:'', poidsBrut:''
   };
   cmdGo('expedition', cmdId);
 };
 window.cmdExpSet = (field, val) => { if(cmdExpForm) cmdExpForm[field] = val; };
-window.cmdExpQty = (rk, t, v) => { if(!cmdExpForm.qty[rk]) cmdExpForm.qty[rk] = {}; cmdExpForm.qty[rk][t] = v; };
+window.cmdExpQty = (rk, t, v) => { if(!cmdExpForm.qty[rk]) cmdExpForm.qty[rk] = {}; cmdExpForm.qty[rk][t] = v; cmdExpMajCartons(); };
+function cmdExpLignesForm(f){
+  const lignes = {};
+  Object.entries(f.qty||{}).forEach(([rk,ts]) => Object.entries(ts||{}).forEach(([t,v]) => {
+    const q = parseInt(v)||0; if(q>0){ if(!lignes[rk]) lignes[rk] = {}; lignes[rk][t] = q; }
+  }));
+  return lignes;
+}
+function cmdExpMajCartons(){
+  const el = document.getElementById('exp-cartons-auto');
+  if(!el || !cmdExpForm) return;
+  const cmd = getCmdCommandes()[cmdExpForm.cmdId];
+  const colis = cmdRepartirCartons(cmd && cmd.destination, cmdExpLignesForm(cmdExpForm));
+  el.textContent = colis.length;
+  const p = document.getElementById('exp-poids-auto');
+  if(p) p.textContent = cmdPoidsBrutTotal(colis);
+}
 window.cmdExpToutDispo = () => {
   const cmd = getCmdCommandes()[cmdExpForm.cmdId];
   const cum = cmdCumuls(cmdExpForm.cmdId);
@@ -507,7 +523,16 @@ window.cmdExpEnregistrer = () => {
   saveCmdSaisies(f.cmdId, saisies);
   // Enregistrement de l'événement d'expédition (métadonnées transport)
   const exps = getCmdExpeditions(f.cmdId);
-  exps.push({ts:Date.now(), date:f.date, heure:f.heure||'', quantite:total, cartons:f.cartons||'', transporteur:f.transporteur||'', bl:f.bl||'', observation:f.observation||'', user:currentUser.nom});
+  const lignesExp = cmdExpLignesForm(f);
+  const deja = {};
+  Object.entries(cmd.lignes||{}).forEach(([rk,l]) => Object.keys(l.tailles||{}).forEach(t => { const x = cmdCell(cum, rk, t).expedition; if(x>0){ if(!deja[rk]) deja[rk] = {}; deja[rk][t] = x; } }));
+  const colis = cmdRepartirCartons(cmd.destination, lignesExp, {cmdId: f.cmdId, deja});
+  if(colis.length){ // ALLOGA : cartons et poids brut calculés (60 pcs max, 1 taille par carton, 12 kg le carton plein)
+    f.cartons = String(colis.length);
+    f.poidsBrut = String(cmdPoidsBrutTotal(colis));
+  }
+  exps.push({ts:Date.now(), date:f.date, heure:f.heure||'', quantite:total, cartons:f.cartons||'', transporteur:f.transporteur||'', bl:f.bl||'', observation:f.observation||'', user:currentUser.nom,
+    destination: cmd.destination, lignes: lignesExp, colis, poidsNet: f.poidsNet||'', poidsBrut: f.poidsBrut||''});
   saveCmdExpeditions(f.cmdId, exps);
   let msg = `${total} pièce(s) expédiée(s) le ${f.date.split('-').reverse().join('/')}`;
   if(f.cartons) msg += ` — ${f.cartons} carton(s)`;
@@ -989,7 +1014,14 @@ function renderCmdFiche(container, canEdit){
           <b>${(e.date||'').split('-').reverse().join('/')} ${e.heure||''}</b> — ${e.quantite} pièce(s)
           ${e.cartons?` · ${esc(e.cartons)} carton(s)`:''}${e.transporteur?` · ${esc(e.transporteur)}`:''}${e.bl?` · BL ${esc(e.bl)}`:''}
           ${e.observation?`<div style="color:var(--ink-soft);">${esc(e.observation)}</div>`:''}
+          ${cmdDocsExpDispo(id, e) ? `<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;">
+            <button class="btn btn-ghost" style="flex:1;min-width:80px;padding:6px 4px;font-size:11px;" onclick="cmdImprimerDocExp('${id}', ${e.ts}, 'cartons')">📦 Cartons</button>
+            <button class="btn btn-ghost" style="flex:1;min-width:80px;padding:6px 4px;font-size:11px;" onclick="cmdImprimerDocExp('${id}', ${e.ts}, 'colisage')">📋 Colisage</button>
+            <button class="btn btn-ghost" style="flex:1;min-width:80px;padding:6px 4px;font-size:11px;" onclick="cmdImprimerDocExp('${id}', ${e.ts}, 'total')">🧾 Liste total</button>
+          </div>` : ''}
         </div>`).join('')}
+      ${expeditions.some(e => cmdDocsExpDispo(id, e)) ? `<div style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:11px;color:var(--ink-soft);">Étiquettes cartons par page :
+        <select onchange="cmdSetEtqParPage(this.value)" style="padding:4px 6px;font-size:11px;width:auto;">${[1,2,4].map(n => `<option value="${n}" ${cmdEtqParPage===n?'selected':''}>${n}</option>`).join('')}</select></div>` : ''}
     </div>` : ''}
 
     <div class="flex-header" style="margin-top:10px;"><h3 style="margin:0;font-size:14px;">Historique</h3></div>
@@ -1067,8 +1099,18 @@ function renderCmdExpeditionForm(container, canEdit){
         <div class="field" style="flex:1;"><label>Heure</label><input type="time" value="${f.heure}" onchange="cmdExpSet('heure',this.value)"></div>
       </div>
       <div style="display:flex;gap:8px;">
-        <div class="field" style="flex:1;"><label>Nombre de cartons</label><input type="number" inputmode="numeric" min="0" value="${esc(f.cartons)}" oninput="cmdExpSet('cartons',this.value)"></div>
+        ${CMD_COLISAGE[cmd.destination] ? `<div class="field" style="flex:1;"><label>Nombre de cartons</label>
+          <div style="padding:9px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);font-weight:800;"><span id="exp-cartons-auto">${cmdRepartirCartons(cmd.destination, cmdExpLignesForm(f)).length}</span></div>
+          <div style="font-size:9.5px;color:var(--ink-faint);margin-top:2px;">Calculé : ${CMD_COLISAGE[cmd.destination].parCarton} pcs max, une seule taille par carton</div></div>`
+        : `<div class="field" style="flex:1;"><label>Nombre de cartons</label><input type="number" inputmode="numeric" min="0" value="${esc(f.cartons)}" oninput="cmdExpSet('cartons',this.value)"></div>`}
         <div class="field" style="flex:1;"><label>Transporteur</label><input value="${esc(f.transporteur)}" oninput="cmdExpSet('transporteur',this.value)"></div>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <div class="field" style="flex:1;"><label>Poids net (kg)</label><input type="number" inputmode="decimal" min="0" step="0.1" value="${esc(f.poidsNet)}" oninput="cmdExpSet('poidsNet',this.value)"></div>
+        ${CMD_COLISAGE[cmd.destination] ? `<div class="field" style="flex:1;"><label>Poids brut (kg)</label>
+          <div style="padding:9px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);font-weight:800;"><span id="exp-poids-auto">${cmdPoidsBrutTotal(cmdRepartirCartons(cmd.destination, cmdExpLignesForm(f)))}</span></div>
+          <div style="font-size:9.5px;color:var(--ink-faint);margin-top:2px;">Calculé : ${CMD_COLISAGE[cmd.destination].poidsCartonPlein} kg le carton plein, au prorata sinon</div></div>`
+        : `<div class="field" style="flex:1;"><label>Poids brut (kg)</label><input type="number" inputmode="decimal" min="0" step="0.1" value="${esc(f.poidsBrut)}" oninput="cmdExpSet('poidsBrut',this.value)"></div>`}
       </div>
       <div class="field"><label>N° Bon de Livraison (BL)</label><input value="${esc(f.bl)}" oninput="cmdExpSet('bl',this.value)"></div>
       <div class="field"><label>Observation</label><input value="${esc(f.observation)}" oninput="cmdExpSet('observation',this.value)"></div>
@@ -1639,3 +1681,248 @@ window.cmdRapportChoix = (mode) => {
   cmdAfficherRapports();
 };
 window.cmdFermerRapports = () => { cmdRapportSel = null; const z = document.getElementById('cmd-rapport-zone'); if(z) z.innerHTML = ''; };
+
+// ============================================================
+// DOCUMENTS D'EXPORT : LISTE DES CARTONS, LISTE DE COLISAGE, LISTE TOTAL
+// ============================================================
+// Règle ALLOGA (confirmée par l'utilisateur) : 60 pièces maximum par carton et
+// une seule taille par carton (le reste d'une taille part dans son propre
+// carton). NEOLYS sera défini plus tard (cartons mixtes) : pas de règle ici.
+// Poids brut : un carton plein (60 pièces) pèse 12 kg ; un carton incomplet au prorata.
+const CMD_COLISAGE = { ALLOGA: {parCarton:60, poidsCartonPlein:12} };
+// Logo PERCKO (fichier fourni par l'utilisateur), intégré pour fonctionner hors connexion.
+const CMD_LOGO_PERCKO = 'data:image/jpeg;base64,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';
+const CMD_EXPEDITEUR = {nom:'TEK-TREND', lignes:['RUE SAKIET SIDI YOUSSEF', 'SAHLINE', '5012 MONASTIR'], pays:'TUNISIE'};
+const CMD_DESTINATAIRES = {
+  ALLOGA: {nom:'ALLOGA À ARRAS', lignes:['970 ALLÉE DE BELGIQUE -', 'ZAC ARTOIPÔLE', '62128 WANCOURT', 'France'], tel:'03 21 60 97 00'},
+  NEOLYS: {nom:'PERCKO CHEZ NEOLYS', lignes:["Parc d'activités des Paris sud-jaune", 'Garonor 607/610', "Boulevard d'Italie", '77127 Lieu saint', 'France'], tel:''}
+};
+// Remplissage « premier entré, premier servi » : les pièces emballées en premier
+// partent en premier. On rejoue l'emballage jour par jour ; pour chaque
+// référence/taille un carton reste ouvert jusqu'à 60 pièces, puis un nouveau est
+// ouvert. Les cartons sont numérotés dans l'ordre où ils ont été ouverts.
+// ctx = {cmdId, deja:{rk:{t:q}}} : deja = pièces déjà expédiées avant cet envoi
+// (elles consomment les emballages les plus anciens). Sans ctx : ordre modèle/taille.
+function cmdEvenementsEmballage(cmdId){
+  const saisies = getCmdSaisies(cmdId), ev = [];
+  Object.keys(saisies).sort().forEach(date => {
+    const emb = (saisies[date]||{}).emballage || {};
+    cmdRapportOrdreRefs(Object.keys(emb)).forEach(rk => CMD_TAILLES.forEach(t => {
+      const q = parseInt((emb[rk]||{})[t])||0;
+      if(q>0) ev.push({date, rk, t, q});
+    }));
+  });
+  return ev;
+}
+function cmdPoidsCarton(regle, q){ return Math.round((regle.poidsCartonPlein||0) * q / regle.parCarton * 10) / 10; }
+function cmdRepartirCartons(destination, lignes, ctx){
+  const regle = CMD_COLISAGE[destination];
+  if(!regle) return [];
+  const cle = (rk,t) => rk+'|'+t;
+  const aPrendre = {};
+  Object.entries(lignes||{}).forEach(([rk,ts]) => Object.entries(ts||{}).forEach(([t,v]) => { const q = parseInt(v)||0; if(q>0) aPrendre[cle(rk,t)] = q; }));
+  const seq = [];
+  if(ctx && ctx.cmdId){
+    const aSauter = {};
+    Object.entries(ctx.deja||{}).forEach(([rk,ts]) => Object.entries(ts||{}).forEach(([t,v]) => { aSauter[cle(rk,t)] = parseInt(v)||0; }));
+    cmdEvenementsEmballage(ctx.cmdId).forEach(e => {
+      const k = cle(e.rk, e.t);
+      let q = e.q;
+      const saut = Math.min(q, aSauter[k]||0); q -= saut; aSauter[k] = (aSauter[k]||0) - saut;
+      const pris = Math.min(q, aPrendre[k]||0);
+      if(pris>0){ seq.push({rk:e.rk, t:e.t, q:pris}); aPrendre[k] -= pris; }
+    });
+  }
+  // Reste (pas de contexte, ou emballage insuffisant) : ordre modèle puis taille.
+  cmdRapportOrdreRefs(Object.keys(lignes||{})).forEach(rk => CMD_TAILLES.forEach(t => {
+    const k = cle(rk,t);
+    if(aPrendre[k]>0){ seq.push({rk, t, q:aPrendre[k]}); aPrendre[k] = 0; }
+  }));
+  const colis = [], ouvert = {};
+  seq.forEach(({rk, t, q}) => {
+    const k = cle(rk,t);
+    while(q > 0){
+      let c = ouvert[k];
+      if(!c || c.q >= regle.parCarton){ c = {n: colis.length+1, rk, t, q:0}; colis.push(c); ouvert[k] = c; }
+      const n = Math.min(regle.parCarton - c.q, q);
+      c.q += n; q -= n;
+    }
+  });
+  colis.forEach(c => { c.poids = cmdPoidsCarton(regle, c.q); });
+  return colis;
+}
+function cmdPoidsBrutTotal(colis){ return Math.round(colis.reduce((s,c) => s + (c.poids||0), 0) * 10) / 10; }
+// Composition d'une expédition. Les expéditions enregistrées avant cette version
+// ne mémorisaient pas leurs lignes : on les retrouve dans la saisie du jour quand
+// c'est la seule expédition de cette date (sinon impossible de les séparer).
+function cmdExpLignes(cmdId, e){
+  if(e.lignes && Object.keys(e.lignes).length) return e.lignes;
+  const memeJour = getCmdExpeditions(cmdId).filter(x => x.date===e.date);
+  if(memeJour.length!==1) return null;
+  const jour = getCmdSaisies(cmdId)[e.date];
+  return (jour && jour.expedition) ? jour.expedition : null;
+}
+function cmdExpColis(cmdId, e){
+  const cmd = getCmdCommandes()[cmdId];
+  const regle = cmd && CMD_COLISAGE[cmd.destination];
+  if(e.colis && e.colis.length) return e.colis.map(c => ({...c, poids: regle ? cmdPoidsCarton(regle, c.q) : c.poids}));
+  const deja = {};
+  getCmdExpeditions(cmdId).filter(x => x.ts < e.ts).forEach(x => {
+    const l = cmdExpLignes(cmdId, x) || {};
+    Object.entries(l).forEach(([rk,ts]) => Object.entries(ts).forEach(([t,q]) => { if(!deja[rk]) deja[rk] = {}; deja[rk][t] = (deja[rk][t]||0) + (parseInt(q)||0); }));
+  });
+  return cmdRepartirCartons(cmd && cmd.destination, cmdExpLignes(cmdId, e) || {}, {cmdId, deja});
+}
+function cmdDocsExpDispo(cmdId, e){
+  const cmd = getCmdCommandes()[cmdId];
+  return !!(cmd && CMD_COLISAGE[cmd.destination] && cmdExpLignes(cmdId, e));
+}
+// « PHARMA_FEMME COL V NOIR » → « Pharma Femme Col V Noir »
+function cmdNomModeleDoc(rk){
+  return cmdRapportLibelle(rk).replace(/_/g,' ').toLowerCase().replace(/(^|\s)(\S)/g, (m,a,b) => a + b.toUpperCase());
+}
+function cmdTaillesDoc(cmd, rk){
+  if(cmd.destination==='ALLOGA' && CMD_ALLOGA_TAILLES[rk]) return CMD_ALLOGA_TAILLES[rk];
+  return CMD_TAILLES.filter(t => cmd.lignes && cmd.lignes[rk] && cmd.lignes[rk].tailles && cmd.lignes[rk].tailles[t]);
+}
+let cmdEtqParPage = 4;
+window.cmdSetEtqParPage = (n) => { cmdEtqParPage = parseInt(n)||4; };
+
+function cmdDestinataireHtml(dest){
+  const d = CMD_DESTINATAIRES[dest] || {nom:dest, lignes:[], tel:''};
+  return `Destinataire:<br><b>${esc(d.nom)}</b>${d.lignes.map(l => `<br><b>${esc(l)}</b>`).join('')}${d.tel ? `<br><b>TÉLÉPHONE :</b> ${esc(d.tel)}` : ''}`;
+}
+function cmdDocCartonsHtml(cmd, e, colis){
+  const parPage = [1,2,4].includes(cmdEtqParPage) ? cmdEtqParPage : 4;
+  const etiquette = (c) => `
+    <div class="etq">
+      <div class="etq-haut">
+        <div class="etq-logo"><img src="${CMD_LOGO_PERCKO}" alt="PERCKO"></div>
+        <div class="etq-dest">${cmdDestinataireHtml(cmd.destination)}</div>
+      </div>
+      <div class="etq-num">CARTON N°${c.n}</div>
+      <table class="etq-tab"><thead><tr><th style="width:18%">Taille</th><th>Modèles</th><th style="width:20%">Quantité</th></tr></thead>
+        <tbody><tr><td>T${esc(c.t)}</td><td>${esc(cmdNomModeleDoc(c.rk))}</td><td>${c.q}</td></tr></tbody></table>
+    </div>`;
+  const pages = [];
+  for(let i=0; i<colis.length; i+=parPage) pages.push(colis.slice(i, i+parPage));
+  return `<div class="etq-pages p${parPage}">${pages.map(pg => `<div class="etq-page">${pg.map(etiquette).join('')}</div>`).join('')}</div>`;
+}
+function cmdDocColisageHtml(cmd, e, colis){
+  const tailles = CMD_TAILLES.filter(t => colis.some(c => c.t===t));
+  const exp = CMD_EXPEDITEUR;
+  const totT = {}; tailles.forEach(t => { totT[t] = colis.filter(c=>c.t===t).reduce((s,c)=>s+c.q,0); });
+  const total = colis.reduce((s,c)=>s+c.q,0);
+  const regle = CMD_COLISAGE[cmd.destination];
+  const brut = regle ? cmdPoidsBrutTotal(colis) : (parseFloat(e.poidsBrut)||0);
+  return `
+    <div class="col-entete">
+      <div>Expéditeur : <b>${esc(exp.nom)}</b>${exp.lignes.map(l=>`<br>${esc(l)}`).join('')} <b>${esc(exp.pays)}</b><br>Date d'export : le ${cmdRapportDateFR(e.date)}</div>
+      <div>${cmdDestinataireHtml(cmd.destination)}</div>
+    </div>
+    <div class="col-info">Commande ${esc(cmd.numero)}${e.bl?` · BL ${esc(e.bl)}`:''}${e.transporteur?` · ${esc(e.transporteur)}`:''}</div>
+    <table class="col-tab">
+      <thead><tr><th>N° colis</th><th>Commande</th><th>Référence</th>${tailles.map(t=>`<th>${t}</th>`).join('')}<th>Total</th>${regle?'<th>Poids brut (kg)</th>':''}</tr></thead>
+      <tbody>${colis.map(c => `<tr><td>${c.n}</td><td>${esc(cmd.client||'PERCKO')}</td><td class="gauche">${esc(cmdNomModeleDoc(c.rk))}</td>${tailles.map(t=>`<td>${c.t===t?c.q:''}</td>`).join('')}<td><b>${c.q}</b></td>${regle?`<td>${c.poids}</td>`:''}</tr>`).join('')}</tbody>
+      <tfoot><tr><td colspan="3" class="gauche">Total t-shirt pour export</td>${tailles.map(t=>`<td>${totT[t]}</td>`).join('')}<td>${total}</td>${regle?`<td>${brut}</td>`:''}</tr></tfoot>
+    </table>
+    <table class="col-pied">
+      <tr><td>Nombre de colis</td><td>${colis.length}</td></tr>
+      <tr><td>Poids net</td><td>${e.poidsNet ? esc(String(e.poidsNet))+' kg' : ''}</td></tr>
+      <tr><td>Poids brut</td><td>${brut ? brut+' kg' : ''}</td></tr>
+    </table>`;
+}
+function cmdDocTotalHtml(cmd, e, lignes){
+  const refs = cmdRapportOrdreRefs(Object.keys(cmd.lignes||{}).concat(Object.keys(lignes).filter(rk => !(cmd.lignes||{})[rk])));
+  let total = 0;
+  const corps = refs.map(rk => {
+    const nom = cmdNomModeleDoc(rk).toUpperCase();
+    return `<tr class="tot-grp"><td>${esc(nom)}</td><td></td></tr>` + cmdTaillesDoc(cmd, rk).map(t => {
+      const q = parseInt((lignes[rk]||{})[t])||0; total += q;
+      return `<tr><td>${esc(nom)} ${t}</td><td>${q}</td></tr>`;
+    }).join('');
+  }).join('');
+  return `
+    <div class="tot-info">Commande ${esc(cmd.numero)} · export du ${cmdRapportDateFR(e.date)} · ${esc((CMD_DESTINATAIRES[cmd.destination]||{}).nom||cmd.destination)}</div>
+    <table class="tot-tab">
+      <thead><tr><th>MODELE</th><th>QUANTITE</th></tr></thead>
+      <tbody>${corps}</tbody>
+      <tfoot><tr><td>TOTAL</td><td>${total}</td></tr></tfoot>
+    </table>`;
+}
+const CMD_DOC_CSS = `
+  #cmd-doc-zone { display:none; font-family: Arial, Helvetica, sans-serif; color:#000; }
+  @media print {
+    body > *:not(#cmd-doc-zone) { display:none !important; }
+    html, body { background:#fff !important; padding:0 !important; margin:0 !important; }
+    #cmd-doc-zone { display:block; }
+  }
+  #cmd-doc-zone * { -webkit-print-color-adjust: exact; print-color-adjust: exact; box-sizing:border-box; text-transform:none; letter-spacing:0; }
+  #cmd-doc-zone table { border-collapse:collapse; }
+  #cmd-doc-zone th, #cmd-doc-zone td { border:1px solid #000; font-size:inherit !important; color:#000 !important; background:transparent; line-height:1.25; }
+  #cmd-doc-zone th { font-weight:bold !important; }
+  /* Étiquettes cartons */
+  #cmd-doc-zone .etq-page { display:grid; gap:6mm; break-after:page; page-break-after:always; }
+  #cmd-doc-zone .etq-page:last-child { break-after:auto; page-break-after:auto; }
+  #cmd-doc-zone .p1 .etq-page { grid-template-columns:1fr; }
+  #cmd-doc-zone .p2 .etq-page { grid-template-columns:1fr; grid-template-rows:1fr 1fr; height:270mm; }
+  #cmd-doc-zone .p4 .etq-page { grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; height:270mm; }
+  #cmd-doc-zone .etq { border:1px dashed #999; padding:4mm; font-family: Georgia, 'Times New Roman', serif; }
+  #cmd-doc-zone .etq-haut { display:flex; gap:4mm; align-items:flex-start; }
+  #cmd-doc-zone .etq-logo { flex:0 0 38%; }
+  #cmd-doc-zone .etq-logo img { display:block; height:auto; }
+  #cmd-doc-zone .p4 .etq-logo img { width:24mm; } #cmd-doc-zone .p2 .etq-logo img { width:34mm; } #cmd-doc-zone .p1 .etq-logo img { width:50mm; }
+  #cmd-doc-zone .etq-dest { flex:1; line-height:1.3; }
+  #cmd-doc-zone .etq-num { border:1px solid #000; text-align:center; font-family: Arial, Helvetica, sans-serif; font-weight:bold; margin-top:3mm; padding:1mm; }
+  #cmd-doc-zone .etq-tab { width:100%; font-family: Arial, Helvetica, sans-serif; }
+  #cmd-doc-zone .etq-tab th { font-weight:bold; }
+  #cmd-doc-zone .etq-tab th, #cmd-doc-zone .etq-tab td { text-align:center; padding:1.5mm; border-top:none; }
+  #cmd-doc-zone .p4 .etq-logo { font-size:20pt; } #cmd-doc-zone .p4 .etq-dest { font-size:8.5pt; } #cmd-doc-zone .p4 .etq-num { font-size:13pt; } #cmd-doc-zone .p4 .etq-tab { font-size:9.5pt; }
+  #cmd-doc-zone .p2 .etq-logo { font-size:30pt; } #cmd-doc-zone .p2 .etq-dest { font-size:11pt; } #cmd-doc-zone .p2 .etq-num { font-size:18pt; } #cmd-doc-zone .p2 .etq-tab { font-size:12pt; }
+  #cmd-doc-zone .p1 .etq-logo { font-size:44pt; } #cmd-doc-zone .p1 .etq-dest { font-size:15pt; } #cmd-doc-zone .p1 .etq-num { font-size:26pt; } #cmd-doc-zone .p1 .etq-tab { font-size:16pt; }
+  /* Liste de colisage */
+  #cmd-doc-zone .col-entete { display:flex; justify-content:space-between; gap:10mm; font-family: Georgia, 'Times New Roman', serif; font-size:10pt; line-height:1.3; }
+  #cmd-doc-zone .col-info { font-size:8.5pt; color:#333; margin:3mm 0 2mm; }
+  #cmd-doc-zone .col-tab { width:100%; font-size:8.5pt; }
+  #cmd-doc-zone .col-tab th { background:#eee !important; padding:1.5mm 1mm; }
+  #cmd-doc-zone .col-tab td { text-align:center; padding:1mm; }
+  #cmd-doc-zone .col-tab tr { break-inside:avoid; page-break-inside:avoid; }
+  #cmd-doc-zone .col-tab thead { display:table-header-group; }
+  #cmd-doc-zone .col-tab tfoot td { font-weight:bold; background:#eee; }
+  #cmd-doc-zone .gauche { text-align:left !important; }
+  #cmd-doc-zone .col-pied { margin-top:4mm; font-size:9pt; width:90mm; }
+  #cmd-doc-zone .col-pied td { padding:1mm 2mm; } #cmd-doc-zone .col-pied td:first-child { width:55%; }
+  /* Liste total */
+  #cmd-doc-zone .tot-info { font-size:9pt; color:#333; margin-bottom:3mm; }
+  #cmd-doc-zone .tot-tab { width:150mm; font-size:10pt; }
+  #cmd-doc-zone .tot-tab th { font-weight:normal !important; padding:1.5mm; }
+  #cmd-doc-zone .tot-tab td { padding:1mm 1.5mm; }
+  #cmd-doc-zone .tot-tab td:last-child, #cmd-doc-zone .tot-tab th:last-child { width:35mm; }
+  #cmd-doc-zone .tot-tab .tot-grp td { font-weight:bold; font-size:12.5pt !important; }
+  #cmd-doc-zone .tot-tab tfoot td { font-weight:bold; }
+  #cmd-doc-zone .tot-tab tr { break-inside:avoid; page-break-inside:avoid; }
+`;
+window.cmdImprimerDocExp = (cmdId, ts, type) => {
+  const cmd = getCmdCommandes()[cmdId];
+  const e = getCmdExpeditions(cmdId).find(x => x.ts===ts);
+  if(!cmd || !e){ showToast('Expédition introuvable'); return; }
+  const lignes = cmdExpLignes(cmdId, e);
+  if(!lignes){ showToast("Composition de cette expédition inconnue (enregistrée avant cette version)"); return; }
+  const colis = cmdExpColis(cmdId, e);
+  let html, format, nom;
+  if(type==='cartons'){ html = cmdDocCartonsHtml(cmd, e, colis); format = 'A4 portrait'; nom = 'Cartons'; }
+  else if(type==='colisage'){ html = cmdDocColisageHtml(cmd, e, colis); format = 'A4 landscape'; nom = 'Colisage'; }
+  else { html = cmdDocTotalHtml(cmd, e, lignes); format = 'A4 portrait'; nom = 'Liste_total'; }
+  let zone = document.getElementById('cmd-doc-zone');
+  if(zone) zone.remove();
+  zone = document.createElement('div');
+  zone.id = 'cmd-doc-zone';
+  zone.dataset.type = type;
+  zone.innerHTML = `<style>@page { size: ${format}; margin: ${type==='cartons' ? '8mm' : '10mm'}; }${CMD_DOC_CSS}</style>${html}`;
+  document.body.appendChild(zone);
+  const titreAvant = document.title;
+  const nettoyer = () => { const z = document.getElementById('cmd-doc-zone'); if(z) z.remove(); document.title = titreAvant; window.removeEventListener('afterprint', nettoyer); };
+  window.addEventListener('afterprint', nettoyer);
+  document.title = `${nom}_${cmd.numero}_${e.date}`.replace(/[^\w.\-]+/g,'_');
+  setTimeout(() => { window.print(); }, 150);
+};
