@@ -733,6 +733,20 @@ function getOpNameForDate(opIdx, dateISO){
 function getOpsForDate(dateISO){
   return OP_KEYS.map((k,i) => getOpNameForDate(i, dateISO) || '(poste vacant)');
 }
+// Jours ayant une fiche de production enregistrée (clés prod_AAAA-MM-JJ), triés.
+function listProdDates(){
+  const dates = new Set();
+  const re = new RegExp('^' + CACHE_PREFIX + 'prod_(\\d{4}-\\d{2}-\\d{2})$');
+  Object.keys(memoryCache).forEach(k => { const m = k.match(re); if(m) dates.add(m[1]); });
+  try { for(let i=0; i<window.localStorage.length; i++){ const m = (window.localStorage.key(i)||'').match(re); if(m) dates.add(m[1]); } } catch(e) {}
+  return [...dates].sort();
+}
+// Ce poste a-t-il quelque chose de saisi (pièces ou mention ABS...) ce jour-là ?
+function opHasEntryOnDate(opKey, dateISO){
+  const d = getJSON('prod_'+dateISO, null);
+  if(!d || !d.hours) return false;
+  return Object.values(d.hours).some(h => h && h[opKey]!==undefined && h[opKey]!==null && String(h[opKey]).trim()!=='');
+}
 // Le poste opIdx est-il actif (occupé) à cette date ?
 function isOpActiveOnDate(opIdx, dateISO){ return getOpNameForDate(opIdx, dateISO) !== null; }
 function getOps() { return getOpsForDate(getTodayISO()); }
@@ -2007,12 +2021,17 @@ function renderParams(container){
             <div>
               <div style="font-size:10.5px;color:var(--ink-faint);font-weight:700;">POSTE ${i+1}</div>
               <div style="font-weight:800;font-size:15px;">${current && current.actif ? esc(current.nom) : '(poste vacant)'}</div>
-              ${current ? `<div style="font-size:11px;color:var(--ink-soft);">Depuis le ${current.dateDebut.split('-').reverse().join('/')}</div>` : ''}
+              ${current ? `<div style="font-size:11px;color:var(--ink-soft);">Depuis le ${current.dateDebut.split('-').reverse().join('/')} <a href="#" onclick="toggleOpHistoryPanel(${i}, true); return false;" style="color:var(--accent, #2563EB);font-weight:700;text-decoration:none;white-space:nowrap;">✎ modifier la date</a></div>` : ''}
             </div>
             <button class="btn btn-ghost" style="padding:6px 10px;font-size:11.5px;" onclick="toggleOpHistoryPanel(${i})">Historique (${hist.length})</button>
           </div>
           <div id="op-hist-panel-${i}" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--border-soft);">
-            ${hist.map(e => `<div style="font-size:11.5px;color:var(--ink-soft);padding:3px 0;">${e.dateDebut.split('-').reverse().join('/')} → ${e.actif ? esc(e.nom) : 'poste rendu inactif'}</div>`).join('')}
+            <div style="font-size:10.5px;color:var(--ink-faint);margin-bottom:4px;">Date de début de chaque période — modifiable :</div>
+            ${hist.map((e, n) => `<div style="display:flex;align-items:center;gap:6px;padding:4px 0;flex-wrap:wrap;">
+              <input type="date" id="op-ep-date-${i}-${n}" value="${e.dateDebut}" style="max-width:150px;padding:5px 6px;font-size:12px;">
+              <span style="flex:1;min-width:60px;font-size:11.5px;color:var(--ink-soft);">→ ${e.actif ? esc(e.nom) : 'poste rendu inactif'}</span>
+              <button class="btn btn-ghost" style="padding:5px 9px;font-size:11px;" onclick="changeOpEpisodeDate(${i}, '${e.dateDebut}', document.getElementById('op-ep-date-${i}-${n}').value)">Modifier</button>
+            </div>`).join('')}
           </div>
           <div style="display:flex;gap:8px;margin-top:10px;">
             <input id="op-new-name-${i}" placeholder="Nom de la remplaçante" style="flex:1;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;">
@@ -2030,9 +2049,44 @@ function renderParams(container){
     </div>
   `;
 
-  window.toggleOpHistoryPanel = (i) => {
+  window.toggleOpHistoryPanel = (i, forceOpen) => {
     const el = document.getElementById('op-hist-panel-'+i);
-    if(el) el.style.display = (el.style.display==='none' || !el.style.display) ? 'block' : 'none';
+    if(el) el.style.display = (forceOpen || el.style.display==='none' || !el.style.display) ? 'block' : 'none';
+  };
+  // Modifier la date de début d'une période (ex : remplacer le 01/01/2000 mis par
+  // défaut par la vraie date d'arrivée). Garde-fous : l'ordre des périodes est
+  // conservé ; on ne peut pas rendre « vacant » un jour où ce poste a déjà des
+  // saisies ; et tout changement qui réattribue des jours déjà saisis à une autre
+  // opératrice demande confirmation.
+  window.changeOpEpisodeDate = (i, oldDate, newDate) => {
+    const fr = (d) => d.split('-').reverse().join('/');
+    if(!newDate){ showToast('Indiquez une date'); return; }
+    if(newDate === oldDate){ showToast('La date est déjà celle-ci'); return; }
+    const hist = getOpsHistory();
+    const k = OP_KEYS[i];
+    const eps = (hist[k]||[]).slice().sort((a,b) => a.dateDebut.localeCompare(b.dateDebut));
+    const idx = eps.findIndex(e => e.dateDebut === oldDate);
+    if(idx < 0){ showToast('Période introuvable'); return; }
+    const prev = eps[idx-1], next = eps[idx+1], ep = eps[idx];
+    if(prev && newDate <= prev.dateDebut){ showToast('La date doit être postérieure au ' + fr(prev.dateDebut) + ' (période précédente).'); return; }
+    if(next && newDate >= next.dateDebut){ showToast('La date doit être antérieure au ' + fr(next.dateDebut) + ' (période suivante).'); return; }
+    const qui = (e) => e ? (e.actif ? e.nom : 'poste inactif') : 'poste vacant';
+    // Jours déjà enregistrés dont l'occupante change : entre l'ancienne et la nouvelle date.
+    const debut = newDate < oldDate ? newDate : oldDate, fin = newDate < oldDate ? oldDate : newDate;
+    const jours = listProdDates().filter(d => d >= debut && d < fin);
+    const avance = newDate > oldDate; // la période commence plus tard → ces jours reviennent à la période précédente
+    if(avance && (!prev || !prev.actif)){
+      const bloquants = jours.filter(d => opHasEntryOnDate(k, d));
+      if(bloquants.length){ showToast(`Impossible : le Poste ${i+1} a déjà des saisies dès le ${fr(bloquants[0])}. La date de début ne peut pas être après ce jour.`); return; }
+    }
+    if(jours.length){
+      const de = avance ? qui(ep) : qui(prev), vers = avance ? qui(prev) : qui(ep);
+      if(!confirm(`${jours.length} jour(s) déjà enregistré(s) entre le ${fr(jours[0])} et le ${fr(jours[jours.length-1])} passeront de « ${de} » à « ${vers} » pour le Poste ${i+1} (nom affiché et objectif de ces jours).\n\nLes quantités saisies ne changent pas. Continuer ?`)) return;
+    }
+    hist[k] = (hist[k]||[]).map(e => e.dateDebut === oldDate ? {...e, dateDebut: newDate} : e);
+    saveOpsHistory(hist);
+    showToast(`Poste ${i+1} : date modifiée (${fr(oldDate)} → ${fr(newDate)})`);
+    nav('params');
   };
   window.addOpEpisode = (i) => {
     const name = document.getElementById('op-new-name-'+i).value.trim();
