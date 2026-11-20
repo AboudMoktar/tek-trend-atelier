@@ -363,13 +363,12 @@
 </style>
 </head>
 <body>
-<div id="app"></div>
+<div id="app"><div style="min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:Inter,system-ui,sans-serif;color:#0f3d66;font-weight:700;letter-spacing:.5px;">TEK TREND · Chargement…</div></div>
 
 <!-- SDK Firebase (nécessaire uniquement si vous configurez le partage entre appareils, voir plus bas) -->
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 
 <script>
 /* ====================================================
@@ -2521,9 +2520,28 @@ function renderMessages(container){
   };
 }
 
+// --- Chargement à la demande de la bibliothèque Excel (≈1 Mo) ---
+// Elle n'est utile que pour les exports : la charger à l'ouverture ralentissait
+// fortement le démarrage, surtout sur téléphone.
+let excelJSPromise = null;
+function ensureExcelJS(){
+  if(typeof ExcelJS !== 'undefined') return Promise.resolve(true);
+  if(!excelJSPromise){
+    excelJSPromise = new Promise(function(resolve){
+      const sc = document.createElement('script');
+      sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js';
+      sc.onload = function(){ resolve(typeof ExcelJS !== 'undefined'); };
+      sc.onerror = function(){ excelJSPromise = null; sc.remove(); resolve(false); };
+      document.head.appendChild(sc);
+    });
+  }
+  return excelJSPromise;
+}
+window.ensureExcelJS = ensureExcelJS;
+
 // --- EXPORT EXCEL DE LA PÉRIODE (multi-feuilles + graphique) ---
 window.exportPeriodExcel = async () => {
-  if(typeof ExcelJS === 'undefined'){
+  if(!(await ensureExcelJS())){
     showToast("Bibliothèque Excel indisponible — vérifiez votre connexion internet et réessayez.");
     return;
   }
@@ -2682,7 +2700,9 @@ window.exportCSV = () => {
 };
 
 // Start
-window.onload = init;
+// DOMContentLoaded : démarre dès que la page et les scripts sont prêts, sans
+// attendre les polices, images et icônes (window.onload les attendait toutes).
+if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else setTimeout(init, 0);
 </script>
 <script src="./rh-module.js"></script>
 <script src="./gadh-module.js"></script>

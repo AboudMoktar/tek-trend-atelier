@@ -1,7 +1,7 @@
 // TEK-TREND — Service Worker
 // Change ce numéro de version à chaque mise à jour du site pour forcer
 // les téléphones déjà installés à récupérer la nouvelle version.
-const CACHE_NAME = 'tek-trend-v32';
+const CACHE_NAME = 'tek-trend-v33';
 
 // Fichiers essentiels de l'application (mêmes dossier que sw.js)
 const APP_SHELL = [
@@ -57,17 +57,31 @@ self.addEventListener('fetch', function(event){
   // sans avoir besoin de rouvrir l'app une seconde fois. Le cache ne sert que
   // de secours si l'appareil est hors connexion.
   if(isAppShellDocument(event.request)){
-    event.respondWith(
-      fetch(event.request).then(function(response){
-        if(response && response.ok){
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then(function(cache){ cache.put(event.request, copy); });
-        }
-        return response;
-      }).catch(function(){
-        return caches.match(event.request).then(function(cached){ return cached || caches.match('./index.html'); });
-      })
-    );
+    // Si le réseau est lent (atelier, 3G…), on n'attend pas plus de 3 s :
+    // on affiche la version en cache, et la version réseau, dès qu'elle arrive,
+    // remplace le cache pour la prochaine ouverture.
+    const fromCache = function(){
+      return caches.match(event.request).then(function(cached){ return cached || caches.match('./index.html'); });
+    };
+    const network = fetch(event.request).then(function(response){
+      if(response && response.ok){
+        const copy = response.clone();
+        caches.open(CACHE_NAME).then(function(cache){ cache.put(event.request, copy); });
+      }
+      return response;
+    });
+    event.waitUntil(network.catch(function(){}));
+    event.respondWith(new Promise(function(resolve){
+      let done = false;
+      const finish = function(r){ if(!done && r){ done = true; resolve(r); } };
+      const timer = setTimeout(function(){
+        fromCache().then(function(c){ if(c) finish(c); });
+      }, 3000);
+      network.then(function(r){ clearTimeout(timer); finish(r); }).catch(function(){
+        clearTimeout(timer);
+        fromCache().then(function(c){ finish(c || Response.error()); });
+      });
+    }));
     return;
   }
 
