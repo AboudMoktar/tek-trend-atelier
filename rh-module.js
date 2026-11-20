@@ -1298,7 +1298,7 @@ function rhStatsEmployeeHTML(empId, start, end){
 
 // --- Rapport Excel mensuel (téléchargement) ---
 window.exportRHReport = async (monthKey) => {
-  if(typeof ExcelJS === 'undefined'){
+  if(!(await ensureExcelJS())){
     showToast("Bibliothèque Excel indisponible — vérifiez votre connexion internet et réessayez.");
     return;
   }
